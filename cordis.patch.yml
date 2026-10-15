@@ -1,0 +1,41 @@
+# dsh-gitea-search - bundle patch.
+#
+# Installed with:
+#   dsh plugin --profile <profile> add dsh-gitea-search
+#
+# The row inserts the in-box MCP client with a stdio server started through npx,
+# so the tools appear to the model as mcp__gitea_search__search_gitea,
+# mcp__gitea_search__read_gitea_file and mcp__gitea_search__list_gitea_repos.
+#
+# Why !!js: the MCP client scrubs the ambient environment before it spawns the
+# server, so a variable exported in the shell does not reach it. The values are
+# re-exported explicitly from the dsh process instead. Every variable is
+# optional - an empty value means "use the default".
+#
+# Overriding this row from your own profile cordis.patch.yml replaces the whole
+# `config` value, not just the keys you name: restate every key you want to keep.
+#
+# Users who installed from a git checkout instead of npm can replace `command`
+# with node and `args` with the absolute path of bin/mcp-server.mjs.
+- insert:
+    - id: gitea-search
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: gitea_search
+        transport: stdio
+        command: npx
+        args:
+          - '-y'
+          - 'dsh-gitea-search'
+          - 'mcp'
+        env:
+          GITEA_MIRROR_DIR: !!js process.env.GITEA_MIRROR_DIR ?? ''
+          GITEA_OWNER: !!js process.env.GITEA_OWNER ?? ''
+          GITEA_MAX_RESULTS: !!js process.env.GITEA_MAX_RESULTS ?? ''
+          GITEA_MAX_SEARCH_BYTES: !!js process.env.GITEA_MAX_SEARCH_BYTES ?? ''
+          GITEA_MAX_LINE_BYTES: !!js process.env.GITEA_MAX_LINE_BYTES ?? ''
+          GITEA_MAX_READ_BYTES: !!js process.env.GITEA_MAX_READ_BYTES ?? ''
+          GITEA_JOBS: !!js process.env.GITEA_JOBS ?? ''
+        # A cold search over a large mirror takes longer than the 60s default.
+        toolCallTimeoutMs: 120000
+        failOnStartupError: true

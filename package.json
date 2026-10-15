@@ -1,0 +1,53 @@
+{
+  "name": "dsh-gitea-search",
+  "version": "0.1.0",
+  "description": "Cross-repository code search over a local mirror of a self-hosted Gitea or Forgejo instance, for DeepSeek Harness.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.1.0-rc.6 <0.3.0-0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "icon": "./icon.svg",
+  "bin": {
+    "dsh-gitea-search": "bin/gitea-search.mjs",
+    "dsh-gitea-search-mcp": "bin/mcp-server.mjs"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "cordis.patch.yml",
+    "locale/",
+    "icon.svg",
+    "docs/",
+    "README.md",
+    "README.zh-CN.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "dsh",
+    "deepseek-harness",
+    "gitea",
+    "forgejo",
+    "code-search",
+    "grep",
+    "mcp"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1"
+  }
+}

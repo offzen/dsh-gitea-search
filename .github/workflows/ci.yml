@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Syntax check
+        run: |
+          for f in bin/*.mjs lib/*.mjs; do node --check "$f"; done
+      - name: Test
+        run: npm test
+      - name: Verify the published package carries the bundle files
+        run: |
+          npm pack --dry-run --json > pack.json
+          node -e "
+            const report = require('./pack.json')[0];
+            const files = report.files.map((f) => f.path);
+            const required = [
+              'package.json', 'cordis.patch.yml', 'icon.svg',
+              'locale/en.json', 'locale/zh.json',
+              'bin/gitea-search.mjs', 'bin/mcp-server.mjs',
+              'lib/config.mjs', 'lib/search.mjs', 'lib/mirror.mjs', 'lib/limits.mjs', 'lib/sync.mjs', 'lib/git.mjs',
+            ];
+            const missing = required.filter((name) => !files.includes(name));
+            if (missing.length) { console.error('missing from the package:', missing); process.exit(1); }
+            const manifest = require('./package.json');
+            if (!manifest.dsh?.bundle?.patch) { console.error('package.json declares no dsh.bundle.patch'); process.exit(1); }
+            const icon = report.files.find((f) => f.path === 'icon.svg');
+            if (icon && icon.size > 262144) { console.error('icon.svg exceeds 256 KiB'); process.exit(1); }
+            console.log('package files:', files.length, '| packed size:', report.size, 'bytes');
+          "

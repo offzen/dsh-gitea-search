@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Gitea Search">
+  <rect width="64" height="64" rx="12" fill="#1f6feb"/>
+  <g fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round">
+    <circle cx="27" cy="27" r="13"/>
+    <path d="M37 37l13 13"/>
+    <path d="M20 27h14"/>
+    <path d="M27 20v14"/>
+  </g>
+</svg>

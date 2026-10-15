@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Gitea 代码搜索",
+    "description": "在自建 Gitea / Forgejo 的本地全量镜像上做跨仓代码搜索。"
+  }
+}

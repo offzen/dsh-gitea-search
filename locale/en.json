@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Gitea Search",
+    "description": "Cross-repository code search over a local mirror of a self-hosted Gitea or Forgejo instance."
+  }
+}
