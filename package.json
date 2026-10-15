@@ -1,8 +1,17 @@
 {
   "name": "dsh-gitea-search",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Cross-repository code search over a local mirror of a self-hosted Gitea or Forgejo instance, for DeepSeek Harness.",
   "license": "MIT",
+  "author": "offzen",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/offzen/dsh-gitea-search.git"
+  },
+  "bugs": {
+    "url": "https://github.com/offzen/dsh-gitea-search/issues"
+  },
+  "homepage": "https://github.com/offzen/dsh-gitea-search#readme",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0",

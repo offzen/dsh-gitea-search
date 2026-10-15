@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- Publish metadata: `repository`, `homepage`, `bugs` and `author` now point at
+  the public source repository (`github.com/offzen/dsh-gitea-search`).
+
 ## 0.1.0
 
 First public release.
