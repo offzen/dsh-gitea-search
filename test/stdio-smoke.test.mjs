@@ -48,7 +48,11 @@ test('MCP stdio server: handshake, three tools, search/read, errors, no U+FFFD',
   const call = (id, method, params) => new Promise((resolve, reject) => {
     pending.set(id, resolve);
     send({ jsonrpc: '2.0', id, method, params });
-    setTimeout(() => reject(new Error(`timeout waiting for ${method}`)), 60000);
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      reject(new Error(`timeout waiting for ${method}`));
+    }, 60000);
+    timer.unref();
   });
 
   const init = await call(1, 'initialize', {
