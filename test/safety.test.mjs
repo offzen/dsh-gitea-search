@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -42,6 +43,35 @@ test('git show --end-of-options blocks the --output write primitive', async (t) 
   const blocked = await run('git', ['-c', 'core.quotePath=false', `--git-dir=${repo.dir}`, 'show', '--end-of-options', `--output=${target}`]);
   assert.notEqual(blocked.code, 0);
   assert.ok(!fs.existsSync(target), 'with --end-of-options nothing is written');
+});
+
+test('readBlob actually passes --end-of-options to git', async (t) => {
+  // The test above proves git's behaviour; this one proves the wiring: a PATH
+  // shim records the real argv, so removing the flag from lib/mirror.mjs turns
+  // this red even though git itself would still behave.
+  const fx = await makeMirror([{ owner: 'team', name: 'app' }]);
+  t.after(fx.cleanup);
+  const repo = [...scanRepos(fx.config).values()][0];
+
+  const realGit = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+  const shimDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-shim-'));
+  const record = path.join(shimDir, 'argv.log');
+  fs.writeFileSync(
+    path.join(shimDir, 'git'),
+    `#!/bin/sh\nprintf '%s\\n' "$*" >> "${record}"\nexec "${realGit}" "$@"\n`,
+    { mode: 0o755 },
+  );
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${shimDir}${path.delimiter}${originalPath}`;
+  t.after(() => { process.env.PATH = originalPath; });
+
+  const result = await readBlob(fx.config, repo, { filePath: 'README.md' });
+  assert.equal(result.ok, true, `read failed: ${result.error}`);
+  const calls = fs.readFileSync(record, 'utf8');
+  assert.ok(
+    calls.includes('--end-of-options'),
+    `readBlob called git without --end-of-options:\n${calls}`,
+  );
 });
 
 test('readBlob never reaches git with a dangerous ref or path', async (t) => {
