@@ -233,6 +233,12 @@ npm pack --dry-run       # 核对 files 清单：cordis.patch.yml / locale / ico
   `deepseek-harness-plugin.com` 的 `/submit/`）。
 - 兼容：peer 不声明（config-only bundle 无 dsh 代码依赖），兼容面靠 `engines.dsh` 声明 +
   README 实测表；DSH rc/alpha 期 manifest 形态会漂移，升级后重跑 §10 的测试与 pack 校验。
+- 已实测的版本矩阵（干净测试机，Node 24）：`0.2.0-rc.2`、`0.2.1-alpha.3`、`0.2.1-alpha.2`、
+  `0.2.1-alpha.1` —— 四个版本均 `dsh plugin add` 成功、`--dump-config` 出层、
+  `--dump-config-schema` **无 diagnostics**、测试全绿、MCP 冒烟无 U+FFFD。
+- 负面对照（证明测试会失败，而不是假绿）：逐个注入缺陷——关掉单行截断、按块解码、
+  `assertRef` 变空实现、删掉 `--end-of-options`——每次都用 `cmp` 证明文件确实被改，
+  且 `node --test` 退出码非零。
 - 发版前检查：对 `README*`、`docs/`、`bin/`、`lib/` 跑一次"内网痕迹"扫描（私有实例域名、内部
   组织名、宿主机绝对路径、内网主机名、token 与凭据路径）应零命中；本仓的这把扫描是逐条模式匹配，
   不把特征串写进文档本身。

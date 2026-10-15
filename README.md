@@ -123,10 +123,21 @@ Remove the mirror directory and revoke the token afterwards.
 
 ## Compatibility
 
-Tested against DSH `0.2.0-rc.2` (and designed for the `0.2.x` line). The bundle declares an
-`engines.dsh` range as documentation; DSH gates installation by `peerDependencies` on
-`@deepseek-ai/dsh-*`, which this configuration-only bundle does not declare, so it installs on any
-`0.2.x` runtime.
+Verified on a clean test machine (Node 24, Debian slim container) for each version below: bundle
+installed with `dsh plugin add`, the profile layer resolved with **no schema diagnostics**, the
+22-test suite green, and an MCP smoke run against a synthetic mirror (a 190 KB single-line blob and
+a >64 KB CJK file) with no U+FFFD and the output guard intact.
+
+| DSH version | Published | Install | Layer (`--dump-config`) | Schema diagnostics | Tests | MCP smoke |
+|---|---|---|---|---|---|---|
+| `0.2.0-rc.2` (`latest`, `next`) | 2026-09-29 | ok | ok | none | 22/22 | ok |
+| `0.2.1-alpha.3` (`alpha`) | 2026-10-14 | ok | ok | none | 22/22 | ok |
+| `0.2.1-alpha.2` | 2026-10-09 | ok | ok | none | 22/22 | ok |
+| `0.2.1-alpha.1` | 2026-10-03 | ok | ok | none | 22/22 | ok |
+
+The bundle declares an `engines.dsh` range as documentation; DSH gates installation by
+`peerDependencies` on `@deepseek-ai/dsh-*`, which this configuration-only bundle does not declare,
+so it installs on any `0.2.x` runtime.
 
 ## License
 
