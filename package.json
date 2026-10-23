@@ -1,0 +1,29 @@
+{
+  "name": "dsh-gitea-search",
+  "type": "module",
+  "version": "1.1.0",
+  "description": "DeepSeek Harness (DSH) 高性能 Gitea/Git 镜像混合检索引擎（git grep + SQLite FTS5 + Jieba + MCP Server）",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/offzen/dsh-gitea-search.git"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "gitea",
+    "git-grep",
+    "fts5",
+    "jieba"
+  ],
+  "scripts": {
+    "test": "bash scripts/run-e2e-test.sh /tmp/gts-ci-testbed"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1"
+  }
+}

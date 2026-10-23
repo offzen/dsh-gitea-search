@@ -1,0 +1,506 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+gts (原 gitq) — 跨 Gitea 镜像的全量检索与 FTS5 文档搜索 (CLI)
+
+说明：
+    本项目原名为 gitq，为统一工具风格与作为通用插件交付，正式重命名为 gts (Gitea Search)。
+    保留 gitq 和 dsh-search 作为兼容别名。
+
+检索模式：
+    1. FTS5 全文模式 (-D / --doc / --query)：毫秒级全文检索文档、会话、配置、脚本。
+    2. Git 源码模式 (默认)：跨全部镜像仓与本地分支搜索代码内容、路径与提交。
+
+用法示例：
+    gts -D "沙盒机制"                      # FTS5 全文检索文档与会话
+    gts -D --kind doc,script "反向代理"     # 按类型软分区过滤
+    gts dockge                            # 源码内容搜索
+    gts -p 'install-wizard'               # 搜文件路径
+    gts --repos                           # 列出镜像中的仓
+"""
+import argparse
+import fnmatch
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+# 动态探测引入 indexer 模块（用 realpath 解析 /usr/local/bin/gts 软链，支持同级 bin/、上级 gitea-search/ 或 lib/）
+_CUR_DIR = os.path.dirname(os.path.realpath(__file__))
+_SEARCH_PATHS = [
+    _CUR_DIR,
+    os.path.join(_CUR_DIR, "..", "gitea-search"),
+    os.path.join(_CUR_DIR, "..", "lib"),
+]
+for p in _SEARCH_PATHS:
+    norm = os.path.normpath(p)
+    if norm not in sys.path and os.path.isdir(norm):
+        sys.path.insert(0, norm)
+
+try:
+    import indexer
+except ImportError:
+    indexer = None
+
+ROOT = (
+    os.environ.get("GITEA_MIRROR_ROOT")
+    or os.environ.get("GITEA_MIRROR_PATH")
+    or os.environ.get("GITQ_MIRROR_ROOT")
+    or "/srv/gitea-mirror"
+)
+OWNER = (
+    os.environ.get("GITEA_OWNERS")
+    or os.environ.get("GITEA_OWNER")
+    or os.environ.get("GITQ_OWNER")
+    or "myorg"
+)
+OWNERS = [o.strip() for o in OWNER.split(",") if o.strip()] or ["myorg"]
+MIRROR = os.path.join(ROOT, OWNERS[0])
+SYNC = os.path.join(ROOT, "sync.sh")
+GN = ["git", "-c", "core.pager=cat", "-c", "color.ui=false",
+      # core.quotePath 默认 true：非 ASCII 路径会被转义成 "\345\257\274…"，
+      # 中文文件名直接不可用（也读不出来）。必须显式关掉。
+      "-c", "core.quotePath=false"]
+
+
+def die(msg, code=2):
+    print(f"gitq: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def mirror_dir(repo):
+    clean = repo.split("/", 1)[1] if "/" in repo else repo
+    for o in OWNERS:
+        cand = os.path.join(ROOT, o, clean + ".git")
+        if os.path.isdir(cand):
+            return cand
+    return os.path.join(MIRROR, clean + ".git")
+
+
+def all_repos():
+    found_dir = False
+    out = set()
+    for o in OWNERS:
+        mdir = os.path.join(ROOT, o)
+        if not os.path.isdir(mdir):
+            continue
+        found_dir = True
+        for e in os.listdir(mdir):
+            if e.endswith(".git") and os.path.isdir(os.path.join(mdir, e)):
+                out.add(e[:-4])
+    if not found_dir:
+        die(f"镜像目录不存在：{MIRROR}（先跑 {SYNC}）")
+    return sorted(out)
+
+
+def pick_repos(patterns):
+    repos = all_repos()
+    if not patterns:
+        return repos
+    pats = [p.strip() for chunk in patterns for p in chunk.split(",") if p.strip()]
+    out = []
+    for r in repos:
+        for p in pats:
+            if fnmatch_any(r, p):
+                out.append(r)
+                break
+    return out
+
+
+def fnmatch_any(name, pat):
+    p = pat.split("/", 1)[1] if "/" in pat and "/" not in name else pat
+    nl, pl = name.lower(), p.lower()
+    if any(ch in pl for ch in "*?["):
+        return fnmatch.fnmatchcase(nl, pl)
+    return pl in nl
+
+
+def refs_of(gitdir, all_refs=False):
+    prefix = "refs/" if all_refs else "refs/heads/"
+    p = subprocess.run(
+        GN + [f"--git-dir={gitdir}", "for-each-ref", "--format=%(refname:short)", prefix],
+        capture_output=True, text=True,
+    )
+    return [l for l in p.stdout.splitlines() if l.strip()]
+
+
+def _stream(cmd, cap):
+    """跑命令，逐行读，达到 cap 就停并杀掉进程。返回 (lines, capped)"""
+    try:
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    except Exception:
+        return [], False
+    lines, capped = [], False
+    try:
+        for raw in p.stdout:
+            lines.append(raw.decode("utf-8", "replace").rstrip("\n"))
+            if len(lines) >= cap:
+                capped = True
+                p.kill()
+                break
+        p.stdout.close()
+    except Exception:
+        pass
+    try:
+        p.wait(timeout=5)
+    except Exception:
+        p.kill()
+    return lines, capped
+
+
+def split_grep(line, ref):
+    """git grep 输出：<ref>:<path>:<lineno>:<text>"""
+    body = line[len(ref) + 1:] if line.startswith(ref + ":") else line
+    path, _, rest = body.partition(":")
+    lineno, _, text = rest.partition(":")
+    return path, lineno, text
+
+
+def search_repo(repo, a, and_words=None):
+    """返回 (records, capped, error)"""
+    gitdir = mirror_dir(repo)
+    rl = refs_of(gitdir, a.all_refs)
+    if a.branch:
+        want = a.branch.split(",")
+        if any(w.upper() == "HEAD" for w in want):
+            p = subprocess.run(GN + [f"--git-dir={gitdir}", "symbolic-ref", "--short", "HEAD"],
+                               capture_output=True, text=True)
+            head = p.stdout.strip()
+            want = [w for w in want if w.upper() != "HEAD"] + ([head] if head else [])
+        rl = [r for r in rl if any(fnmatch_any(r, w) for w in want)]
+    if not rl:
+        return [], False, None
+    recs, capped = [], False
+    # 每仓收集上限：内容模式给足余量但仍设闸（防超宽模式打满内存）。
+    # 计数模式单独走精确计数（只数不存），不受这个闸影响——否则 -c 的排行会失真。
+    per_cap = max(500, a.max * 5)
+    if a.files:
+        per_cap = 5000
+
+    pattern_args = ["-e", a.pattern]
+    if and_words and len(and_words) >= 2:
+        pattern_args = []
+        for idx, w in enumerate(and_words):
+            if idx > 0:
+                pattern_args.append("--and")
+            pattern_args += ["-e", w]
+
+    for ref in rl:
+        if a.mode == "content":
+            if a.count:
+                cmd = GN + [f"--git-dir={gitdir}", "grep", "-n", "-I", "--no-color"]
+                if not a.case_sensitive:
+                    cmd.append("-i")
+                cmd.append("-E" if (a.regex and not and_words) else "-F")
+                if a.word:
+                    cmd.append("-w")
+                cmd += pattern_args + [ref]
+                out, cap = _stream(cmd, 500000)
+                capped = capped or cap
+                recs.append((repo, ref, "", "", str(len(out))))
+                continue
+            cmd = GN + [f"--git-dir={gitdir}", "grep", "-n", "-I", "--no-color"]
+            if not a.case_sensitive:
+                cmd.append("-i")
+            cmd.append("-E" if (a.regex and not and_words) else "-F")
+            if a.word:
+                cmd.append("-w")
+            if a.files:
+                cmd.append("-l")
+            cmd += pattern_args + [ref]
+            out, cap = _stream(cmd, per_cap)
+            capped = capped or cap
+            for line in out:
+                path, lineno, text = split_grep(line, ref)
+                recs.append((repo, ref, path, lineno, text))
+        elif a.mode == "path":
+            cmd = GN + [f"--git-dir={gitdir}", "ls-tree", "-r", "--name-only", ref]
+            out, _ = _stream(cmd, 200000)
+            if a.regex:
+                try:
+                    rx = re.compile(a.pattern, 0 if a.case_sensitive else re.I)
+                except re.error as e:
+                    die(f"正则不合法：{e}")
+                hits = [l for l in out if rx.search(l)]
+            else:
+                needle = a.pattern if a.case_sensitive else a.pattern.lower()
+                hits = [l for l in out if needle in (l if a.case_sensitive else l.lower())]
+            for h in hits[:per_cap]:
+                recs.append((repo, ref, h, "", ""))
+            if len(hits) > per_cap:
+                capped = True
+        else:  # message
+            cmd = GN + [f"--git-dir={gitdir}", "log", "--all", "--no-color",
+                        "--date=short", "--format=%h\t%ad\t%s"]
+            out, _ = _stream(cmd, 200000)
+            try:
+                rx = re.compile(a.pattern, 0 if a.case_sensitive else re.I)
+            except re.error as e:
+                die(f"正则不合法：{e}")
+            for line in out:
+                parts = line.split("\t", 2)
+                if len(parts) < 3:
+                    continue
+                h, d, subj = parts
+                target = subj if a.regex else (f"{d} {subj}")
+                if (rx.search(subj) if a.regex else
+                        (a.pattern.lower() in target.lower() if not a.case_sensitive
+                         else a.pattern in target)):
+                    recs.append((repo, "-", h, d, subj))
+                    if len(recs) >= per_cap:
+                        capped = True
+                        break
+    return recs, capped, None
+
+
+def fmt_text(recs, a, stats):
+    lines = []
+    total = 0
+    if a.count:
+        per = {}
+        for r in recs:
+            per[r[0]] = per.get(r[0], 0) + (int(r[4]) if r[4].isdigit() else 0)
+        for repo, n in sorted(per.items(), key=lambda kv: (-kv[1], kv[0])):
+            lines.append(f"{n:6d}  {repo}")
+        total = sum(int(r[4]) for r in recs if r[4].isdigit())
+    elif a.files:
+        seen = []
+        seen_set = set()
+        for r in recs:
+            key = (r[0], r[1], r[2])
+            if key not in seen_set:
+                seen_set.add(key)
+                seen.append(key)
+        for repo, ref, path in seen:
+            lines.append(f"{repo}@{ref}:{path}")
+        total = len(seen)
+    else:
+        seen = set()
+        for repo, ref, path, lineno, text in recs:
+            if a.mode == "content":
+                s = f"{repo}@{ref}:{path}:{lineno}:{text}"
+            elif a.mode == "path":
+                s = f"{repo}@{ref}:{path}"
+            else:
+                s = f"{repo} {path} {lineno} {text}"
+            if s in seen:
+                continue
+            seen.add(s)
+            lines.append(s)
+        total = len(lines)
+
+    unit = {"content": "行", "path": "个路径", "message": "条提交"}[a.mode]
+    if a.count:
+        unit = "行"
+    out = lines[: a.max]
+    ge = "≥ " if stats["capped"] else ""
+    fb_note = "；原短语 0 命中，已自动回退为同行多词 AND 匹配" if stats.get("fallback_and") else ""
+    foot = [f"—— 命中 {ge}{total} {unit} / {stats['repos_hit']} 个仓"
+            f"（{stats['repos_total']} 个镜像仓，{stats['elapsed']:.1f}s{fb_note}）"]
+    if len(lines) > a.max:
+        foot.append(f"（已截断显示到 {a.max} 行；用 -r <仓名> 或更精确的模式收窄）")
+    if stats["capped"]:
+        foot.append("（有仓触顶，总数是下界）")
+    if total == 0 and a.mode == "content":
+        foot.append("（提示：若需跨行多词组合或中文分词检索文档/历史会话，请用 `gts -D \"<关键词>\"` 或 MCP `search_gitea_docs`）")
+    out.append("")
+    out.extend(foot)
+    return "\n".join(out)
+
+
+def fmt_json(recs, a, stats):
+    results = []
+    seen = set()
+    for repo, ref, path, lineno, text in recs:
+        key = (repo, ref, path, lineno, text)
+        if key in seen:
+            continue
+        seen.add(key)
+        if a.mode == "content":
+            results.append({"repo": repo, "ref": ref, "path": path,
+                            "line": int(lineno) if lineno.isdigit() else None, "text": text})
+        elif a.mode == "path":
+            results.append({"repo": repo, "ref": ref, "path": path})
+        else:
+            results.append({"repo": repo, "commit": path, "date": lineno, "subject": text})
+    results.sort(key=lambda r: (r.get("repo", ""), r.get("path", ""), r.get("line") or 0))
+    payload = {
+        "pattern": a.pattern,
+        "mode": a.mode,
+        "match_mode": "line_and_fallback" if stats.get("fallback_and") else ("regex" if a.regex else "literal"),
+        "total": len(results),
+        "truncated": len(results) > a.max or stats["capped"],
+        "repos_scanned": stats["repos_total"],
+        "repos_hit": stats["repos_hit"],
+        "mirror_last_sync": stats["last_sync"],
+        "results": results[: a.max],
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=1)
+
+
+def read_last_sync():
+    p = os.path.join(ROOT, "last_sync")
+    if os.path.exists(p):
+        try:
+            return open(p).read().strip()
+        except OSError:
+            pass
+    return None
+
+
+def main():
+    ap = argparse.ArgumentParser(add_help=True, description="跨 gitea 全量镜像搜索")
+    ap.add_argument("pattern", nargs="?", help="搜索模式")
+    ap.add_argument("-q", "--query", dest="query_alias", help="搜索模式（别名）")
+    ap.add_argument("-p", "--path", dest="mode", action="store_const", const="path",
+                    help="搜文件路径（而不是内容）")
+    ap.add_argument("-m", "--msg", "--messages", dest="mode", action="store_const", const="message",
+                    help="搜提交信息")
+    ap.add_argument("-E", "--regex", action="store_true", help="pattern 按扩展正则解释")
+    ap.add_argument("-s", "--case-sensitive", action="store_true", help="区分大小写")
+    ap.add_argument("-w", "--word", action="store_true", help="全词匹配（仅内容模式）")
+    ap.add_argument("-l", "--files", action="store_true", help="只列命中文件")
+    ap.add_argument("-c", "--count", action="store_true", help="每仓命中数排行")
+    ap.add_argument("-r", "--repo", action="append", default=[], help="限定仓（可重复/逗号分隔/支持 *）")
+    ap.add_argument("-b", "--branch", default=None, help="限定分支（默认全部分支；HEAD=默认分支）")
+    ap.add_argument("-A", "--all-refs", action="store_true", help="连 tags 一起搜")
+    ap.add_argument("-D", "--doc", "--session", dest="doc_mode", action="store_true",
+                    help="使用 SQLite FTS5 毫秒级全文检索文档与会话")
+    ap.add_argument("--kind", default=None,
+                    help="按内容类型过滤（逗号分隔）：doc/session/config/script")
+    ap.add_argument("--reindex", action="store_true", help="增量更新文档与会话 FTS5 索引")
+    ap.add_argument("--fts-stats", action="store_true", help="查看 FTS5 索引库统计信息")
+    ap.add_argument("--perf-stats", action="store_true", help="查看性能与磁盘 I/O 监测统计")
+    ap.add_argument("--doctor", action="store_true", help="运行索引与宿主 DSH 会话健康及 I/O 诊断")
+    ap.add_argument("--dsh-home", default=None, help="指定宿主 .dsh 目录路径（供 --doctor 检查）")
+    ap.add_argument("--read", dest="read_path", default=None, help="直接读取指定仓(-r)内的文件内容")
+    ap.add_argument("-n", "--max", "--limit", dest="max", type=int, default=200, help="最多输出行数（默认 200）")
+    ap.add_argument("-j", "--jobs", type=int, default=8, help="并发仓数（默认 8）")
+    ap.add_argument("--json", action="store_true", help="JSON 输出")
+    ap.add_argument("--sync", action="store_true", help="搜索前先增量同步镜像")
+    ap.add_argument("--repos", action="store_true", help="只列出镜像里的仓")
+    a = ap.parse_args()
+    a.mode = a.mode or "content"
+    if a.query_alias and not a.pattern:
+        a.pattern = a.query_alias
+
+    if a.sync:
+        if not os.path.exists(SYNC):
+            die(f"同步脚本不存在：{SYNC}")
+        subprocess.run(["/bin/bash", SYNC, "-q"], check=False)
+
+    if a.doctor:
+        if not indexer:
+            die("未找到 indexer 模块，无法运行健康诊断")
+        print(indexer.run_doctor(ROOT, dsh_home=a.dsh_home, as_json=a.json))
+        return
+
+    if a.perf_stats:
+        if not indexer:
+            die("未找到 indexer 模块，无法查看性能与 I/O 统计")
+        print(indexer.get_perf_stats(ROOT, limit=a.max or 100, as_json=a.json))
+        return
+
+    if a.fts_stats:
+        if not indexer:
+            die("未找到 indexer 模块，无法查看索引统计")
+        print(indexer.get_stats(ROOT))
+        return
+
+    if a.read_path:
+        if not a.repo:
+            die("使用 --read 时必须通过 -r 指定仓库名")
+        gd = mirror_dir(a.repo[0])
+        if not os.path.isdir(gd):
+            die(f"镜像中不存在仓库：{a.repo[0]}")
+        ref = a.branch or "HEAD"
+        p = subprocess.run(GN + [f"--git-dir={gd}", "show", f"{ref}:{a.read_path.lstrip('/')}"], capture_output=True, text=True)
+        if p.returncode != 0:
+            die(p.stderr.strip() or f"无法读取 {a.repo[0]}@{ref}:{a.read_path}", code=1)
+        sys.stdout.write(p.stdout)
+        return
+
+    if a.reindex:
+        if not indexer:
+            die("未找到 indexer 模块，无法构建索引")
+        repo_filter = ",".join(a.repo) if a.repo else None
+        indexer.build_index(ROOT, OWNER, repo_filter=repo_filter, verbose=not a.json)
+        return
+
+    if a.doc_mode:
+        if not indexer:
+            die("未找到 indexer 模块，无法执行文档检索")
+        if not a.pattern:
+            ap.error("使用 -D/--doc 时需要一个搜索模式")
+        repo_filter = ",".join(a.repo) if a.repo else None
+        res = indexer.search_fts(ROOT, a.pattern, repo=repo_filter, limit=a.max, kind=a.kind)
+        if a.json:
+            print(json.dumps(res, ensure_ascii=False, indent=1))
+        else:
+            if "error" in res:
+                die(res["error"])
+            hits = res.get("results", [])
+            for r in hits:
+                print(f"[{r['repo']}@{r['ref']}] {r['path']} ({r['title']})")
+                print(f"  {r['snippet']}\n")
+            print(f"—— 命中 {len(hits)} 篇文档（FTS5 相关度排序）")
+        return
+
+    if a.repos:
+        rl = pick_repos(a.repo)
+        if a.json:
+            print(json.dumps({"owner": OWNER, "count": len(rl), "repos": rl,
+                              "mirror_last_sync": read_last_sync()}, ensure_ascii=False, indent=1))
+        else:
+            for r in rl:
+                print(r)
+            print(f"\n共 {len(rl)} 个仓；镜像 last_sync: {read_last_sync() or '未知'}")
+        return
+
+    if not a.pattern:
+        ap.error("需要一个搜索模式（或 --repos）")
+
+    repos = pick_repos(a.repo)
+    if not repos:
+        die("没有匹配的仓（--repos 看看有哪些）", 1)
+
+    t0 = time.time()
+    recs, capped = [], False
+    fallback_and = False
+    with ThreadPoolExecutor(max_workers=a.jobs) as ex:
+        for rr, cap, err in ex.map(lambda r: search_repo(r, a), repos):
+            if err:
+                print(f"gitq: {err}", file=sys.stderr)
+            recs.extend(rr)
+            capped = capped or cap
+
+    # 当 content 模式（非正则）传入多词短语且精确字面量 0 命中时，自动回退为「同行多词 AND」检索
+    if not recs and a.mode == "content" and not a.regex:
+        words = [w for w in re.split(r"\s+", a.pattern.strip()) if w]
+        if len(words) >= 2:
+            fallback_and = True
+            with ThreadPoolExecutor(max_workers=a.jobs) as ex:
+                for rr, cap, err in ex.map(lambda r: search_repo(r, a, and_words=words), repos):
+                    recs.extend(rr)
+                    capped = capped or cap
+
+    stats = {
+        "repos_total": len(repos),
+        "repos_hit": len({r[0] for r in recs}),
+        "elapsed": time.time() - t0,
+        "capped": capped,
+        "fallback_and": fallback_and,
+        "last_sync": read_last_sync(),
+    }
+    if a.json:
+        print(fmt_json(recs, a, stats))
+    else:
+        print(fmt_text(recs, a, stats))
+    sys.exit(0 if recs else 1)
+
+
+if __name__ == "__main__":
+    main()
