@@ -1,36 +1,76 @@
-## What's New in v1.1.0 / 新增与改进
+# Release Notes - DeepSeek Harness (DSH) Gitea Search
 
-### 🇨🇳 中文摘要
+## v1.2.0 (2026-10-26)
 
-`dsh-gitea-search` v1.1.0 为 DeepSeek Harness (DSH) 带来高性能多仓检索与历史会话定位能力，并强化了 Agent 上下文安全护栏：
+### 版本概述 / Overview
 
-- **双层极速检索**：
-  - 代码检索 (`search_gitea`)：裸镜像快速 `git grep`，多词短语未命中时自动回退为多词同行相交（AND）匹配。
-  - 文档/会话检索 (`search_gitea_docs`)：SQLite FTS5 + Jieba 分词与 BM25 排序，彻底解决大模型在连续中文与复合查询下的 0 命中痛点。
-- **Agent 上下文四重安全护栏**：
-  - 结果数硬夹（默认 5 条，上限 200 条）、单行长截断（2000B）、总缓冲区限制（128KB）与文件读取窗口（默认 400 行），杜绝提示词膨胀。
-  - 完整包解码机制，根除流式字节截断导致的 `U+FFFD` 乱码。
-- **开箱即用与质量验证**：
-  - 自包含测试床：无外部凭据依赖，模拟真实微服务配置与排错会话。
-  - 自动化 CI：GitHub Actions 跑通 26 项 E2E 断言（Ubuntu / Node.js 22 LTS / Python 3.11）。
-- **零侵入与运维遥测**：
-  - 内置 `IoTracker`（CPU、执行时间、`/proc/self/io` 统计与 OK/WARN 评级），纯外部 MCP 协议集成，零修改 DSH 核心代码。
+`dsh-gitea-search` v1.2.0 是一个重要的生态扩展与健壮性升级版本。本版本合入了首个外部社区 PR，带来了原生的 macOS 与 BSD 跨平台兼容支持；引入了零服务依赖的 Zero-Gitea 本地极速启动模式；实现了 `config.json` 自动解析机制与 Node.js 跨版本优雅降级，并在自动化测试中扩充至 32 项端到端断言，覆盖多系统、多版本的 CI 测试矩阵。
 
 ---
 
-### 🌐 English Summary
+### 中文更新说明
 
-`dsh-gitea-search` v1.1.0 brings high-performance bare mirror search, session retrieval, and robust context guardrails to DeepSeek Harness via Model Context Protocol (MCP):
+#### 1. 原生 macOS 与 BSD 平台支持 (合入社区 PR #2)
+- **环境一键配置**：新增 `scripts/setup-macos.sh`，原生支持 macOS 默认的 Bash 3.2 环境，自动通过 Homebrew 补齐环境依赖。
+- **管道防死锁与 BSD 工具链兼容**：针对缺乏 GNU `timeout` 命令的 macOS/BSD 系统，重构了非阻塞的子进程超时控制，彻底消除管道缓冲造成的死锁假死；同时兼容 BSD 版 `stat` 与 `awk` 命令行语法。
 
-- **Dual-Layer Search Engine**:
-  - **Code Grep (`search_gitea`)**: Ultra-fast `git grep` with automatic multi-token `--and` fallback on exact phrase misses.
-  - **Doc & Session FTS5 (`search_gitea_docs`)**: SQLite FTS5 engine with Jieba Chinese tokenization and BM25 ranking, eliminating tokenization blind spots in CJK queries.
-- **Agent Context-Protective Guardrails**:
-  - 4-layer defense: Hard clamp (default 5, max 200), line truncation (2000B), buffer ceiling (128KB), and 400-line read window to prevent prompt bloat.
-  - Safe multibyte boundary decoding, completely eliminating `U+FFFD` replacement artifacts.
-- **Self-Contained Testbed & CI**:
-  - Zero-credential synthetic testbed simulating real-world runbooks and session logs.
-  - GitHub Actions CI executing 26 end-to-end assertions in under 40s (Node.js 22 LTS).
-- **Diagnostics & Zero Footprint**:
-  - `IoTracker` telemetry (CPU time, wall clock, `/proc/self/io` metrics with health grades).
-  - 100% external MCP stdio communication with zero modifications to upstream DSH core.
+#### 2. Zero-Gitea 本地免服务快速启动 (`quickstart-local.sh`)
+- **零服务端依赖**：无需安装或连接 Gitea 服务，只要本地存在任意普通 Git 仓库，运行 `bash scripts/quickstart-local.sh <path>` 即可一键生成 bare 镜像并完成 FTS5 索引构建。
+- **极速体验**：为本地开发调试、非 Gitea 托管的单一代码库提供即开即用的 MCP 全文与代码检索能力。
+
+#### 3. 配置文件自动寻径解析 (`config.json`)
+- **免环境变量注入**：`lib/server.mjs` 支持自动向上查找并加载当前工作目录或父目录中的 `config.json` 配置文件。
+- **多途径规范统一**：建立配置优先级（CLI 参数 > 环境变量 > `config.json`），完全打通 `GITEA_*` 标准规范与历史 `GITQ_*` 变量。
+
+#### 4. Node.js 跨版本优雅降级与防御增强
+- **CLI 自动 Fallback**：在缺少原生 `node:sqlite` 或 `zlib.zstdCompressSync` 的 Node.js `20.11 ~ 22.14` 环境下，自动平滑回退至系统 `sqlite3` CLI 与 `zstd` CLI，杜绝加载崩溃。
+- **空配置预警**：MCP 启动时若检测到未配置有效镜像目录，输出友好的引导预警日志，取代无提示的异常退出。
+
+#### 5. 质量保证与 CI 矩阵扩展
+- **32 项全链路断言**：E2E 测试套件扩充至 32 项测试，新增 Phase 5 专项校验 `config.json` 与本地快速启动模式。
+- **跨版本双矩阵验证**：CI 流水线全面覆盖 Node.js 20 LTS / 22 LTS 与 Python 3.11-3.13 组合。
+
+---
+
+### English Release Notes
+
+#### Highlights
+- **macOS & BSD Support (PR #2)**: Native setup script (`scripts/setup-macos.sh`), Bash 3.2 compatibility, deadlock-free pipe timeout fallback, and BSD utility support.
+- **Zero-Gitea Local Quickstart**: Launch local bare mirrors and FTS5 search from any local Git directories without needing an external Gitea server.
+- **Auto `config.json` Resolution**: Automatic hierarchical discovery of `config.json`, removing environment variable clutter.
+- **Graceful Node.js CLI Fallback**: Seamless fallback to system `sqlite3` and `zstd` CLI when running on Node.js `20.11 ~ 22.14`.
+- **Expanded CI & Quality Gate**: 32 comprehensive E2E assertions validated across Node 20/22 and Python 3.11-3.13.
+
+---
+
+### 快速配置参考 (Quick Configuration)
+
+#### DSH `cordis.patch.yml`
+
+```yaml
+- insert:
+    - id: mcp-gitea-search
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: gitea_search
+        transport: stdio
+        command: node
+        args: ["/path/to/dsh-gitea-search/lib/server.mjs"]
+        cwd: /path/to/dsh-gitea-search
+        env:
+          GITEA_MIRROR_ROOT: "/srv/gitea-mirror"
+          GITEA_OWNERS: "my-org,my-team"
+```
+
+---
+
+## v1.1.0 (2026-10-23)
+
+### 版本概述
+`dsh-gitea-search` v1.1.0 是专为 DeepSeek Harness (DSH) 打造的高性能跨仓检索与会话检索插件。通过标准 Model Context Protocol (MCP) 协议，赋予 Agent 在大型代码与文档库中毫秒级检索、定位与阅读的能力。
+
+### 核心特性
+1. **双层极速检索引擎**：裸镜像 `git grep`（全分支 + 同行多词 AND 自动回退）与 SQLite FTS5 + Jieba 全文检索（BM25 加权与多类型分区）。
+2. **Agent 上下文安全护栏**：条数硬夹（默认 5 / 最大 200）、单行截断（2000B）、总体缓冲区限制（128KB）与行窗口读取（默认 400 行）。
+3. **自动化测试套件**：GitHub Actions CI 自动化 28 项端到端断言测试。
+4. **性能遥测与无损维护**：`IoTracker` 读写统计遥测与 `dsh-session-health.mjs` 在线 WAL 截断维护。

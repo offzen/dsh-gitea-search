@@ -2,89 +2,121 @@
 
 [![License](https://img.shields.io/badge/License-Apache--2.0-C21325)](LICENSE)
 [![CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/badge/Version-v1.2.0-blue)](RELEASE-NOTES.md)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-brightgreen)](scripts/setup-macos.sh)
+[![Node](https://img.shields.io/badge/Node-%3E%3D20.11-success)](package.json)
 
-DeepSeek Harness (DSH) 高性能 Gitea 代码与文档全文检索 MCP 插件。
+DeepSeek Harness (DSH) 高性能跨仓 Git 代码检索与文档/历史会话全文检索 MCP 插件。
 
 > SPDX-License-Identifier: Apache-2.0
 
-## 特性
+---
 
-- **毫秒级文档与历史会话检索**：基于 SQLite FTS5 引擎与 Jieba 中文分词，支持 BM25 智能加权与类型软分区（`doc`, `session`, `config`, `script`），完整索引用户提问与助手回复正文。
-- **极速代码搜索与智能多词回退**：支持全分支内容、文件路径、提交信息的毫秒级 `git grep` 检索；当多词短语字面量连写 0 命中时，自动回退为「同行多词 AND」检索（`--and`）。
-- **低开销增量索引**：内置 `head_commit` 变更门控，未发生提交的仓库自动跳过遍历，日常增量扫描耗时压至 1 秒级。
-- **安全四层护栏与行窗口**：严格防范单行溢出（2000B）、总体缓冲区溢出（128KB）、默认返回 5 条命中、`read_gitea_file` 默认 400 行窗口与 UTF-8 字符跨块截断乱码（U+FFFD）。
-- **多主体自适应**：支持按 Token 自适应探测可访问仓库，或显式指定多租户 `GITEA_OWNERS` 白名单。
-- **细粒度会话归档**：配套 `session-export-incremental.py` 会话增量导出工具（支持 v1~v4，完整提取用户消息与助手文本块并跳过思维链，基于 `os.scandir(follow_symlinks=False)` 防软链环死循环），单会话独立文件，精准追踪历史故障排查记录。
+## 核心特性
 
-- **耗时与磁盘 I/O 自动监测与阈值判定**：内置 `IoTracker` 与 `evaluate_perf_budget`（采集墙钟耗时、CPU 时间、`/proc/self/io` 的 `rchar`/`wchar`/`read_bytes`/`write_bytes`/`syscr`/`syscw`），落盘 `state/perf-metrics.jsonl` 并自动判定 `OK` / `WARN` / `CRITICAL`。
-- **宿主 DSH 会话存储代数预检与无损迁移（零修改 DSH 官方代码）**：提供 `scripts/dsh-session-health.mjs`（`--check` / `--fix`）与 `gts --doctor`，在安装期与运行期主动识别旧版（`< v4`）会话文件、`session-query.sqlite` 长 `revision`、WAL 膨胀（>32MB 自动在线 `wal_checkpoint(TRUNCATE)`）及 `node_modules/.pnpm` 软链环风险，防止 `historicalCorpusRevision` 冷迁移风暴。
+- **毫秒级文档与历史会话全文检索**：基于 SQLite FTS5 引擎与 Jieba 中文分词，支持 BM25 智能相关度加权与多类型软分区（`doc`、`session`、`config`、`script`），精准索引用户提问与助手回复正文，彻底解决大模型内置检索在多词与中文语义下的匹配难题。
+- **全分支代码检索与同行相交智能回退**：基于裸镜像（Bare Mirrors）执行高效 `git grep`，覆盖全部仓库与所有本地分支；当多词短语字面量连写 0 命中时，自动触发「同行多词 AND」（`--and`）回退匹配。
+- **Zero-Gitea 本地单机快速启动**（v1.2.0 新增）：内置 `quickstart-local.sh`，零服务端依赖，支持一键将本地任意普通 Git 仓库目录扫描并转化为 MCP 镜像，实现本地开箱即用。
+- **原生 macOS 与 BSD 跨平台兼容 (PR #2)**（v1.2.0 新增）：配套 `setup-macos.sh`，原生兼容 macOS 默认 Bash 3.2、Homebrew 环境、BSD `stat`/`awk` 以及非 GNU `timeout` 管道防阻塞机制。
+- **Node.js 跨版本优雅降级**（v1.2.0 新增）：优先适配 Node.js 22.15+ LTS 原生 `node:sqlite` 与 `zlib.zstdCompressSync`；在 Node.js `20.11 ~ 22.14` 环境下自动降级调用系统 `sqlite3` 与 `zstd` CLI，杜绝运行期模块崩溃。
+- **多途径配置自动化 (`config.json`)**（v1.2.0 新增）：支持无需注入复杂环境变量，直接在工作目录读取 `config.json` 自动解析，同时完全向前兼容 `GITEA_*` 与 `GITQ_*` 环境变量规范。
+- **Agent 上下文安全四层护栏**：严格防范单行长文本溢出（2000B）、总体搜索缓冲区溢出（128KB）、默认返回 Top 5 结果（硬上限 200 条）、`read_gitea_file` 默认 400 行窗口及 UTF-8 跨数据包拼接防乱码机制。
+- **宿主会话存储代数预检与无损维护**：配套 `dsh-session-health.mjs`，主动识别 DSH `< v4` 旧版会话、`session-query.sqlite` 长 revision 与 WAL 膨胀（>32MB 在线截断），保障长效运行稳定。
+
+---
 
 ## 目录结构
 
 ```text
 dsh-gitea-search/
 ├── bin/
-│   ├── gts                   # CLI 命令行检索工具（兼容别名 dsh-search / gitq）
-│   └── mcp-server            # MCP Server 启动入口
+│   ├── gts                   # CLI 命令行检索引擎（兼具代码与 FTS5 全文搜索）
+│   └── mcp-server            # 标准 MCP Server 启动入口
 ├── lib/
-│   ├── indexer.py            # FTS5 + Jieba 索引、搜索与 I/O 监测核心
-│   └── server.mjs            # MCP Server 标准实现（含慢调用监测）
+│   ├── indexer.py            # FTS5 + Jieba 索引、搜索核心与 I/O 遥测
+│   └── server.mjs            # MCP Server 实现（含四层安全护栏与 config.json 自动解析）
 ├── scripts/
-│   ├── setup.sh                        # 一键环境检查、依赖预检与宿主会话健康检查
-│   ├── dsh-session-health.mjs          # DSH 会话存储代数 (v1~v4) 与 SQLite 索引预检/无损修复工具
-│   ├── sync.sh                         # Gitea 裸镜像并发同步（支持 API/SSH 双通道与自动增量索引）
-│   ├── probe-stdio.mjs                 # MCP stdio 自动化测试探针
-│   ├── respawn-mcp.sh                  # MCP 进程安全平滑重启脚本
-│   ├── session-export-incremental.py   # DSH 会话 per-session 增量导出器（含 <v4 会话与 I/O 监测）
-│   ├── run-e2e-test.sh                 # 自建合成测试集端到端验收脚本（28 项断言）
-│   └── run-realdata-test.sh            # 真实镜像与真实会话全链路验收脚本（34 项断言）
-├── MANUAL.md                           # 正式部署与运维手册
-└── config.example.json                 # 配置示例模板
+│   ├── quickstart-local.sh             # [新] Zero-Gitea 本地免服务快速启动体验脚本
+│   ├── setup-macos.sh                  # [新] macOS / BSD 平台一键环境安装与兼容脚本 (PR #2)
+│   ├── setup.sh                        # Linux 环境一键依赖预检与安装脚本
+│   ├── sync.sh                         # Gitea 镜像并发同步脚本（支持 API/SSH 双通道与增量索引）
+│   ├── dsh-session-health.mjs          # DSH 会话存储代数诊断与 WAL 在线优化工具
+│   ├── respawn-mcp.sh                  # MCP 进程平滑重载运维脚本
+│   ├── probe-stdio.mjs                 # MCP stdio 协议自动化测试探针
+│   ├── session-export-incremental.py   # DSH 历史会话增量导出器（过滤思维链，防软链环）
+│   ├── run-e2e-test.sh                 # 自建合成测试集端到端测试（32 项完整断言）
+│   └── run-realdata-test.sh            # 真实大规模镜像与生产会话全链路验收脚本
+├── config.example.json                 # 配置文件模板
+├── CONTRIBUTING.md                     # 开源社区贡献规范与双向同步准则
+├── CHANGELOG.md                        # 版本演进详细变更记录
+├── RELEASE-NOTES.md                    # 发版说明与更新摘要
+├── MANUAL.md                           # 生产部署、配置与运维排障完整手册
+└── WIKI.md                             # 架构设计取舍、排坑实录与反直觉事实归档
 ```
+
+---
 
 ## 快速上手
 
-### 1. 环境准备
+### 模式 A：Zero-Gitea 本地单机快速体验（零外部服务）
 
-- **运行时要求**：
-  - **Node.js `>= 20.11`**（推荐 `v22.15+` LTS：原生内置 `node:sqlite` 与 `zlib.zstdCompressSync`；在 `v20.11 ~ v22.14` 环境下，`dsh-session-health.mjs` 会自动回退调用系统 `sqlite3` 与 `zstd` CLI，不会发生模块加载崩溃）。
-  - **Python 3**（`>= 3.10`）+ `jieba` + 带 **FTS5** 扩展的 `sqlite3` + `git`。
+无需搭建 Gitea 服务或配置 SSH 密钥，只要本地有任意一个或多个 Git 仓库，即可一键体验：
 
 ```bash
-bash scripts/setup.sh
+# 自动扫描指定目录下的 Git 仓库并构建 MCP 镜像环境
+bash scripts/quickstart-local.sh /path/to/your/git-projects
 ```
 
-### 2. 构建/更新索引
+启动后会生成本地镜像目录、构建 FTS5 倒排索引，并打印可直接接入 DSH 的配置片段。
+
+---
+
+### 模式 B：标准部署（连接 Gitea / Gitorca 远端镜像）
+
+#### 1. 环境准备与依赖安装
+
+- **运行要求**：
+  - **Node.js `>= 20.11.0`**（推荐 Node.js `22.15+` LTS；低版本自动降级 CLI）。
+  - **Python 3 (`>= 3.10`)** + `jieba` + 支持 FTS5 的 `sqlite3` + `git`。
+
 ```bash
-# 增量更新 FTS5 索引（未变更仓毫秒级跳过）
+# Linux (Debian / Ubuntu / RHEL)
+bash scripts/setup.sh
+
+# macOS (自动通过 Homebrew 补齐依赖并处理 Bash 3.2 兼容)
+bash scripts/setup-macos.sh
+```
+
+#### 2. 构建与增量刷新索引
+
+```bash
+# 增量构建 FTS5 索引（未变更仓库毫秒级跳过）
 python3 lib/indexer.py --build
 
-# 查看索引库状态
+# 查看索引库统计数据
 python3 lib/indexer.py --stats
 ```
 
-### 3. 命令行检索 (CLI)
+#### 3. 命令行体验 (CLI)
+
 ```bash
-# FTS5 全文检索文档与会话
+# FTS5 全文搜索文档、设计稿与历史会话
 bin/gts -D "沙盒机制"
 
-# 按内容类型过滤检索配置或脚本
+# 按分类过滤配置与运维脚本
 bin/gts -D --kind config,script "caddy"
 
-# 跨镜像全量仓库检索源码
+# 跨所有镜像仓库毫秒级搜索源码
 bin/gts "function handleGetData"
 ```
 
-### 4. 接入 DSH MCP
+---
 
-在 DSH 的 profile patch（`cordis.patch.yml`）中插入一条 `@deepseek-ai/dsh-mcp-client` 条目。
+## 接入 DeepSeek Harness (DSH)
 
-> ⚠️ **配置格式（实测，勿凭记忆写）**
-> `cordis.patch.yml` 的顶层**必须是 YAML 数组**，每项是一个 loader patch。
-> `dsh-mcp-client` 的 `config` 是**单个 MCP 实例的扁平配置**，按 `transport` 字段区分
-> stdio / streamable-http（`serverName` + `command` + `args` …），**没有 `servers` 这一层**。
-> 写成顶层 `mcpServers:` 或 `plugins: → servers:` 映射都会在启动时被拒：
-> `overlay ... must be a top-level YAML array of loader patch entries`。
+在 DSH 的配置文件 `cordis.patch.yml` 中添加如下插件配置（顶层必须是 YAML 数组，且 `transport: stdio` 必填）：
+
+### 方式 1：通过环境变量配置（标准推荐）
 
 ```yaml
 # ~/.dsh/profiles/<profile>/cordis.patch.yml
@@ -93,40 +125,40 @@ bin/gts "function handleGetData"
       name: '@deepseek-ai/dsh-mcp-client'
       config:
         serverName: gitea_search          # 工具名形如 mcp__gitea_search__search_gitea_docs
-        transport: stdio                  # 必填；缺失则 transport 解析为 undefined、连接必崩
+        transport: stdio                  # 必填项，省略会导致连接失败
         command: node
-        args: ["/path/to/dsh-gitea-search/lib/server.mjs"]
-        cwd: /path/to/dsh-gitea-search
+        args: ["/opt/dsh-gitea-search/lib/server.mjs"]
+        cwd: /opt/dsh-gitea-search
         env:
-          GITEA_MIRROR_ROOT: /data/gitea-mirror
-          GITEA_OWNERS: "my-org,my-user"
+          GITEA_MIRROR_ROOT: "/srv/gitea-mirror"
+          GITEA_OWNERS: "my-org,my-team"
 ```
 
-要点：
+> **兼容说明**：系统完全兼容 `GITQ_MIRROR_ROOT` / `GITQ_OWNER` 等历史变量及 `serverName: gitorca_search`。
 
-- `transport` **必须显式写**（`stdio` 或 `streamable-http`）。省略不会被 schema 拒绝，但会得到
-  `transport === undefined`，在连接阶段失败——这是最常见的「配置看着没问题却连不上」。
-- `serverName` 决定工具名前缀，需匹配 `[A-Za-z0-9_-]{1,32}` 且在同一 scope 内唯一。
-- 一个 MCP Server 对应一条实例；接多个 Server 就重复插入多条（各自 `id` / `serverName` 不同）。
-- 改完 `cordis.patch.yml` 后：未禁用 `hmr` 的实例 `touch` 即热生效；若已禁用 `hmr`，需重启
-  `dsh.service`。仅更新 `lib/server.mjs` 代码时可用 `bash scripts/respawn-mcp.sh` 平滑热替换子进程。
+### 方式 2：通过 `config.json` 配置文件
 
-验证接线是否成功（打印合成后的 entry tree，不启动服务）：
+在插件根目录下创建 `config.json`（参考 `config.example.json`）：
 
-```bash
-dsh --profile <profile> --dump-config | grep -A12 mcp-gitea-search
+```json
+{
+  "mirrorRoot": "/srv/gitea-mirror",
+  "owners": ["my-org", "my-team"],
+  "enumSource": "auto",
+  "apiBase": "https://git.example.com"
+}
 ```
 
-更多部署细节见 [`MANUAL.md §4.2`](MANUAL.md)。
+此时 `cordis.patch.yml` 中的 `env` 项可完全省略，`server.mjs` 会自动向上查找并加载配置。
 
-## 使用示例与 Agent 交互实测
+---
 
-### 1. Agent 工具调用场景（MCP Tool Call）
+## Agent 工具调用实测场景
 
-当用户在 DSH 会话中向 Agent 询问跨仓源码或历史排障经验时，Agent 会按需自动发起 MCP 工具调用：
+配置接入后，Agent 会按需自动发起 MCP 工具调用：
 
-#### 场景 A：排查历史会话与架构决策（`search_gitea_docs`）
-- **用户 Prompt**：“查一下之前我们在测试环境中排查 Caddy 证书与沙盒机制兼容性时的结论”
+### 场景 1：排查历史故障与架构决策 (`search_gitea_docs`)
+- **用户 Prompt**：“查一下之前关于 Caddy 证书续期失败与沙盒隔离机制的讨论和排障记录”
 - **Agent Tool Call**：
   ```json
   {
@@ -137,16 +169,16 @@ dsh --profile <profile> --dump-config | grep -A12 mcp-gitea-search
     }
   }
   ```
-- **返回结果摘要**（内置 FTS5 BM25 智能加权，毫秒级响应）：
+- **返回结果**（FTS5 BM25 毫秒级命中并返回带高亮的上下文）：
   ```text
-  [dsh-session-archive@main] sessions/session-env-arch.md (DSH 会话: session-arch01)
-    ...**user**: 请排查 Caddy 证书自动续期与沙盒机制的兼容性问题。
-    ...**assistant**: 已核查 cpm-deploy-guide 中的 docker-compose.yml，证书续期工作正常。
+  [dsh-session-archive@main] sessions/session-20261022.md (DSH 会话归档)
+    ...**user**: 请排查 Caddy 证书自动续期在沙盒模式下的只读报错。
+    ...**assistant**: 经定位，沙盒只读挂载了 /etc/caddy，已在 docker-compose 中挂载独立证书卷修复。
   —— 命中 1 篇文档（FTS5 相关度排序）
   ```
 
-#### 场景 B：跨仓定位微服务配置（`search_gitea`）
-- **用户 Prompt**：“搜索所有仓库里关于 cpm-panel 服务的 docker-compose 配置”
+### 场景 2：跨全量仓库定位配置与微服务 (`search_gitea`)
+- **用户 Prompt**：“查找所有包含 cpm-panel 镜像的 docker-compose 编排”
 - **Agent Tool Call**：
   ```json
   {
@@ -157,13 +189,13 @@ dsh --profile <profile> --dump-config | grep -A12 mcp-gitea-search
     }
   }
   ```
-- **返回结果摘要**（多词连写 0 命中时自动回退同行多词 AND）：
+- **返回结果**（多词连写 0 命中时自动回退同行多词 AND）：
   ```text
   cpm-deploy-guide:deploy/docker-compose.yml:4:    image: registry.local/cpm-panel:v2.4.0
   —— 命中 1 行 / 1 仓
   ```
 
-#### 场景 C：按行窗口读取目标文件（`read_gitea_file`）
+### 场景 3：受控安全读取目标文件 (`read_gitea_file`)
 - **Agent Tool Call**：
   ```json
   {
@@ -176,28 +208,32 @@ dsh --profile <profile> --dump-config | grep -A12 mcp-gitea-search
     }
   }
   ```
-- **返回结果**（受 400 行与 60KB 护栏保护，避免单次返回过大冲垮 Agent 上下文）：
-  ```yaml
-  version: "3.9"
-  services:
-    cpm-panel:
-      image: registry.local/cpm-panel:v2.4.0
-      restart: always
-      ports:
-        - "127.0.0.1:8080:8080"
-  ```
+- **返回结果**（受 400 行与 60KB 护栏保护，避免单次返回巨量数据破坏 Agent 上下文）。
 
-### 2. 命令行 (CLI) 终端效果
+---
 
-在服务器终端中直接使用 `gts` 检索：
+## 质量保障与自动化测试
+
+本项目内置完善的自动化回归测试体系，并在 GitHub Actions CI 中对 Node 20 / 22 及 Python 3.11-3.13 运行多矩阵验证：
+
 ```bash
-$ gts -D "沙盒机制"
-[ops-infra-runbook@main] README.md (核心基础设施运维手册)
-  ...1. **【沙盒】【机制】与权限隔离**：在 danger-full-access 之外的模式中，通过只读挂载保护宿主机配置...
-
-[cpm-deploy-guide@main] README.md (CPM 部署与证书排障指南)
-  ...当遇到 Caddy 证书续期失败或 503 错误时，请先检查 deploy/docker-compose.yml...
-—— 命中 2 篇文档（FTS5 相关度排序）
+# 运行完整的自建合成测试集（共 32 项自动化断言）
+bash scripts/run-e2e-test.sh
 ```
 
-完整运维手册见 [`MANUAL.md`](MANUAL.md)。
+- **Phase 1**：FTS5 首次建库与四表一致性校验
+- **Phase 2**：增量索引与 `head_commit` 毫秒级跳过
+- **Phase 3**：CLI `gts` 检索模式与多词 AND 回退验证
+- **Phase 4**：MCP stdio 四工具协议调用与输出护栏拦截
+- **Phase 5**：`config.json` 自动寻径与 Zero-Gitea 本地快速启动测试
+
+---
+
+## 开源治理与贡献
+
+本项目采用 Apache-2.0 许可证，欢迎社区开发者提交 Issue、反馈与 Pull Request！
+详细的本地开发测试指引与双向同步准则请查阅 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
+
+- 完整部署与运维手册：[`MANUAL.md`](MANUAL.md)
+- 版本历史与变更日志：[`CHANGELOG.md`](CHANGELOG.md)
+- 发版说明：[`RELEASE-NOTES.md`](RELEASE-NOTES.md)
