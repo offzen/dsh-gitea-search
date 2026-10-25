@@ -334,9 +334,15 @@ if [ "$DEGRADED" = 1 ]; then
 fi
 
 # 增量刷新 SQLite FTS5 索引（文档与导出会话全文检索）
-INDEXER="$(dirname "$(readlink -f "$0")")/indexer.py"
-if [ -x "$INDEXER" ]; then
+# 注意：索引核心在 ../lib/indexer.py（本脚本在 scripts/ 下），不是同目录。
+# 早先写成 "$(dirname ...)/indexer.py" 指向不存在的 scripts/indexer.py，
+# 使 [ -x ] 恒假 —— 自动增量索引从未执行过（已由 e2e 断言复现）。
+# 用 -f 而非 -x 判定：git checkout 不带可执行位时同样要能跑，反正下面用 python3 调用。
+INDEXER="$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/../lib/indexer.py"
+if [ -f "$INDEXER" ]; then
   python3 "$INDEXER" --build >/dev/null 2>&1 || true
+else
+  log "WARN 未找到索引核心 $INDEXER，本轮跳过增量索引"
 fi
 
 [ "$fail" -gt 0 ] && exit 1

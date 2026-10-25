@@ -34,7 +34,7 @@
 | CLI | `/usr/local/bin/gts`（软链，兼容 `dsh-search`/`gitq`） | `bin/gts` | **git grep + FTS5 检索引擎**（`--reindex`/`--fts-stats`/`-D`） |
 | 索引核心 | `lib/indexer.py` | `lib/indexer.py` | FTS5 + Jieba 索引构建与检索（`BlobReader` + `doc_rowid`） |
 | MCP 服务 | `~/gitea-search/server.mjs` | `lib/server.mjs` | 暴露 4 个 MCP 工具 |
-| MCP 启动器 | `.../bin/mcp-server` 或 `.../bin/mcp-server-gitea-search` | `bin/mcp-server` | 给 `@deepseek-ai/dsh-mcp-client` 用的入口 |
+| MCP 启动器 | `.../bin/mcp-server`（`bin/mcp-server-gitea-search` 是 `setup.sh` 建的软链） | `bin/mcp-server` | 给 `@deepseek-ai/dsh-mcp-client` 用的入口 |
 
 ### 2.2 依赖的软件
 
@@ -119,24 +119,14 @@ node scripts/dsh-session-health.mjs --fix --dsh-home ~/.dsh
 GITEA_MIRROR_ROOT="/srv/gitea-mirror" GITEA_OWNERS="myorg" node scripts/probe-stdio.mjs
 ```
 
-### 4.2 DSH profile 接线（两种写法）
+### 4.2 DSH profile 接线（唯一正确写法）
 
-**写法 A（推荐，`cordis.patch.yml` 的 `plugins` 下挂 `servers`）**：
-
-```yaml
-plugins:
-  "@deepseek-ai/dsh-mcp-client":
-    servers:
-      gitea_search:                        # serverName
-        command: node
-        args: ["/path/to/dsh-gitea-search/lib/server.mjs"]
-        env:
-          GITEA_MIRROR_ROOT: /srv/gitea-mirror
-          GITEA_OWNERS: myorg
-        enabled: true
-```
-
-**写法 B（legacy `- insert` 形式）**：
+> ⚠️ **格式已核实（实测，勿凭记忆写）**
+> `cordis.patch.yml` 的顶层**必须是 YAML 数组**，每项是一个 loader patch。
+> `dsh-mcp-client` 的 `config` 是**单个 MCP 实例的扁平配置**，按 `transport` 区分
+> stdio / streamable-http（`serverName` + `command` + `args` …），**没有 `servers` 这一层**。
+> 写成 `plugins: → servers:` 映射会在启动时被拒：
+> `overlay ... must be a top-level YAML array of loader patch entries`。
 
 ```yaml
 - insert:
@@ -144,12 +134,30 @@ plugins:
       name: '@deepseek-ai/dsh-mcp-client'
       config:
         serverName: gitea_search
-        transport: stdio
-        command: /path/to/dsh-gitea-search/bin/mcp-server-gitea-search
+        transport: stdio          # 必填；缺失不会被 schema 拒绝，但连接阶段必崩
+        command: node
+        args: ["/path/to/dsh-gitea-search/lib/server.mjs"]
         cwd: /path/to/dsh-gitea-search
         env:
           GITEA_MIRROR_ROOT: /srv/gitea-mirror
           GITEA_OWNERS: myorg
+```
+
+`transport` 必须显式写。省略时 schema 校验仍会通过，但 `transport` 解析为 `undefined`，
+`createTransport()` 返回 `undefined`，在连接阶段失败——这是最常见的「配置看着没问题却连不上」。
+
+**关于 `command` 的路径**：`bin/mcp-server-gitea-search` 是 `setup.sh` 建出的软链
+（见 §2.1 / `scripts/setup.sh`），**仓内只有 `bin/mcp-server`**。没跑过 `setup.sh` 的环境
+请直接写 `bin/mcp-server`，或用 `node` + `lib/server.mjs`（如上，最不依赖软链）：
+
+```yaml
+        command: /path/to/dsh-gitea-search/bin/mcp-server    # 等价于 node lib/server.mjs
+```
+
+接线后先自检（只打印合成后的 entry tree，不启动服务）：
+
+```bash
+dsh --profile <profile> --dump-config | grep -A12 mcp-gitea-search
 ```
 
 加载：`dsh-mcp-client` 启动时自动拉起子进程。修改 `cordis.patch.yml` 后需重启 DSH 服务生效；仅更新 `server.mjs` 代码时可直接运行 `bash scripts/respawn-mcp.sh` 平滑热替换 MCP 子进程。
