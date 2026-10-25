@@ -1,14 +1,14 @@
 {
   "schema": 1,
   "package": "dsh-gitea-search",
-  "generated_at": "2026-10-25T20:56:07+08:00",
+  "generated_at": "2026-10-25T21:41:19+08:00",
   "publisher": "sanitized single-commit snapshot (push-private.sh --publish)",
-  "source_commit": "166c3b517cbfb3e59b544da952f01cf4cf1956de",
+  "source_commit": "34d61c9b3358bf3c1dbfd0c801042a54e5ddbf1e",
   "source": "private upstream repository (name withheld)",
   "note": "Derived, sanitized snapshot. Single commit, no history. Do not edit; fix the source repo and republish.",
   "file_count": 22,
   "files": {
-    ".github/workflows/ci.yml": "6e139166f53973cc6d8802fe72cad2ec4b574567fbc86a75926819ebc623ed46",
+    ".github/workflows/ci.yml": "4d82e9fa1d88543b9c898bbc0b7adb250f569753c1a809f5963144bdb17d279e",
     ".gitignore": "563fd31e33daf024339d316bd77f2c1e6d58f4707ca459d2323a3bd866713314",
     "CHANGELOG.md": "81c1e031e8becc9206265780a9447b89ea72741eae8a633be669ffee8ee36e16",
     "LICENSE": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b",

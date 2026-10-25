@@ -9,21 +9,26 @@ on:
 
 jobs:
   test:
-    name: E2E Test Suite (Ubuntu)
+    name: E2E Test Suite (Ubuntu, py${{ matrix.python }}, node${{ matrix.node }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+        node: ['20', '22']
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python ${{ matrix.python }}
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python }}
 
-      - name: Set up Node.js 22
+      - name: Set up Node.js ${{ matrix.node }}
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ matrix.node }}
 
       - name: Install System Dependencies
         run: |
@@ -37,4 +42,6 @@ jobs:
 
       - name: Run E2E Test Suite
         run: |
+          python3 -V
+          node -v
           bash scripts/run-e2e-test.sh /tmp/gts-ci-testbed
