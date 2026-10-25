@@ -24,3 +24,5 @@ secrets/
 *.token
 .s3cfg
 node_modules/
+.venv
+mirror/
