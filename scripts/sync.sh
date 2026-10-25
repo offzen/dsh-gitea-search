@@ -71,6 +71,7 @@ export GIT_TERMINAL_PROMPT=0
 export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=8 -o ServerAliveInterval=15 -o ServerAliveCountMax=3"
 
 QUIET=0; LIST_ONLY=0; ONLY=(); DEGRADED=0
+repos=()
 while [ $# -gt 0 ]; do
   case "$1" in
     -q|--quiet) QUIET=1; shift ;;
@@ -82,6 +83,22 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# 兼容 bash 3.2（macOS 自带）：无 mapfile
+_fill_repos() { repos=(); while IFS= read -r _lr; do [ -n "$_lr" ] && repos+=("$_lr"); done; }
+# 兼容无 GNU timeout 的环境（如 macOS）：自带软超时封装
+if ! command -v timeout >/dev/null 2>&1; then
+  timeout() {
+    local secs="$1"; shift
+    "$@" &
+    local pid=$!
+    ( sleep "$secs"; kill -9 "$pid" 2>/dev/null ) &
+    local watcher=$!
+    local rc=0
+    wait "$pid"; rc=$?
+    kill "$watcher" 2>/dev/null
+    return $rc
+  }
+fi
 say() { [ "$QUIET" = 1 ] || echo "$@"; }
 log() { echo "$(date '+%F %T') [$HOST] $*" >> "$LOG"; }
 
@@ -152,7 +169,7 @@ try_enum() {
   local fn=$1 label=$2 got
   got=$("$fn" 2>/dev/null)
   [ -n "$got" ] || return 1
-  mapfile -t repos < <(printf '%s\n' "$got")
+  _fill_repos <<< "$got"
   [ ${#repos[@]} -gt 0 ] || return 1
   ENUM_SOURCE=$label
   if [ "$label" = api ] || [ "$label" = ssh ]; then
@@ -200,7 +217,7 @@ resolve_repos() {
   log "WARN 枚举失败，退回本地镜像目录"
   DEGRADED=1
   ENUM_SOURCE=disk
-  mapfile -t repos < <(list_from_disk)
+  _fill_repos <<< "$(list_from_disk)"
   [ ${#repos[@]} -gt 0 ]
 }
 
@@ -208,12 +225,12 @@ if [ ${#ONLY[@]} -gt 0 ]; then
   repos=("${ONLY[@]}")
   ENUM_SOURCE=only
 elif [ "$LIST_ONLY" = 1 ]; then
-  resolve_repos || mapfile -t repos < <(list_from_disk)
-  printf '%s\n' "${repos[@]}"
+  resolve_repos || _fill_repos <<< "$(list_from_disk)"
+  printf '%s\n' "${repos[@]+"${repos[@]}"}"
   exit 0
 else
   if ! resolve_repos; then
-    mapfile -t repos < <(list_from_disk)
+    _fill_repos <<< "$(list_from_disk)"
   fi
 fi
 [ ${#repos[@]} -eq 0 ] && { echo "没有可同步的仓" >&2; exit 1; }
@@ -282,7 +299,7 @@ fail=0
 # cron 一旦重叠（无锁时真发生过）两轮会互相覆盖这个文件，ok/fail 计数与日志都会串。
 OUT=$(mktemp "$ROOT/.sync.out.XXXXXX")
 trap 'rm -f "$OUT"' EXIT
-printf '%s\n' "${repos[@]}" | xargs -P "$JOBS" -I{} bash -c 'sync_one "$@"' _ {} > "$OUT" 2>&1
+printf '%s\n' "${repos[@]+"${repos[@]}"}" | xargs -P "$JOBS" -I{} bash -c 'sync_one "$@"' _ {} > "$OUT" 2>&1
 fail=$(grep -c '^FAIL' "$OUT" 2>/dev/null || true)
 ok=$(grep -c '^ok' "$OUT" 2>/dev/null || true)
 
