@@ -3,16 +3,18 @@
   "package": "dsh-gitea-search",
   "generated_at": "2026-10-23T11:28:39+08:00",
   "publisher": "sanitized single-commit snapshot (push-private.sh --publish)",
-  "source_commit": "6d17fb437aa4ec5b2189df58eb71633d14fb7015",
+  "source_commit": "d6e102dbe8ba9d87951876f4bb83671d83aaf5d1",
   "source": "private upstream repository (name withheld)",
   "note": "Derived, sanitized snapshot. Single commit, no history. Do not edit; fix the source repo and republish.",
-  "file_count": 19,
+  "file_count": 22,
   "files": {
     ".github/workflows/ci.yml": "6e139166f53973cc6d8802fe72cad2ec4b574567fbc86a75926819ebc623ed46",
-    ".gitignore": "a98adc86fa73c1db1df9f72952aa4689053e2b9b2f7c8bed113cedf2bcc0ba8e",
+    ".gitignore": "f2d5eac607ce25957c8abe6e63732e7c554225d2801109ad1f32078f290c8485",
+    "CHANGELOG.md": "81c1e031e8becc9206265780a9447b89ea72741eae8a633be669ffee8ee36e16",
     "LICENSE": "283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b",
     "MANUAL.md": "cb2ad2b5590e2abfa2dd6d72788e9b6267f5d515bb8f814912421ac4750e7ac6",
-    "README.md": "ed4bc99612047a6ebf0258c75aeff97cf84d1046c377af254d2c752c92811afe",
+    "README.md": "a86b9e5f9cad8aa2f755b32ba6d7797fd1e8440f7db05d47c8d6fb1460de2d30",
+    "RELEASE_NOTE.md": "6b76ba2a69ca13ab4bcb006c485c9b2749222c77925e268aadb0fd75e6345b0a",
     "bin/gts": "62167af5bac6a2cbe3ef6a1ed30abee682ea287bb597f8fac7ac52707ed3e311",
     "bin/mcp-server": "680bf62b0f44e1be3764af0248fd9edcd3b1d994c3ac2a12e5d4a91604502caa",
     "config.example.json": "3d0be6424cde2e5700896cfda5ac87b00bc3442ad81b2afd9582322d29037161",
@@ -25,7 +27,8 @@
     "scripts/run-e2e-test.sh": "8cb46fb1e867fecea1ca6effd5c96f72956c87f63912305a0c0955aa56a7f7d4",
     "scripts/run-realdata-test.sh": "0517bbaf4f807b2cfe97c3437c9852f09ff58f87fb43a01bf7756cd60b626a6e",
     "scripts/session-export-incremental.py": "ba36f3d89c33b5fc64e4aec3acb4c698efb5c01374de05f31adb8711a0e2970f",
+    "scripts/setup-macos.sh": "f85e8b394fb20fb7eba9af68211b47fba08c777e17acd1fc3947e9e2b1725d07",
     "scripts/setup.sh": "faa70f22328e85c4433a304fa9f4475d5a576af460eb2f3db98ee8ec85cbf8d5",
-    "scripts/sync.sh": "405e5d13bcd6734baead2f7f338257ff0ef306fbfdf5a4a85fd348fe8a7ed2ce"
+    "scripts/sync.sh": "a312fba7911ed9ab614e98748847771c5aa741291d365ca49b6d883778014703"
   }
 }
