@@ -71,6 +71,7 @@ export GIT_TERMINAL_PROMPT=0
 export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=8 -o ServerAliveInterval=15 -o ServerAliveCountMax=3"
 
 QUIET=0; LIST_ONLY=0; ONLY=(); DEGRADED=0
+repos=()
 while [ $# -gt 0 ]; do
   case "$1" in
     -q|--quiet) QUIET=1; shift ;;
@@ -82,6 +83,31 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# 兼容 bash 3.2（macOS 自带）：无 mapfile
+_fill_repos() { repos=(); while IFS= read -r _lr; do [ -n "$_lr" ] && repos+=("$_lr"); done; }
+# 兼容无 GNU timeout 的环境（如 macOS）：自带软超时封装
+# 注意：watcher 子 shell 必须重定向 >/dev/null 2>&1 </dev/null 并在 trap 中终止内部 sleep，
+# 否则在 out=$(timeout 30 curl ...) 命令替换中 sleep 会继承 stdout 管道写端导致每次死等满 30s。
+if ! command -v timeout >/dev/null 2>&1; then
+  timeout() {
+    local secs="$1"; shift
+    "$@" &
+    local pid=$!
+    (
+      trap 'kill -TERM "$spid" 2>/dev/null || true; exit 0' TERM INT
+      sleep "$secs" >/dev/null 2>&1 &
+      spid=$!
+      wait "$spid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
+    ) >/dev/null 2>&1 </dev/null &
+    local watcher=$!
+    local rc=0
+    wait "$pid" 2>/dev/null || rc=$?
+    kill -TERM "$watcher" 2>/dev/null || true
+    wait "$watcher" 2>/dev/null || true
+    return $rc
+  }
+  export -f timeout
+fi
 say() { [ "$QUIET" = 1 ] || echo "$@"; }
 log() { echo "$(date '+%F %T') [$HOST] $*" >> "$LOG"; }
 
@@ -152,7 +178,7 @@ try_enum() {
   local fn=$1 label=$2 got
   got=$("$fn" 2>/dev/null)
   [ -n "$got" ] || return 1
-  mapfile -t repos < <(printf '%s\n' "$got")
+  _fill_repos <<< "$got"
   [ ${#repos[@]} -gt 0 ] || return 1
   ENUM_SOURCE=$label
   if [ "$label" = api ] || [ "$label" = ssh ]; then
@@ -179,8 +205,9 @@ resolve_repos() {
   done
   # 两路都不可达 → 先试缓存（救急），再退本地磁盘
   if try_enum list_from_cache cache; then
-    local age_h
-    age_h=$(awk -v m="$(stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0)" 'BEGIN{printf "%d",(systime()-m)/3600}' 2>/dev/null)
+    local age_h c_mtime
+    c_mtime=$(stat -c %Y "$CACHE_FILE" 2>/dev/null || stat -f %m "$CACHE_FILE" 2>/dev/null || echo 0)
+    age_h=$(awk -v m="$c_mtime" -v now="$(date +%s)" 'BEGIN{printf "%d",(now-m)/3600}' 2>/dev/null)
     age_h=${age_h:-0}
     if [ "$age_h" -gt "$CACHE_MAXAGE_H" ]; then
       CACHE_STALE=1
@@ -200,7 +227,7 @@ resolve_repos() {
   log "WARN 枚举失败，退回本地镜像目录"
   DEGRADED=1
   ENUM_SOURCE=disk
-  mapfile -t repos < <(list_from_disk)
+  _fill_repos <<< "$(list_from_disk)"
   [ ${#repos[@]} -gt 0 ]
 }
 
@@ -208,12 +235,12 @@ if [ ${#ONLY[@]} -gt 0 ]; then
   repos=("${ONLY[@]}")
   ENUM_SOURCE=only
 elif [ "$LIST_ONLY" = 1 ]; then
-  resolve_repos || mapfile -t repos < <(list_from_disk)
-  printf '%s\n' "${repos[@]}"
+  resolve_repos || _fill_repos <<< "$(list_from_disk)"
+  printf '%s\n' "${repos[@]+"${repos[@]}"}"
   exit 0
 else
   if ! resolve_repos; then
-    mapfile -t repos < <(list_from_disk)
+    _fill_repos <<< "$(list_from_disk)"
   fi
 fi
 [ ${#repos[@]} -eq 0 ] && { echo "没有可同步的仓" >&2; exit 1; }
@@ -282,7 +309,7 @@ fail=0
 # cron 一旦重叠（无锁时真发生过）两轮会互相覆盖这个文件，ok/fail 计数与日志都会串。
 OUT=$(mktemp "$ROOT/.sync.out.XXXXXX")
 trap 'rm -f "$OUT"' EXIT
-printf '%s\n' "${repos[@]}" | xargs -P "$JOBS" -I{} bash -c 'sync_one "$@"' _ {} > "$OUT" 2>&1
+printf '%s\n' "${repos[@]+"${repos[@]}"}" | xargs -P "$JOBS" -I{} bash -c 'sync_one "$@"' _ {} > "$OUT" 2>&1
 fail=$(grep -c '^FAIL' "$OUT" 2>/dev/null || true)
 ok=$(grep -c '^ok' "$OUT" 2>/dev/null || true)
 
@@ -303,9 +330,9 @@ date '+%F %T' > "$ROOT/last_sync"
 # 机器可读状态（供巡检/排障）：last_status 每轮都写；state/last_ok 只在本轮全成功时刷新，
 # 巡检按它断言新鲜度 ⇒「同步静默停摆/一直失败」能被及时发现。
 mkdir -p "$ROOT/state"
-mtime=$(stat -c %Y "$ROOT/state/last_ok" 2>/dev/null || echo 0)
+mtime=$(stat -c %Y "$ROOT/state/last_ok" 2>/dev/null || stat -f %m "$ROOT/state/last_ok" 2>/dev/null || echo 0)
 if [ "$mtime" -gt 0 ]; then
-  last_ok_age_h=$(awk -v m="$mtime" 'BEGIN{printf "%.1f",(systime()-m)/3600}' 2>/dev/null)
+  last_ok_age_h=$(awk -v m="$mtime" -v now="$(date +%s)" 'BEGIN{printf "%.1f",(now-m)/3600}' 2>/dev/null)
 else
   last_ok_age_h="none"   # 本机还没有过成功的 last_ok（首轮），别把 systime() 当年龄
 fi
@@ -338,7 +365,8 @@ fi
 # 早先写成 "$(dirname ...)/indexer.py" 指向不存在的 scripts/indexer.py，
 # 使 [ -x ] 恒假 —— 自动增量索引从未执行过（已由 e2e 断言复现）。
 # 用 -f 而非 -x 判定：git checkout 不带可执行位时同样要能跑，反正下面用 python3 调用。
-INDEXER="$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/../lib/indexer.py"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+INDEXER="$SCRIPT_DIR/../lib/indexer.py"
 if [ -f "$INDEXER" ]; then
   python3 "$INDEXER" --build >/dev/null 2>&1 || true
 else
