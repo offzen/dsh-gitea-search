@@ -507,6 +507,48 @@ EOF
 )
 assert_ok "空镜像/占位符配置显式告警回归验证 (list_*_repos 输出 MIRROR_ROOT/OWNERS 提示)" "[ \"\$EMPTY_MIRROR_TEST\" = 'EMPTY_MIRROR_WARN_OK' ]"
 
+# 回归验证：config.json 自动解析与 quickstart-local.sh 冒烟测试
+QUICK_DIR="$MIRROR_ROOT/mock-quickstart-verify"
+rm -rf "$QUICK_DIR"
+bash "$ROOT_DIR/scripts/quickstart-local.sh" "$QUICK_DIR" >/dev/null 2>&1
+CONFIG_TEST=$(node - "$MCP_BIN" << 'EOF'
+import { spawn } from 'node:child_process';
+const cmd = process.argv[2];
+const p = spawn(cmd, [], { stdio: ['pipe', 'pipe', 'pipe'], env: { PATH: process.env.PATH, HOME: process.env.HOME } });
+let buf = Buffer.alloc(0);
+const waiters = new Map();
+p.stdout.on('data', (d) => {
+  buf = Buffer.concat([buf, d]);
+  let nl;
+  while ((nl = buf.indexOf(0x0a)) >= 0) {
+    const line = buf.subarray(0, nl).toString('utf8');
+    buf = buf.subarray(nl + 1);
+    if (!line.trim()) continue;
+    const msg = JSON.parse(line);
+    if (waiters.has(msg.id)) { waiters.get(msg.id)(msg); waiters.delete(msg.id); }
+  }
+});
+const call = (id, method, params) => new Promise((res) => {
+  waiters.set(id, res);
+  p.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+});
+await call(1, 'initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'cfg-test', version: '1.0' } });
+const toolsRes = await call(2, 'tools/list', {});
+const docsTool = toolsRes.result.tools.find((t) => t.name.includes('_docs')).name;
+const r = await call(3, 'tools/call', { name: docsTool, arguments: { query: 'Demo' } });
+p.kill();
+const txt = r.result.content[0].text;
+if (txt.includes('Demo Project') || txt.includes('demo-project')) {
+  console.log('CONFIG_JSON_AUTO_LOAD_OK');
+} else {
+  console.error('Unexpected:', txt);
+  process.exit(1);
+}
+EOF
+)
+rm -f "$ROOT_DIR/config.json"
+assert_ok "config.json 自动解析与 quickstart-local.sh (无 Gitea 服务本地模式)" "[ \"\$CONFIG_TEST\" = 'CONFIG_JSON_AUTO_LOAD_OK' ]"
+
 echo ""
 echo "=================================================================="
 echo " 验收汇总: ${PASS} 绿 (PASS) / ${FAIL} 红 (FAIL)"
