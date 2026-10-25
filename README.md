@@ -3,12 +3,23 @@
 [![License](https://img.shields.io/badge/License-Apache--2.0-C21325)](LICENSE)
 [![CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/badge/Version-v1.2.0-blue)](RELEASE-NOTES.md)
+[![npm](https://img.shields.io/npm/v/dsh-gitea-search?color=red)](https://www.npmjs.com/package/dsh-gitea-search)
+[![Archive](https://img.shields.io/badge/Archive-v0.1.1%20(Pure%20Node)-orange)](https://github.com/offzen/dsh-gitea-search/tree/legacy-0.1.x)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-brightgreen)](scripts/setup-macos.sh)
 [![Node](https://img.shields.io/badge/Node-%3E%3D20.11-success)](package.json)
 
 DeepSeek Harness (DSH) 高性能跨仓 Git 代码检索与文档/历史会话全文检索 MCP 插件。
 
 > SPDX-License-Identifier: Apache-2.0
+
+---
+
+## 架构演进与历史版本 (v0.1.x Archive)
+
+本项目经历了从早期纯 Node.js 插件到高性能 Python+Node 混合索引引擎的重大演进，两代成果均完整公开：
+
+- **v1.x (当前分支 / main)**：全新一代高性能架构。采用 Python + SQLite FTS5 + Jieba 实现跨仓全量倒排索引与毫秒级中文分词搜索，Node.js 负责轻量级 MCP stdio 传输并具备跨平台兼容与安全护栏。
+- **v0.1.x (历史归档 / legacy-0.1.x)**：第一代纯 Node.js 实现（`mcp__gitea_search__*` 命名空间），对应 npm 官方包 [`dsh-gitea-search@0.1.1`](https://www.npmjs.com/package/dsh-gitea-search/v/0.1.1)。完整源码与 7 个历史提交已无损保存在 [`legacy-0.1.x`](https://github.com/offzen/dsh-gitea-search/tree/legacy-0.1.x) 分支及 [v0.1.1 Release](https://github.com/offzen/dsh-gitea-search/releases/tag/v0.1.1) 中，供参考学习及轻量级无 Python 环境复用。
 
 ---
 
