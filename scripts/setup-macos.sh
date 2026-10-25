@@ -36,6 +36,10 @@ if [ -n "$missing" ]; then
   echo "   安装: brew install python3 node jq zstd"
   exit 1
 fi
+if ! node -e 'const [maj,min]=process.versions.node.split(".").map(Number); process.exit(maj>20||(maj===20&&min>=11)?0:1)'; then
+  echo "❌ Node.js 版本过低 ($(node -v))，需 Node.js >= 20.11 (推荐 Node 22 LTS)"
+  exit 1
+fi
 echo "✅ $(python3 --version | cut -d' ' -f2) / node $(node -v | cut -d' ' -f1) / $(git --version | cut -d' ' -f3) / jq / zstd"
 
 # ── 2. SQLite FTS5 支持 ────────────────────────────────────────────────────

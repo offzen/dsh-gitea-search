@@ -355,29 +355,27 @@ assert_ok "gts --perf-stats --json 输出有效性能与磁盘 I/O 统计" "\"$G
 MOCK_DSH="$MIRROR_ROOT/mock-dsh-home"
 rm -rf "$MOCK_DSH"
 mkdir -p "$MOCK_DSH/sessions/--mock-proj--/session-00000000-0000-4000-8000-000000000001"
-node - "$MOCK_DSH" << 'NODEEOF'
-import fs from 'node:fs';
-import path from 'node:path';
-import { zstdCompressSync } from 'node:zlib';
-import { DatabaseSync } from 'node:sqlite';
+python3 - "$MOCK_DSH" << 'PYEOF'
+import json, os, sqlite3, subprocess, sys
 
-const home = process.argv[2];
-const sdir = path.join(home, 'sessions', '--mock-proj--', 'session-00000000-0000-4000-8000-000000000001');
-const sid = '00000000-0000-4000-8000-000000000001';
-const lines = [
-  JSON.stringify({ version: 1, id: sid, createdAt: '2026-10-01T00:00:00.000Z', cwd: '/tmp', isSeeded: false, delegationDepth: 0 }),
-  JSON.stringify({ type: 'user/message', seq: 0, time: '2026-10-01T00:00:01.000Z', data: { role: 'user', content: 'hello v1', source: { kind: 'user' } } }),
-];
-fs.writeFileSync(path.join(sdir, 'session.jsonl.zstd'), zstdCompressSync(Buffer.from(lines.join('\n') + '\n')));
+home = sys.argv[1]
+sdir = os.path.join(home, 'sessions', '--mock-proj--', 'session-00000000-0000-4000-8000-000000000001')
+sid = '00000000-0000-4000-8000-000000000001'
+lines = [
+    json.dumps({"version": 1, "id": sid, "createdAt": "2026-10-01T00:00:00.000Z", "cwd": "/tmp", "isSeeded": False, "delegationDepth": 0}),
+    json.dumps({"type": "user/message", "seq": 0, "time": "2026-10-01T00:00:01.000Z", "data": {"role": "user", "content": "hello v1", "source": {"kind": "user"}}}),
+]
+payload = ("\n".join(lines) + "\n").encode("utf-8")
+zstd_bytes = subprocess.check_output(["zstd", "-c"], input=payload)
+with open(os.path.join(sdir, "session.jsonl.zstd"), "wb") as f:
+    f.write(zstd_bytes)
 
-const db = new DatabaseSync(path.join(home, 'session-query.sqlite'));
-db.exec('CREATE TABLE persisted_sessions (id TEXT PRIMARY KEY, revision TEXT NOT NULL)');
-db.prepare('INSERT INTO persisted_sessions (id, revision) VALUES (?, ?)').run(
-  sid,
-  '1:2:3:4:5:' + 'a'.repeat(64)
-);
-db.close();
-NODEEOF
+conn = sqlite3.connect(os.path.join(home, "session-query.sqlite"))
+conn.execute("CREATE TABLE persisted_sessions (id TEXT PRIMARY KEY, revision TEXT NOT NULL)")
+conn.execute("INSERT INTO persisted_sessions (id, revision) VALUES (?, ?)", (sid, "1:2:3:4:5:" + "a" * 64))
+conn.commit()
+conn.close()
+PYEOF
 
 HEALTH_SCRIPT="$ROOT_DIR/scripts/dsh-session-health.mjs"
 if [ ! -f "$HEALTH_SCRIPT" ]; then
@@ -445,6 +443,69 @@ print("GITEA_API_SYNC_OK")
 PYEOF
 )
 assert_ok "sync.sh 标准 Gitea HTTP API 枚举（User + Org + Wiki 推导）" "[ \"\$GITEA_API_TEST\" = 'GITEA_API_SYNC_OK' ]"
+
+# 回归验证：模拟 Node < 22.15 (无 zlib.zstdCompressSync / node:sqlite) 时 dsh-session-health.mjs 自动回退至 zstd/sqlite3 CLI
+MOCK_DSH_FALLBACK="$MIRROR_ROOT/mock-dsh-fallback"
+rm -rf "$MOCK_DSH_FALLBACK"
+mkdir -p "$MOCK_DSH_FALLBACK/sessions/--mock-proj--/session-00000000-0000-4000-8000-000000000002"
+python3 - "$MOCK_DSH_FALLBACK" << 'PYEOF'
+import json, os, sqlite3, subprocess, sys
+home = sys.argv[1]
+sdir = os.path.join(home, 'sessions', '--mock-proj--', 'session-00000000-0000-4000-8000-000000000002')
+sid = '00000000-0000-4000-8000-000000000002'
+lines = [
+    json.dumps({"version": 1, "id": sid, "createdAt": "2026-10-01T00:00:00.000Z", "cwd": "/tmp"}),
+    json.dumps({"type": "user/message", "seq": 0, "time": "2026-10-01T00:00:01.000Z", "data": {"role": "user", "content": "fallback v1", "source": {"kind": "plugin", "plugin": "compact"}}}),
+]
+payload = ("\n".join(lines) + "\n").encode("utf-8")
+with open(os.path.join(sdir, "session.jsonl.zstd"), "wb") as f:
+    f.write(subprocess.check_output(["zstd", "-c"], input=payload))
+conn = sqlite3.connect(os.path.join(home, "session-query.sqlite"))
+conn.execute("CREATE TABLE persisted_sessions (id TEXT PRIMARY KEY, revision TEXT NOT NULL)")
+conn.execute("INSERT INTO persisted_sessions (id, revision) VALUES (?, ?)", (sid, "1:2:3:4:5:" + "b" * 64))
+conn.commit()
+conn.close()
+PYEOF
+assert_ok "Node <22.15 兼容模式回退验证 (DSH_FORCE_ZSTD_CLI=1 DSH_FORCE_SQLITE_CLI=1)" \
+  "DSH_FORCE_ZSTD_CLI=1 DSH_FORCE_SQLITE_CLI=1 DSH_PERSISTENCE_MODULE=/nonexistent node \"$HEALTH_SCRIPT\" --fix --dsh-home \"$MOCK_DSH_FALLBACK\" --json | python3 -c 'import sys,json; d=json.load(sys.stdin); assert d[\"status\"]==\"OK\" and d[\"sessions\"][\"migrated\"]==1 and d[\"sqlite\"][\"engine\"]==\"sqlite3-cli\" and d[\"sqlite\"][\"long_revisions\"]==0'"
+
+# 回归验证：当 GITEA_MIRROR_ROOT / GITEA_OWNERS 为未初始化占位符（0 镜像仓）时，server.mjs 显式输出空镜像告警而非静默 0 命中
+EMPTY_MIRROR_TEST=$(GITEA_MIRROR_ROOT="$MIRROR_ROOT/empty-placeholder" GITEA_OWNERS="myorg" GITQ_MIRROR_ROOT="$MIRROR_ROOT/empty-placeholder" GITQ_OWNER="myorg" node - "$MCP_BIN" << 'EOF'
+import { spawn } from 'node:child_process';
+const cmd = process.argv[2];
+const p = spawn(cmd, [], { stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
+let buf = Buffer.alloc(0);
+const waiters = new Map();
+p.stdout.on('data', (d) => {
+  buf = Buffer.concat([buf, d]);
+  let nl;
+  while ((nl = buf.indexOf(0x0a)) >= 0) {
+    const line = buf.subarray(0, nl).toString('utf8');
+    buf = buf.subarray(nl + 1);
+    if (!line.trim()) continue;
+    const msg = JSON.parse(line);
+    if (waiters.has(msg.id)) { waiters.get(msg.id)(msg); waiters.delete(msg.id); }
+  }
+});
+const call = (id, method, params) => new Promise((res) => {
+  waiters.set(id, res);
+  p.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+});
+await call(1, 'initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'empty-test', version: '1.0' } });
+const toolsRes = await call(2, 'tools/list', {});
+const listTool = toolsRes.result.tools.find((t) => t.name.startsWith('list_')).name;
+const r1 = await call(3, 'tools/call', { name: listTool, arguments: {} });
+const txt1 = r1.result.content[0].text;
+p.kill();
+if (txt1.includes('镜像目录为空或未就绪') && txt1.includes('myorg')) {
+  console.log('EMPTY_MIRROR_WARN_OK');
+} else {
+  console.error('Unexpected:', txt1);
+  process.exit(1);
+}
+EOF
+)
+assert_ok "空镜像/占位符配置显式告警回归验证 (list_*_repos 输出 MIRROR_ROOT/OWNERS 提示)" "[ \"\$EMPTY_MIRROR_TEST\" = 'EMPTY_MIRROR_WARN_OK' ]"
 
 echo ""
 echo "=================================================================="

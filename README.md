@@ -45,6 +45,11 @@ dsh-gitea-search/
 ## 快速上手
 
 ### 1. 环境准备
+
+- **运行时要求**：
+  - **Node.js `>= 20.11`**（推荐 `v22.15+` LTS：原生内置 `node:sqlite` 与 `zlib.zstdCompressSync`；在 `v20.11 ~ v22.14` 环境下，`dsh-session-health.mjs` 会自动回退调用系统 `sqlite3` 与 `zstd` CLI，不会发生模块加载崩溃）。
+  - **Python 3**（`>= 3.10`）+ `jieba` + 带 **FTS5** 扩展的 `sqlite3` + `git`。
+
 ```bash
 bash scripts/setup.sh
 ```

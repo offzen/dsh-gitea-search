@@ -20,13 +20,28 @@
  *   --json         : 输出结构化 JSON
  */
 
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
-import { zstdCompressSync, zstdDecompressSync } from 'node:zlib';
+import zlib from 'node:zlib';
+
+function decompressZstd(buf) {
+  if (typeof zlib.zstdDecompressSync === 'function' && process.env.DSH_FORCE_ZSTD_CLI !== '1') {
+    return zlib.zstdDecompressSync(buf);
+  }
+  return execFileSync('zstd', ['-dc'], { input: buf, maxBuffer: 256 * 1024 * 1024 });
+}
+
+function compressZstd(buf) {
+  if (typeof zlib.zstdCompressSync === 'function' && process.env.DSH_FORCE_ZSTD_CLI !== '1') {
+    return zlib.zstdCompressSync(buf);
+  }
+  return execFileSync('zstd', ['-c'], { input: buf, maxBuffer: 256 * 1024 * 1024 });
+}
 
 function expandHome(p) {
   if (!p) return p;
@@ -166,7 +181,7 @@ function migrateMessageSourceToV4(msg) {
 function builtinFallbackMigrateToV4(item) {
   const isZstd = item.file.endsWith('.zstd');
   const rawBuf = fs.readFileSync(item.fullPath);
-  const text = (isZstd ? zstdDecompressSync(rawBuf) : rawBuf).toString('utf8');
+  const text = (isZstd ? decompressZstd(rawBuf) : rawBuf).toString('utf8');
   const lines = text.split('\n').filter((l) => l.trim().length > 0);
   if (lines.length === 0) return false;
 
@@ -191,7 +206,7 @@ function builtinFallbackMigrateToV4(item) {
   const targetName = isZstd ? 'session.v4.jsonl.zstd' : 'session.v4.jsonl';
   const targetPath = path.join(item.dir, targetName);
   const tmpPath = path.join(item.dir, `.${targetName}.tmp-${process.pid}`);
-  fs.writeFileSync(tmpPath, isZstd ? zstdCompressSync(outPayload) : outPayload);
+  fs.writeFileSync(tmpPath, isZstd ? compressZstd(outPayload) : outPayload);
   fs.renameSync(tmpPath, targetPath);
   return true;
 }
@@ -262,10 +277,25 @@ async function inspectAndOptionallyFix(dshHome, doFix) {
       sqliteInfo.wal_mb = Number((fs.statSync(sqPath + '-wal').size / (1024 * 1024)).toFixed(2));
     }
     try {
-      const { DatabaseSync } = await import('node:sqlite');
-      const db = new DatabaseSync(sqPath);
-      db.exec('PRAGMA busy_timeout = 5000');
-      const rows = db.prepare('SELECT id, revision FROM persisted_sessions').all();
+      let rows = [];
+      let sqliteEngine = 'node:sqlite';
+      let db = null;
+      try {
+        if (process.env.DSH_FORCE_SQLITE_CLI === '1') throw new Error('force sqlite3 cli');
+        const { DatabaseSync } = await import('node:sqlite');
+        db = new DatabaseSync(sqPath);
+        db.exec('PRAGMA busy_timeout = 5000');
+        rows = db.prepare('SELECT id, revision FROM persisted_sessions').all();
+      } catch {
+        sqliteEngine = 'sqlite3-cli';
+        const rawJson = execFileSync(
+          'sqlite3',
+          ['-cmd', '.timeout 5000', '-json', sqPath, 'SELECT id, revision FROM persisted_sessions;'],
+          { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
+        ).trim();
+        rows = rawJson ? JSON.parse(rawJson) : [];
+      }
+      sqliteInfo.engine = sqliteEngine;
       sqliteInfo.persisted_sessions = rows.length;
 
       const migratedSet = new Set(beforeScan.legacyItems.flatMap((it) => [it.id, it.bareId]));
@@ -291,33 +321,55 @@ async function inspectAndOptionallyFix(dshHome, doFix) {
       }
 
       if (doFix && toUpdate.length > 0) {
-        db.exec('BEGIN IMMEDIATE');
-        try {
-          const stmt = db.prepare('UPDATE persisted_sessions SET revision = ? WHERE id = ?');
-          for (const [newRev, id] of toUpdate) {
-            stmt.run(newRev, id);
+        if (db) {
+          db.exec('BEGIN IMMEDIATE');
+          try {
+            const stmt = db.prepare('UPDATE persisted_sessions SET revision = ? WHERE id = ?');
+            for (const [newRev, id] of toUpdate) {
+              stmt.run(newRev, id);
+            }
+            db.exec('COMMIT');
+            revisionsAligned = toUpdate.length;
+            sqliteInfo.long_revisions = db.prepare(
+              "SELECT COUNT(*) as c FROM persisted_sessions WHERE (length(revision) - length(replace(revision, ':', ''))) >= 5 OR length(revision) > 100"
+            ).get().c;
+            sqliteInfo.mismatched_revisions = 0;
+          } catch (e) {
+            try { db.exec('ROLLBACK'); } catch { /* ignore */ }
+            throw e;
           }
-          db.exec('COMMIT');
+        } else {
+          const esc = (s) => String(s).replace(/'/g, "''");
+          const stmts = ['PRAGMA busy_timeout = 5000;', 'BEGIN IMMEDIATE;'];
+          for (const [newRev, id] of toUpdate) {
+            stmts.push(`UPDATE persisted_sessions SET revision = '${esc(newRev)}' WHERE id = '${esc(id)}';`);
+          }
+          stmts.push('COMMIT;');
+          execFileSync('sqlite3', [sqPath], { input: stmts.join('\n') + '\n', encoding: 'utf8' });
           revisionsAligned = toUpdate.length;
-          sqliteInfo.long_revisions = db.prepare(
-            "SELECT COUNT(*) as c FROM persisted_sessions WHERE (length(revision) - length(replace(revision, ':', ''))) >= 5 OR length(revision) > 100"
-          ).get().c;
+          const cntOut = execFileSync(
+            'sqlite3',
+            ['-cmd', '.timeout 5000', sqPath, "SELECT COUNT(*) FROM persisted_sessions WHERE (length(revision) - length(replace(revision, ':', ''))) >= 5 OR length(revision) > 100;"],
+            { encoding: 'utf8' }
+          ).trim();
+          sqliteInfo.long_revisions = Number(cntOut.split('\n').pop()) || 0;
           sqliteInfo.mismatched_revisions = 0;
-        } catch (e) {
-          try { db.exec('ROLLBACK'); } catch { /* ignore */ }
-          throw e;
         }
       }
       if (doFix && sqliteInfo.wal_mb > 32) {
         try {
-          db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+          if (db) {
+            db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+          } else {
+            execFileSync('sqlite3', ['-cmd', '.timeout 5000', sqPath, 'PRAGMA wal_checkpoint(TRUNCATE);'], { encoding: 'utf8' });
+          }
           walCheckpointed = true;
           if (fs.existsSync(sqPath + '-wal')) {
             sqliteInfo.wal_mb = Number((fs.statSync(sqPath + '-wal').size / (1024 * 1024)).toFixed(2));
           }
         } catch { /* ignore if active reader prevents full truncate */ }
       }
-      db.close();
+      if (db) db.close();
     } catch { /* sqlite unavailable or locked */ }
   }
 

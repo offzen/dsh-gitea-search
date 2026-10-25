@@ -26,13 +26,22 @@ else
     fi
 fi
 
-# 2. 检查 Node.js
-echo -n "[2/7] 检查 Node.js ... "
+# 2. 检查 Node.js (需 >= 20.11；>= 22.15 原生内置 node:sqlite 与 zstdCompressSync，< 22.15 自动回退至 sqlite3/zstd CLI)
+echo -n "[2/7] 检查 Node.js (>= 20.11) ... "
 if command -v node >/dev/null 2>&1; then
     NODE_VER=$(node -v)
-    echo "✅ $NODE_VER"
+    if node -e 'const [maj,min]=process.versions.node.split(".").map(Number); process.exit(maj>20||(maj===20&&min>=11)?0:1)'; then
+        if node -e 'const [maj,min]=process.versions.node.split(".").map(Number); process.exit(maj>22||(maj===22&&min>=15)?0:1)'; then
+            echo "✅ $NODE_VER (原生内置 zstd / node:sqlite)"
+        else
+            echo "✅ $NODE_VER (兼容模式: < v22.15 自动使用 zstd / sqlite3 CLI 兜底)"
+        fi
+    else
+        echo "❌ Node.js 版本过低 ($NODE_VER)，需 Node.js >= 20.11 (推荐 Node 22 LTS)"
+        exit 1
+    fi
 else
-    echo "❌ 缺少 Node.js (推荐 v18+)"
+    echo "❌ 缺少 Node.js (需 >= 20.11，推荐 v22.15+ LTS)"
     exit 1
 fi
 

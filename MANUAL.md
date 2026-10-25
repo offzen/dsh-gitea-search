@@ -47,7 +47,8 @@
 | `@modelcontextprotocol/sdk` | MCP 协议 | 仓内 `node_modules`（`setup.sh` 自动 `npm install`） |
 | `flock` | cron 防重叠 | 系统 |
 
-> **Node 版本**：`server.mjs` 用 `import.meta.dirname`，需 **Node ≥ 20.11**；`lib/server.mjs` 亦需 ESM 支持。
+> **Node 版本**：`server.mjs` 用 `import.meta.dirname`（且带 `fileURLToPath(import.meta.url)` 兜底），需 **Node ≥ 20.11**（推荐 **Node ≥ 22.15 LTS**）。
+> `scripts/dsh-session-health.mjs` 在 Node ≥ 22.15 下优先使用原生内置 `zlib.zstdCompressSync` 与 `node:sqlite`；在 Node `20.11 ~ 22.14`（如 `v22.13.1`）下自动降级调用系统 `zstd` 与 `sqlite3` CLI。
 > `bin/gts` 是 Python 脚本（调用 `lib/indexer.py`），与 Node 版本无关。
 
 ### 2.3 依赖的服务 / 网络
