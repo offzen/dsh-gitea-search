@@ -36,11 +36,9 @@ dsh-gitea-search/
 │   ├── probe-stdio.mjs                 # MCP stdio 自动化测试探针
 │   ├── respawn-mcp.sh                  # MCP 进程安全平滑重启脚本
 │   ├── session-export-incremental.py   # DSH 会话 per-session 增量导出器（含 <v4 会话与 I/O 监测）
-│   ├── run-e2e-test.sh                 # 自建合成测试集端到端验收脚本（26 项断言）
+│   ├── run-e2e-test.sh                 # 自建合成测试集端到端验收脚本（28 项断言）
 │   └── run-realdata-test.sh            # 真实镜像与真实会话全链路验收脚本（34 项断言）
 ├── MANUAL.md                           # 正式部署与运维手册
-├── WIKI.md                             # 踩坑记录、根因判别与反直觉事实归档
-├── CODE-INDEX.md                       # 仓库代码正册索引
 └── config.example.json                 # 配置示例模板
 ```
 
@@ -73,24 +71,48 @@ bin/gts "function handleGetData"
 ```
 
 ### 4. 接入 DSH MCP
-在 DSH 的 profile patch（如 `cordis.patch.yml`）中挂载 MCP Server。
-**注意 DSH 实际 schema 是 `plugins."@deepseek-ai/dsh-mcp-client".servers`（不是顶层 `mcpServers:`）**：
+
+在 DSH 的 profile patch（`cordis.patch.yml`）中插入一条 `@deepseek-ai/dsh-mcp-client` 条目。
+
+> ⚠️ **配置格式（实测，勿凭记忆写）**
+> `cordis.patch.yml` 的顶层**必须是 YAML 数组**，每项是一个 loader patch。
+> `dsh-mcp-client` 的 `config` 是**单个 MCP 实例的扁平配置**，按 `transport` 字段区分
+> stdio / streamable-http（`serverName` + `command` + `args` …），**没有 `servers` 这一层**。
+> 写成顶层 `mcpServers:` 或 `plugins: → servers:` 映射都会在启动时被拒：
+> `overlay ... must be a top-level YAML array of loader patch entries`。
 
 ```yaml
-plugins:
-  "@deepseek-ai/dsh-mcp-client":
-    servers:
-      gitea_search:                       # serverName，工具名形如 mcp__gitea_search__search_gitea_docs
+# ~/.dsh/profiles/<profile>/cordis.patch.yml
+- insert:
+    - id: mcp-gitea-search
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: gitea_search          # 工具名形如 mcp__gitea_search__search_gitea_docs
+        transport: stdio                  # 必填；缺失则 transport 解析为 undefined、连接必崩
         command: node
         args: ["/path/to/dsh-gitea-search/lib/server.mjs"]
+        cwd: /path/to/dsh-gitea-search
         env:
-          GITQ_MIRROR_ROOT: "/data/gitea-mirror"
+          GITEA_MIRROR_ROOT: /data/gitea-mirror
           GITEA_OWNERS: "my-org,my-user"
-        enabled: true
 ```
 
-legacy `- insert` 形式见 [`MANUAL.md §4.2`](MANUAL.md)。
-改 `cordis.patch.yml` 后：未禁用 `hmr` 的实例 `touch` 即热生效；若已禁用 `hmr`，需重启 `dsh.service`。
+要点：
+
+- `transport` **必须显式写**（`stdio` 或 `streamable-http`）。省略不会被 schema 拒绝，但会得到
+  `transport === undefined`，在连接阶段失败——这是最常见的「配置看着没问题却连不上」。
+- `serverName` 决定工具名前缀，需匹配 `[A-Za-z0-9_-]{1,32}` 且在同一 scope 内唯一。
+- 一个 MCP Server 对应一条实例；接多个 Server 就重复插入多条（各自 `id` / `serverName` 不同）。
+- 改完 `cordis.patch.yml` 后：未禁用 `hmr` 的实例 `touch` 即热生效；若已禁用 `hmr`，需重启
+  `dsh.service`。仅更新 `lib/server.mjs` 代码时可用 `bash scripts/respawn-mcp.sh` 平滑热替换子进程。
+
+验证接线是否成功（打印合成后的 entry tree，不启动服务）：
+
+```bash
+dsh --profile <profile> --dump-config | grep -A12 mcp-gitea-search
+```
+
+更多部署细节见 [`MANUAL.md §4.2`](MANUAL.md)。
 
 ## 使用示例与 Agent 交互实测
 
