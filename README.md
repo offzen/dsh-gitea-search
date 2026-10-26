@@ -82,7 +82,7 @@ bash scripts/quickstart-local.sh /path/to/your/git-projects
 
 ---
 
-### 模式 B：标准部署（连接 Gitea / Gitorca 远端镜像）
+### 模式 B：标准部署（连接 Gitea 远端镜像）
 
 #### 1. 环境准备与依赖安装
 
