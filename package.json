@@ -1,7 +1,7 @@
 {
   "name": "dsh-gitea-search",
   "type": "module",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "DeepSeek Harness (DSH) 高性能 Gitea/Git 镜像混合检索引擎（git grep + SQLite FTS5 + Jieba + MCP Server）",
   "license": "Apache-2.0",
   "repository": {

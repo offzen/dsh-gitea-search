@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-10-27
+
+### Added
+- **Dedicated Usage Guide (`docs/USAGE.md`)**:
+  - Detailed parameter cheat sheets for all 4 foundational MCP tools (`search_gitea`, `search_gitea_docs`, `read_gitea_file`, `list_gitea_repos`).
+  - Added 5 real-world workflow scenarios demonstrating two-step lookup, session incident retrieval, and `files_only: true` blast-radius detection.
+  - Added Agent Context Guard Checklist for humans and prompts.
+- **MCP Tool Naming Guide (`docs/TOOL-NAMING.md`)**:
+  - Deep-dive into MCP protocol namespace specification ("within the server's namespace").
+  - Analyzed 4 typical multi-server collision failure modes: unknown tool, registration override, silent routing errors, and schema mismatches.
+  - Added standard System Prompt / Skill declaration templates for Agent instructions.
+- **Production Credential Hardening**:
+  - Added read-only least-privilege token / deploy key guidelines (`repo:read`) for enterprise Gitea integration in `MANUAL.md`.
+
+### Changed
+- **User-Centric README Overhaul (`README.md`)**:
+  - Refocused the project pitch on **Token & Context Conservation**, backed by measured empirical benchmarks (20k~80k tokens reduced to 1.5k~3k tokens per task).
+  - Promoted the "Zero-Gitea 30-Second Quickstart" to primary position.
+  - Upgraded common integration gotchas into professional callouts ("💡 核心接入避坑指南") highlighting `transport: stdio` requirement and host namespace prefixes.
+  - Cleaned and standardized public naming conventions (`gitea-search` / `mcp__gitea-search__*`).
+- **Comprehensive Operations Manual (`MANUAL.md`)**:
+  - Standardized structure covering dual deployment modes (Zero-Gitea vs. Enterprise), Cron synchronization, 4-layer context guards, and FTS5 engine internals.
+- **Version Bump**: Bumped package version to `1.2.1`.
+
+---
+
 ## [1.2.0] - 2026-10-26
 
 ### Added

@@ -1,5 +1,46 @@
 # Release Notes - DeepSeek Harness (DSH) Gitea Search
 
+## v1.2.1 (2026-10-27)
+
+### 版本概述 / Overview
+
+`dsh-gitea-search` v1.2.1 是一次以**用户体验、上下文保护与接入避坑**为核心的文档与规范重大升级版本。针对以往技术细节过重、缺少实战指导的痛点，本版本将主页重塑为“以节省 Agent 上下文为中心”的价值导向，新增独立的使用指南（`docs/USAGE.md`）与 MCP 工具命名防坑指南（`docs/TOOL-NAMING.md`），并将深度部署、运维与护栏机制沉淀入 `MANUAL.md`，构建了层次分明的全新文档体系。
+
+---
+
+### 中文更新说明
+
+#### 1. README 核心重塑：聚焦节省上下文与步数
+- **量化价值导向**：增加实测 Token 消耗对比——排查一个多仓配置或历史故障，从传统模式的 **20k~80k tokens**，通过本插件两步法（搜索定位 + 切片精读）压缩至 **1.5k~3k tokens**，节省 85%+ 上下文预算与推理延迟。
+- **30 秒极速上手**：突出 Zero-Gitea 本地免服务快速启动模式，零外部依赖即开即用。
+- **核心避坑指南**：将易导致静默失败的硬门槛提炼为专业贴士（明示 `transport: stdio` 必填性与宿主前缀映射规则）。
+
+#### 2. 新增独立使用指南 (`docs/USAGE.md`)
+- **核心实践三法则**：“先定位再精读”、“多词与中文优先走倒排索引”、“检索范围为已推送到镜像的内容”。
+- **4 个核心工具速查**：详细解读 `search_gitea`、`search_gitea_docs`、`read_gitea_file`、`list_gitea_repos` 参数规范。
+- **5 大实战场景示范**：涵盖配置项定位两步法、跨会话故障排查复盘、全局影响面探测（`files_only: true` 防爆窗）、搜索为空排查阶梯与 CLI 命令行同款用法。
+
+#### 3. 新增 MCP 工具命名深度解析 (`docs/TOOL-NAMING.md`)
+- **协议机制溯源**：深入 MCP 官方规范，解析“服务命名空间局部性”与“宿主前缀映射”原理。
+- **4 种冲突失败形态**：剖析 Unknown tool、注册被静默覆盖、静默打到错误服务及入参错位等根因。
+- **Agent 规则示范**：提供标准的 Agent System Prompt / Skill 指令声明模板。
+
+#### 4. 生产运维与安全加固 (`MANUAL.md`)
+- **最小特权凭据**：规范生产环境私有 Gitea 对接标准，强调使用只读权限的 Access Token / Deploy Key（仅需 `repo:read`）。
+- **四重安全护栏与 FTS5 原理**：完整收拢条数硬夹、单行截断（2000B）、总体缓冲区限制（128KB）与窗口化读取（400行/60KB）。
+
+---
+
+### English Release Notes
+
+#### Highlights
+- **User-Centric Documentation**: Refactored `README.md` to emphasize LLM context and token conservation (reducing 20k-80k tokens to 1.5k-3k tokens), with quickstarts and integration callouts.
+- **Dedicated Usage Guide (`docs/USAGE.md`)**: Core lookup principles, comprehensive tool parameter tables, and 5 practical workflows highlighting `files_only` context-saving capabilities.
+- **MCP Tool Naming Guide (`docs/TOOL-NAMING.md`)**: Deep-dive into protocol namespaces, 4 multi-server collision failure modes, and standard System Prompt templates.
+- **Least-Privilege Security**: Hardened production Gitea integration guidelines requiring read-only tokens (`repo:read`).
+
+---
+
 ## v1.2.0 (2026-10-26)
 
 ### 版本概述 / Overview
@@ -29,38 +70,6 @@
 #### 5. 质量保证与 CI 矩阵扩展
 - **32 项全链路断言**：E2E 测试套件扩充至 32 项测试，新增 Phase 5 专项校验 `config.json` 与本地快速启动模式。
 - **跨版本双矩阵验证**：CI 流水线全面覆盖 Node.js 20 LTS / 22 LTS 与 Python 3.11-3.13 组合。
-
----
-
-### English Release Notes
-
-#### Highlights
-- **macOS & BSD Support (PR #2)**: Native setup script (`scripts/setup-macos.sh`), Bash 3.2 compatibility, deadlock-free pipe timeout fallback, and BSD utility support.
-- **Zero-Gitea Local Quickstart**: Launch local bare mirrors and FTS5 search from any local Git directories without needing an external Gitea server.
-- **Auto `config.json` Resolution**: Automatic hierarchical discovery of `config.json`, removing environment variable clutter.
-- **Graceful Node.js CLI Fallback**: Seamless fallback to system `sqlite3` and `zstd` CLI when running on Node.js `20.11 ~ 22.14`.
-- **Expanded CI & Quality Gate**: 32 comprehensive E2E assertions validated across Node 20/22 and Python 3.11-3.13.
-
----
-
-### 快速配置参考 (Quick Configuration)
-
-#### DSH `cordis.patch.yml`
-
-```yaml
-- insert:
-    - id: mcp-gitea-search
-      name: '@deepseek-ai/dsh-mcp-client'
-      config:
-        serverName: gitea_search
-        transport: stdio
-        command: node
-        args: ["/path/to/dsh-gitea-search/lib/server.mjs"]
-        cwd: /path/to/dsh-gitea-search
-        env:
-          GITEA_MIRROR_ROOT: "/srv/gitea-mirror"
-          GITEA_OWNERS: "my-org,my-team"
-```
 
 ---
 

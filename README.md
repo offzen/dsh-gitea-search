@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache--2.0-C21325)](LICENSE)
 [![CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/Version-v1.2.0-blue)](RELEASE-NOTES.md)
+[![Version](https://img.shields.io/badge/Version-v1.2.1-blue)](RELEASE-NOTES.md)
 [![npm](https://img.shields.io/npm/v/dsh-gitea-search?color=red)](https://www.npmjs.com/package/dsh-gitea-search)
 [![Node](https://img.shields.io/badge/Node-%3E%3D20.11-success)](package.json)
 
