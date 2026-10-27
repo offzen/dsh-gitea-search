@@ -6,7 +6,7 @@
   "source_commit": "df0ba985546067ac6888f016f645b3f0e211697b",
   "source": "https://github.com/offzen/dsh-gitea-search",
   "note": "Official release provenance manifest with SHA-256 integrity checksums. Community contributions and pull requests are welcomed; please refer to CONTRIBUTING.md for guidelines.",
-  "file_count": 25,
+  "file_count": 24,
   "files": {
     ".github/workflows/ci.yml": "4d82e9fa1d88543b9c898bbc0b7adb250f569753c1a809f5963144bdb17d279e",
     ".gitignore": "563fd31e33daf024339d316bd77f2c1e6d58f4707ca459d2323a3bd866713314",
@@ -16,7 +16,6 @@
     "MANUAL.md": "f20c2f4f2d078d4b3e3901128c32cab8ce950f0407944491dba525a055deff46",
     "README.md": "9b4cef5a3c694ff009e88e25cb6883d4dc03cf614af53ad1ee4dc392638e71e1",
     "RELEASE-NOTES.md": "3a9e13689fe2b078f9ec665fc59c16233db4e54846642e6ffb1dd05c8940b2f6",
-    "RELEASE_NOTE.md": "3a9e13689fe2b078f9ec665fc59c16233db4e54846642e6ffb1dd05c8940b2f6",
     "bin/gts": "62167af5bac6a2cbe3ef6a1ed30abee682ea287bb597f8fac7ac52707ed3e311",
     "bin/mcp-server": "680bf62b0f44e1be3764af0248fd9edcd3b1d994c3ac2a12e5d4a91604502caa",
     "config.example.json": "3d0be6424cde2e5700896cfda5ac87b00bc3442ad81b2afd9582322d29037161",

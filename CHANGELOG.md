@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.1] - 2026-10-27
 
+> **Release Scope / 版本说明**：本次发布为纯文档与使用规范升级（对现有代码无破坏、无新代码特性，但包含了文档相关的必要修订）。重点强化 LLM 上下文预算保护、防注意力稀释与模型失忆、MCP 命名空间防冲突及生产权限安全加固。
+
 ### Added
 - **Dedicated Usage Guide (`docs/USAGE.md`)**:
   - Detailed parameter cheat sheets for all 4 foundational MCP tools (`search_gitea`, `search_gitea_docs`, `read_gitea_file`, `list_gitea_repos`).
@@ -21,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **User-Centric README Overhaul (`README.md`)**:
-  - Refocused the project pitch on **Token & Context Conservation**, backed by measured empirical benchmarks (20k~80k tokens reduced to 1.5k~3k tokens per task).
+  - Refocused the project pitch on **Token & Context Conservation** and cognitive attention protection (mitigating the critical pain point where massive context bloat from 80k tokens causes attention dilution and model amnesia; slashing usage to 1.5k - 3k tokens per task via two-step targeted retrieval).
   - Promoted the "Zero-Gitea 30-Second Quickstart" to primary position.
   - Upgraded common integration gotchas into professional callouts ("💡 核心接入避坑指南") highlighting `transport: stdio` requirement and host namespace prefixes.
   - Cleaned and standardized public naming conventions (`gitea-search` / `mcp__gitea-search__*`).
