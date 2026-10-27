@@ -3,129 +3,72 @@
 [![License](https://img.shields.io/badge/License-Apache--2.0-C21325)](LICENSE)
 [![CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/badge/Version-v1.2.0-blue)](RELEASE-NOTES.md)
-[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-brightgreen)](scripts/setup-macos.sh)
+[![npm](https://img.shields.io/npm/v/dsh-gitea-search?color=red)](https://www.npmjs.com/package/dsh-gitea-search)
 [![Node](https://img.shields.io/badge/Node-%3E%3D20.11-success)](package.json)
 
-DeepSeek Harness (DSH) 高性能跨仓 Git 代码检索与文档/历史会话全文检索 MCP 插件。
+给 DeepSeek Harness (DSH) 及任意支持 Model Context Protocol (MCP) 的 Agent 装上**跨仓极速检索能力**：一条命令将 Gitea 上全部仓库镜像到本地，Agent 用一次工具调用即可毫秒级搜遍所有代码、文档、配置文件与历史排障记录——不用逐个 clone、不把大文件塞进上下文、彻底消除大模型在海量信息翻找中的高额开销。
 
-> SPDX-License-Identifier: Apache-2.0
-
----
-
-## 核心特性
-
-- **毫秒级文档与历史会话全文检索**：基于 SQLite FTS5 引擎与 Jieba 中文分词，支持 BM25 智能相关度加权与多类型软分区（`doc`、`session`、`config`、`script`），精准索引用户提问与助手回复正文，彻底解决大模型内置检索在多词与中文语义下的匹配难题。
-- **全分支代码检索与同行相交智能回退**：基于裸镜像（Bare Mirrors）执行高效 `git grep`，覆盖全部仓库与所有本地分支；当多词短语字面量连写 0 命中时，自动触发「同行多词 AND」（`--and`）回退匹配。
-- **Zero-Gitea 本地单机快速启动**（v1.2.0 新增）：内置 `quickstart-local.sh`，零服务端依赖，支持一键将本地任意普通 Git 仓库目录扫描并转化为 MCP 镜像，实现本地开箱即用。
-- **原生 macOS 与 BSD 跨平台兼容 (PR #2)**（v1.2.0 新增）：配套 `setup-macos.sh`，原生兼容 macOS 默认 Bash 3.2、Homebrew 环境、BSD `stat`/`awk` 以及非 GNU `timeout` 管道防阻塞机制。
-- **Node.js 跨版本优雅降级**（v1.2.0 新增）：优先适配 Node.js 22.15+ LTS 原生 `node:sqlite` 与 `zlib.zstdCompressSync`；在 Node.js `20.11 ~ 22.14` 环境下自动降级调用系统 `sqlite3` 与 `zstd` CLI，杜绝运行期模块崩溃。
-- **多途径配置自动化 (`config.json`)**（v1.2.0 新增）：支持无需注入复杂环境变量，直接在工作目录读取 `config.json` 自动解析，同时完全向前兼容 `GITEA_*` 与 `GITQ_*` 环境变量规范。
-- **Agent 上下文安全四层护栏**：严格防范单行长文本溢出（2000B）、总体搜索缓冲区溢出（128KB）、默认返回 Top 5 结果（硬上限 200 条）、`read_gitea_file` 默认 400 行窗口及 UTF-8 跨数据包拼接防乱码机制。
-- **宿主会话存储代数预检与无损维护**：配套 `dsh-session-health.mjs`，主动识别 DSH `< v4` 旧版会话、`session-query.sqlite` 长 revision 与 WAL 膨胀（>32MB 在线截断），保障长效运行稳定。
+> SPDX-License-Identifier: Apache-2.0 · 早期纯 Node.js 版本完整保留在 [`legacy-0.1.x`](https://github.com/offzen/dsh-gitea-search/tree/legacy-0.1.x) 分支。
 
 ---
 
-## 目录结构
+## 为什么值得装：省下的是上下文和步数
 
-```text
-dsh-gitea-search/
-├── bin/
-│   ├── gts                   # CLI 命令行检索引擎（兼具代码与 FTS5 全文搜索）
-│   └── mcp-server            # 标准 MCP Server 启动入口
-├── lib/
-│   ├── indexer.py            # FTS5 + Jieba 索引、搜索核心与 I/O 遥测
-│   └── server.mjs            # MCP Server 实现（含四层安全护栏与 config.json 自动解析）
-├── scripts/
-│   ├── quickstart-local.sh             # [新] Zero-Gitea 本地免服务快速启动体验脚本
-│   ├── setup-macos.sh                  # [新] macOS / BSD 平台一键环境安装与兼容脚本 (PR #2)
-│   ├── setup.sh                        # Linux 环境一键依赖预检与安装脚本
-│   ├── sync.sh                         # Gitea 镜像并发同步脚本（支持 API/SSH 双通道与增量索引）
-│   ├── dsh-session-health.mjs          # DSH 会话存储代数诊断与 WAL 在线优化工具
-│   ├── respawn-mcp.sh                  # MCP 进程平滑重载运维脚本
-│   ├── probe-stdio.mjs                 # MCP stdio 协议自动化测试探针
-│   ├── session-export-incremental.py   # DSH 历史会话增量导出器（过滤思维链，防软链环）
-│   ├── run-e2e-test.sh                 # 自建合成测试集端到端测试（32 项完整断言）
-│   └── run-realdata-test.sh            # 真实大规模镜像与生产会话全链路验收脚本
-├── config.example.json                 # 配置文件模板
-├── CONTRIBUTING.md                     # 开源社区贡献规范与双向同步准则
-├── CHANGELOG.md                        # 版本演进详细变更记录
-├── RELEASE-NOTES.md                    # 发版说明与更新摘要
-├── MANUAL.md                           # 生产部署、配置与运维排障完整手册
-└── WIKI.md                             # 架构设计取舍、排坑实录与反直觉事实归档
-```
+Agent 查一次资料，真正的代价从来不是“查没查到”，而是**消耗了多少对话轮数、塞入了多少 Token**。没有本地索引时，每次检索都在严重透支模型宝贵的上下文窗口预算：
+
+| 没有它（Agent 原生手段翻找） | 有它（本地两层索引直达） |
+|---|---|
+| 逐个 clone 仓库或抓取网页寻找配置 | 一次工具调用覆盖**全量仓库 + 全部本地分支** |
+| 网页搜索引入的 HTML 与无关噪声全量灌入上下文 | 只返回匹配精准行，默认 Top 5（先定位、再精读） |
+| 遇到大文件不得不整篇塞入上下文 | 默认仅读取前 400 行，支持 `offset`/`limit` 按需切片续读 |
+| 撞上编译打包产物或超长文本，数十万 Token 瞬间爆窗 | 单行 ≤ 2000B、单次 ≤ 128KiB **原地安全截断** |
+| 中文/多词查询历史排障，内置分词极易 0 命中 | SQLite FTS5 + jieba 分词，中文短语、多词跨行精准召回 |
+| 反复摸索排查留下的巨量冗余过程记录 | 过程干净零噪声，直接收敛至目标事实 |
+
+> 📊 **量化对比实测**：
+> 让 Agent 在多仓项目中排查一个配置或历史故障，传统方式通常需 5~15 轮工具交互、消耗 **20,000 ~ 80,000 Tokens**，极易导致早期上下文被稀释甚至模型失忆；
+> 使用本插件的「两步检索法（先查命中行定位 + 按需切片精读）」，整轮任务通常只需 1~2 步调用，Token 消耗压缩至 **1,500 ~ 3,000 Tokens**，节省 85% 以上预算。
+
+一句话：**它把 Agent 的“地毯式翻找”变成了“精准点查”**，保护上下文预算，显著降低推理成本与等待延迟。
 
 ---
 
-## 快速上手
+## 30 秒上手（Zero-Gitea 本地免服务模式）
 
-### 模式 A：Zero-Gitea 本地单机快速体验（零外部服务）
-
-无需搭建 Gitea 服务或配置 SSH 密钥，只要本地有任意一个或多个 Git 仓库，即可一键体验：
+无需搭建 Gitea 远端服务，无需 API Token 或 SSH 密钥，只要本地有 Git 仓库即可一键体验：
 
 ```bash
-# 自动扫描指定目录下的 Git 仓库并构建 MCP 镜像环境
+git clone https://github.com/offzen/dsh-gitea-search.git && cd dsh-gitea-search
+
+# 扫描本地任意 Git 项目目录，自动创建镜像 + 构建 FTS5 索引 + 打印 DSH 配置片段
 bash scripts/quickstart-local.sh /path/to/your/git-projects
 ```
 
-启动后会生成本地镜像目录、构建 FTS5 倒排索引，并打印可直接接入 DSH 的配置片段。
+脚本运行完毕后会直接输出开箱即用的 DSH 配置片段。
 
----
-
-### 模式 B：标准部署（连接 Gitea / Gitorca 远端镜像）
-
-#### 1. 环境准备与依赖安装
-
-- **运行要求**：
-  - **Node.js `>= 20.11.0`**（推荐 Node.js `22.15+` LTS；低版本自动降级 CLI）。
-  - **Python 3 (`>= 3.10`)** + `jieba` + 支持 FTS5 的 `sqlite3` + `git`。
+想直接在终端测试检索效果？命令行门面工具 `bin/gts` 即开即测：
 
 ```bash
-# Linux (Debian / Ubuntu / RHEL)
-bash scripts/setup.sh
-
-# macOS (自动通过 Homebrew 补齐依赖并处理 Bash 3.2 兼容)
-bash scripts/setup-macos.sh
+bin/gts dockge                        # 跨仓代码内容检索（毫秒级）
+bin/gts -D "反向代理配置"              # -D：基于 FTS5 + jieba 检索文档与历史会话
+bin/gts -D --kind doc,script "caddy"  # 按分区过滤：只检索文档与脚本
 ```
 
-#### 2. 构建与增量刷新索引
-
-```bash
-# 增量构建 FTS5 索引（未变更仓库毫秒级跳过）
-python3 lib/indexer.py --build
-
-# 查看索引库统计数据
-python3 lib/indexer.py --stats
-```
-
-#### 3. 命令行体验 (CLI)
-
-```bash
-# FTS5 全文搜索文档、设计稿与历史会话
-bin/gts -D "沙盒机制"
-
-# 按分类过滤配置与运维脚本
-bin/gts -D --kind config,script "caddy"
-
-# 跨所有镜像仓库毫秒级搜索源码
-bin/gts "function handleGetData"
-```
+> 完整命令参数参见 `bin/gts --help` 或运维手册 [MANUAL.md](MANUAL.md)。
 
 ---
 
 ## 接入 DeepSeek Harness (DSH)
 
-在 DSH 的配置文件 `cordis.patch.yml` 中添加如下插件配置（顶层必须是 YAML 数组，且 `transport: stdio` 必填）：
-
-### 方式 1：通过环境变量配置（标准推荐）
+在 DSH 配置文件（如 `cordis.patch.yml`）中添加如下片段即可挂载 MCP 服务（顶层必须是 YAML 数组）：
 
 ```yaml
-# ~/.dsh/profiles/<profile>/cordis.patch.yml
 - insert:
     - id: mcp-gitea-search
       name: '@deepseek-ai/dsh-mcp-client'
       config:
-        serverName: gitea_search          # 工具名形如 mcp__gitea_search__search_gitea_docs
-        transport: stdio                  # 必填项，省略会导致连接失败
+        serverName: gitea-search        # 决定暴露给模型的工具名前缀（见下文说明）
+        transport: stdio                # 必填项：缺失会导致连接静默失败
         command: node
         args: ["/opt/dsh-gitea-search/lib/server.mjs"]
         cwd: /opt/dsh-gitea-search
@@ -134,106 +77,61 @@ bin/gts "function handleGetData"
           GITEA_OWNERS: "my-org,my-team"
 ```
 
-> **兼容说明**：系统完全兼容 `GITQ_MIRROR_ROOT` / `GITQ_OWNER` 等历史变量及 `serverName: gitorca_search`。
+> **提示**：如果不想在配置中书写 `env`，可以在插件根目录下放置 `config.json`（参考 `config.example.json`），`server.mjs` 会自动向上寻找并解析配置，两种方式完全等价。
 
-### 方式 2：通过 `config.json` 配置文件
+### 💡 核心接入避坑指南
 
-在插件根目录下创建 `config.json`（参考 `config.example.json`）：
-
-```json
-{
-  "mirrorRoot": "/srv/gitea-mirror",
-  "owners": ["my-org", "my-team"],
-  "enumSource": "auto",
-  "apiBase": "https://git.example.com"
-}
-```
-
-此时 `cordis.patch.yml` 中的 `env` 项可完全省略，`server.mjs` 会自动向上查找并加载配置。
+1. **必须显式声明 `transport: stdio`**：  
+   若遗漏此配置项，配置文件 Schema 校验仍会通过，但客户端底层无法建立传输信道，表现为**静默不连接**——没有明确报错，但所有检索工具都不会出现在 Agent 列表中。
+2. **实际调用名带有宿主服务前缀**：  
+   MCP 协议中工具名在服务器内部是局部的，DSH 等客户端为了避免多服务命名冲突，会按 `mcp__<serverName>__<toolName>` 规则映射。  
+   当配置 `serverName: gitea-search` 时，文档检索工具在 Agent 视角的完整调用名为 `mcp__gitea-search__search_gitea_docs`。若在指令中仅写裸名，会被宿主拒绝。原理解析与自检方法详见 **[docs/TOOL-NAMING.md](docs/TOOL-NAMING.md)**。
 
 ---
 
-## Agent 工具调用实测场景
+## 四个核心工具
 
-配置接入后，Agent 会按需自动发起 MCP 工具调用：
+当 `serverName` 采用推荐的 `gitea-search` 时，Agent 可直接调用的 4 个标准工具如下：
 
-### 场景 1：排查历史故障与架构决策 (`search_gitea_docs`)
-- **用户 Prompt**：“查一下之前关于 Caddy 证书续期失败与沙盒隔离机制的讨论和排障记录”
-- **Agent Tool Call**：
-  ```json
-  {
-    "name": "mcp__gitea_search__search_gitea_docs",
-    "arguments": {
-      "query": "Caddy 证书 沙盒机制",
-      "kind": "session"
-    }
-  }
-  ```
-- **返回结果**（FTS5 BM25 毫秒级命中并返回带高亮的上下文）：
-  ```text
-  [dsh-session-archive@main] sessions/session-20261022.md (DSH 会话归档)
-    ...**user**: 请排查 Caddy 证书自动续期在沙盒模式下的只读报错。
-    ...**assistant**: 经定位，沙盒只读挂载了 /etc/caddy，已在 docker-compose 中挂载独立证书卷修复。
-  —— 命中 1 篇文档（FTS5 相关度排序）
-  ```
+| 完整调用名 | 核心能力 | 典型应用场景 |
+|---|---|---|
+| `mcp__gitea-search__search_gitea` | 跨所有镜像仓检索代码内容 / 文件路径 / 提交信息 | 查找“某个函数、配置项、Dockerfile 在哪定义” |
+| `mcp__gitea-search__search_gitea_docs` | SQLite FTS5 全文检索文档、历史会话、配置、脚本 | 查找“之前的故障排查记录、决策背景与架构设计” |
+| `mcp__gitea-search__read_gitea_file` | 按仓库与相对路径直接读取文件（无需 clone） | 搜索定位到目标后，精确读取上下文内容 |
+| `mcp__gitea-search__list_gitea_repos` | 列出已镜像的全部仓库名（支持通配符过滤） | 盘点仓库资产，或不确定具体仓名时快速探路 |
 
-### 场景 2：跨全量仓库定位配置与微服务 (`search_gitea`)
-- **用户 Prompt**：“查找所有包含 cpm-panel 镜像的 docker-compose 编排”
-- **Agent Tool Call**：
-  ```json
-  {
-    "name": "mcp__gitea_search__search_gitea",
-    "arguments": {
-      "query": "cpm-panel",
-      "mode": "content"
-    }
-  }
-  ```
-- **返回结果**（多词连写 0 命中时自动回退同行多词 AND）：
-  ```text
-  cpm-deploy-guide:deploy/docker-compose.yml:4:    image: registry.local/cpm-panel:v2.4.0
-  —— 命中 1 行 / 1 仓
-  ```
+**核心实践法则：先定位，再精读。**  
+通过 `search_*` 工具锁定目标文件与关键行号后，再使用 `read_gitea_file` 配合 `limit: 30~50` 进行小窗口切片精读，切忌盲目读取大文件全文。
 
-### 场景 3：受控安全读取目标文件 (`read_gitea_file`)
-- **Agent Tool Call**：
-  ```json
-  {
-    "name": "mcp__gitea_search__read_gitea_file",
-    "arguments": {
-      "repo": "cpm-deploy-guide",
-      "path": "deploy/docker-compose.yml",
-      "offset": 0,
-      "limit": 10
-    }
-  }
-  ```
-- **返回结果**（受 400 行与 60KB 护栏保护，避免单次返回巨量数据破坏 Agent 上下文）。
+完整实战场景示范与参数配置参见 **[docs/USAGE.md](docs/USAGE.md)**。
 
 ---
 
-## 质量保障与自动化测试
+## 运行环境要求
 
-本项目内置完善的自动化回归测试体系，并在 GitHub Actions CI 中对 Node 20 / 22 及 Python 3.11-3.13 运行多矩阵验证：
+- **Node.js ≥ 20.11**（推荐 22.15+ LTS，低版本自动降级调用系统 `sqlite3` 与 `zstd` CLI）；
+- **Python 3 ≥ 3.10**（需安装 `jieba` 分词库与支持 FTS5 的系统 `sqlite3`）；
+- **Git ≥ 2.25**。
+
+系统提供一键化环境配置与预检脚本，自动适配 Linux 与 macOS（兼容 macOS 默认 Bash 3.2 及 BSD 工具链）：
 
 ```bash
-# 运行完整的自建合成测试集（共 32 项自动化断言）
-bash scripts/run-e2e-test.sh
+bash scripts/setup.sh          # Linux (Debian / Ubuntu / RHEL)
+bash scripts/setup-macos.sh    # macOS
 ```
-
-- **Phase 1**：FTS5 首次建库与四表一致性校验
-- **Phase 2**：增量索引与 `head_commit` 毫秒级跳过
-- **Phase 3**：CLI `gts` 检索模式与多词 AND 回退验证
-- **Phase 4**：MCP stdio 四工具协议调用与输出护栏拦截
-- **Phase 5**：`config.json` 自动寻径与 Zero-Gitea 本地快速启动测试
 
 ---
 
-## 开源治理与贡献
+## 文档导航
 
-本项目采用 Apache-2.0 许可证，欢迎社区开发者提交 Issue、反馈与 Pull Request！
-详细的本地开发测试指引与双向同步准则请查阅 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
+- **[docs/USAGE.md](docs/USAGE.md)** —— 四个工具参数速查、真实检索场景示范与防爆窗调用范例（**推荐首读**）
+- **[docs/TOOL-NAMING.md](docs/TOOL-NAMING.md)** —— MCP 工具名前缀机制深度解析、四种典型冲突失败与命名规范
+- **[MANUAL.md](MANUAL.md)** —— 生产级高可用部署、Cron 定时同步、四层安全护栏机制、参数全表与故障排查手册
+- **[CHANGELOG.md](CHANGELOG.md)** / **[RELEASE-NOTES.md](RELEASE-NOTES.md)** —— 版本演进记录
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** —— 开发者贡献与双向同步准则
 
-- 完整部署与运维手册：[`MANUAL.md`](MANUAL.md)
-- 版本历史与变更日志：[`CHANGELOG.md`](CHANGELOG.md)
-- 发版说明：[`RELEASE-NOTES.md`](RELEASE-NOTES.md)
+---
+
+## 许可证
+
+Apache-2.0 License。欢迎提交 Issue 与 Pull Request。
