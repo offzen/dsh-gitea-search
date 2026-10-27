@@ -10,8 +10,8 @@
 
 ### 中文更新说明
 
-#### 1. README 核心重塑：聚焦节省上下文与步数
-- **量化价值导向**：增加实测 Token 消耗对比——排查一个多仓配置或历史故障，从传统模式的 **20k~80k tokens**，通过本插件两步法（搜索定位 + 切片精读）压缩至 **1.5k~3k tokens**，节省 85%+ 上下文预算与推理延迟。
+#### 1. README 核心重塑：聚焦节省上下文与注意力保护
+- **量化实测与注意力保护**：增加实测数据对比——排查一个多仓配置或历史故障，传统对话交互需 5 至 15 轮工具交互、消耗高达 8 万 Tokens，且巨量噪音极易导致早期上下文被稀释甚至引发模型失忆；通过本插件两步法（搜索定位 + 切片精读）只需 1 至 2 步调用，Token 消耗大幅压缩，预估节省 85% 开销，从根源上杜绝上下文污染。
 - **30 秒极速上手**：突出 Zero-Gitea 本地免服务快速启动模式，零外部依赖即开即用。
 - **核心避坑指南**：将易导致静默失败的硬门槛提炼为专业贴士（明示 `transport: stdio` 必填性与宿主前缀映射规则）。
 
@@ -34,7 +34,7 @@
 ### English Release Notes
 
 #### Highlights
-- **User-Centric Documentation**: Refactored `README.md` to emphasize LLM context and token conservation (reducing 20k-80k tokens to 1.5k-3k tokens), with quickstarts and integration callouts.
+- **User-Centric Documentation**: Refactored `README.md` to emphasize token conservation and attention preservation (mitigating the critical pain point of 80k-token context bloat causing attention dilution and model amnesia, slashing usage by 85% via two-step targeted retrieval).
 - **Dedicated Usage Guide (`docs/USAGE.md`)**: Core lookup principles, comprehensive tool parameter tables, and 5 practical workflows highlighting `files_only` context-saving capabilities.
 - **MCP Tool Naming Guide (`docs/TOOL-NAMING.md`)**: Deep-dive into protocol namespaces, 4 multi-server collision failure modes, and standard System Prompt templates.
 - **Least-Privilege Security**: Hardened production Gitea integration guidelines requiring read-only tokens (`repo:read`).
@@ -51,7 +51,7 @@
 
 ### 中文更新说明
 
-#### 1. 原生 macOS 与 BSD 平台支持 (合入社区 PR #2)
+#### 1. 原生 macOS 与 BSD 平台支持 (合入社区 [PR #2](https://github.com/offzen/dsh-gitea-search/pull/2))
 - **环境一键配置**：新增 `scripts/setup-macos.sh`，原生支持 macOS 默认的 Bash 3.2 环境，自动通过 Homebrew 补齐环境依赖。
 - **管道防死锁与 BSD 工具链兼容**：针对缺乏 GNU `timeout` 命令的 macOS/BSD 系统，重构了非阻塞的子进程超时控制，彻底消除管道缓冲造成的死锁假死；同时兼容 BSD 版 `stat` 与 `awk` 命令行语法。
 

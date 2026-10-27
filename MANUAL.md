@@ -252,7 +252,7 @@ $$\text{file\_blobs} == \text{docs\_fts} == \text{doc\_rowid} == (\text{doc\_row
 | **搜索确定推送到远端的内容无命中** | 尚未执行镜像同步或索引刷新 | 手动执行 `scripts/sync.sh` 并运行 `python3 lib/indexer.py --build`。 |
 | **中文关键词检索 0 命中** | FTS5 分词器未构建，或 `jieba` 未正确载入 | 运行 `bin/gts --fts-stats` 检查词元分布；重新执行 `python3 lib/indexer.py --full`。 |
 | **Node.js 运行报错 `Cannot find module 'node:sqlite'`** | Node 版本在 `20.11 ~ 22.14` 且系统未装 `sqlite3` CLI | 运行 `bash scripts/setup.sh` 安装系统 `sqlite3` 命令行，系统将自动回退。 |
-| **macOS 上运行 `sync.sh` 卡在 timeout 管道** | 系统缺少 GNU `timeout` 且 fallback 逻辑受阻塞 | 更新代码至 `v1.2.0`（PR #2 已修复子进程管道阻塞问题）。 |
+| **macOS 上运行 `sync.sh` 卡在 timeout 管道** | 系统缺少 GNU `timeout` 且 fallback 逻辑受阻塞 | 更新代码至 `v1.2.0`（[PR #2](https://github.com/offzen/dsh-gitea-search/pull/2) 已修复子进程管道阻塞问题）。 |
 | **修改了 `server.mjs` 却未生效** | MCP 属于被宿主长期持有并在后台常驻的子进程 | 执行 `bash scripts/respawn-mcp.sh` 平滑重启 MCP 进程（宿主 DSH 会自动重连）。 |
 | **`session-query.sqlite-wal` 膨胀至数百 MB** | 大会话读写或非正常退出导致 WAL 未回收 | 运行 `node scripts/dsh-session-health.mjs --fix` 执行在线 `PRAGMA wal_checkpoint(TRUNCATE)`。 |
 
