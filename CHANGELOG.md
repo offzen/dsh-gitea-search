@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-10-28
+
+> **Release Scope / 版本说明**：本次发布为**原生 Windows 跨平台支持与专项审计加固里程碑**（承接 gts 1.2.1 的 Windows 移植成果）。在保持 Linux / macOS 完整兼容的前提下，彻底打破以往 Windows 下 4 个 MCP 工具 3 个无法运行的限制，提供原生 PE launcher、PATH 自动探测与命令注入安全防护；同时完成了覆盖 7 项高/中危缺陷的深度代码审计与全面修复，并在 GitHub Actions 真实 Windows Runner 上通过 7/7 jobs 及 21/21 tests（100% 通过、0 skipped、0 failed）。
+
+### Added
+- **Windows 原生平台架构支持**:
+  - **原生 PE Launcher 与打包支持 (`pyproject.toml`, `gts_cli.py`)**：通过 setuptools 的 `[project.scripts]` 生成 Windows 原生 PE 启动器 `Scripts\gts.exe`，解决 Windows `CreateProcess` 无法直接运行 shebang 脚本的底层限制；数据文件采用 `share/dsh-gitea-search/{bin,lib}` 独立隔离路径，消除与 console_scripts 同名启动器的覆盖冲突。
+  - **Windows 一键自动化配置脚本 (`scripts/setup-windows.ps1`)**：支持一键镜像仓库拉取、依赖安装、FTS5 索引构建与 DSH `cordis.patch.yml` 自动注册。
+  - **Windows CI 全矩阵工作流 (`.github/workflows/windows-ci.yml`)**：新增覆盖 W5（PE 结构与执行）、W6（PowerShell AST 语法）、W7（文件区间排他锁）、W8（命令行防注入与边界转义）、W9（CRLF 检索与换行）的 7 个专项测试任务，覆盖 Python 3.11/3.12 与 Node 20/22 组合矩阵。
+  - **跨平台测试套件 (`test/windows-adapt.test.mjs`, `windows-lock.test.mjs`, `windows-quote.test.mjs`)**：提供 21 项跨平台与 Windows 行为回归断言，`npm test` 自动采用原生 `node --test` 执行。
+
+### Fixed (专项深度审计修复)
+- **Git 路径反斜杠归一化 (`lib/server.mjs`)**：修复 `readGiteaFile` 与 `gitDir` 在 Windows 传入反斜杠路径（如 `lib\server.mjs` 或 `owner\repo`）时导致 Git 抛出 `fatal: path '...' does not exist in 'HEAD'` 的功能阻断缺陷；统一归一化为正斜杠 `/`。
+- **PowerShell YAML 路径转义安全 (`scripts/setup-windows.ps1`)**：修复原 `-replace '\\', '\\'` 因 .NET Regex 机制导致反斜杠原样残留并损坏 DSH YAML 配置文件（触发 `\U` / `\b` 语法错误）的问题；改用 `.Replace('\', '/')` 彻底根除转义冲突。
+- **CRLF 换行符尾部截断残留 (`bin/gts`)**：修复 `_stream()` 逐行读取时仅 strip `\n` 导致 Windows 检出文件末尾残留 `\r` 符号的缺陷，全面升级为 `.rstrip('\r\n')`，消除终端与 Web UI 显示混乱。
+- **Windows 文件排他锁区间一致性 (`lib/indexer.py`)**：修复 `IndexLock` 在 Windows `msvcrt.locking` 加锁前缺少 `seek(0)` 导致与 `_release()` 锁区间偏差的潜在隐患，保证多进程并发构建索引时的严格互斥。
+- **系统 `PATH` 环境变量自动探测 (`lib/server.mjs`)**：修复 `findSearchCli()` 仅硬编码相对路径导致通过全局 PATH、venv 或 Scoop/Chocolatey 安装时找不到 `gts.exe` 的问题，增加系统 `process.env.PATH` 遍历与扩展名优先级匹配。
+- **用户级安装路径兼容 (`gts_cli.py`)**：在 `_script_candidates()` 候选路径中加入 `site.USER_BASE` 与 `sys.prefix`，全面支持 `pip install --user .` 免管理员提权安装。
+- **PyPI 分类器规范化 (`pyproject.toml`)**：修正 Trove Classifier 为标准规范的 `"Operating System :: MacOS :: MacOS X"`。
+
+### Changed
+- **Node.js 子进程平台分支 (`lib/server.mjs`)**：`.exe` / `.com` 直执行不经 shell；`.cmd` / `.bat` 经 `cmd.exe` 时显式构造 `cmd /d /s /c "<已引号化命令>"` 并逐参数加引号，封堵 `& | < > ^` 命令注入通道。
+- **Python 跨平台底层兼容 (`lib/indexer.py`)**：`fcntl` 与 `resource` 改为条件导入，在 Windows 下优雅降级。
+- **版本号升级**：升级至 `1.2.2`。
+
+---
+
 ## [1.2.1] - 2026-10-27
 
 > **Release Scope / 版本说明**：本次发布为纯文档与使用规范升级（对现有代码无破坏、无新代码特性，但包含了文档相关的必要修订）。重点强化 LLM 上下文预算保护、防注意力稀释与模型失忆、MCP 命名空间防冲突及生产权限安全加固。

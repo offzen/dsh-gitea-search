@@ -1,0 +1,204 @@
+name: Windows CI
+
+# Windows 平台适配的判据工作流。
+# 存在理由：dsh-gitea-search 的 Windows 适配最初只有「源码里有适配点」的静态断言，
+# 本工作流在真实 Windows 上验证运行时行为（PE 头 / PowerShell 语法 /
+# msvcrt 锁 / cmd.exe 引号往返 / git grep 分行）。
+#
+# 注意：GitHub 的 windows-latest 是 **Desktop Experience**，不是 Server Core。
+# 这不会削弱结论 —— 真实用户拿到的就是完整版 Windows。
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  # ── W5：pip install . 必须产出真正的 PE 文件（MZ 头），而不是脚本垫片 ──────
+  windows-pe:
+    name: W5 gts.exe 是真实 PE 文件
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: pip install .
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+          if ($LASTEXITCODE -ne 0) { throw "pip install . 失败" }
+
+      - name: 断言 gts.exe 存在且为 PE（MZ 头）
+        shell: pwsh
+        run: |
+          $cmd = Get-Command gts -ErrorAction Stop
+          $exe = $cmd.Source
+          Write-Host "gts -> $exe"
+          if ($exe -notmatch '\.exe$') { throw "gts 不是 .exe：$exe" }
+          $size = (Get-Item $exe).Length
+          Write-Host "size = $size bytes"
+          if ($size -lt 4096) { throw "exe 过小（$size B），疑似空壳" }
+          $bytes = [System.IO.File]::ReadAllBytes($exe)[0..1]
+          $magic = ($bytes | ForEach-Object { $_.ToString('X2') }) -join ' '
+          Write-Host "magic = $magic"
+          if ($magic -ne '4D 5A') { throw "不是 PE 文件（期望 4D 5A = MZ，实际 $magic）" }
+          Write-Host "✅ W5 通过：gts.exe 是真实 PE（MZ）"
+
+      - name: 冒烟 —— gts.exe 能真正执行（且不是自我递归）
+        shell: pwsh
+        run: |
+          $out = & gts --help 2>&1 | Out-String
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0) { throw "gts --help 退出码 $LASTEXITCODE" }
+          # 2026-10-28 新增：data-files 若覆盖了 Scripts\gts.exe（或 gts），
+          # launcher 会变成 `from gts_cli import main` 的自我递归，表现为
+          # RecursionError / 退出码 120。判据必须显式排除这种「看起来是 PE、实际是死循环」。
+          if ($out -match 'RecursionError|maximum recursion') { throw "gts 发生自我递归，判据无效" }
+          if ($out -notmatch 'usage') { throw "gts --help 未打印 usage，输出异常" }
+          Write-Host "✅ gts.exe 可执行且非递归"
+
+      - name: 断言 data-files 未与 Scripts 入口撞名
+        shell: pwsh
+        run: |
+          # 历史的真实缺陷：pyproject 的 data-files "bin" 与 console_scripts 的 gts
+          # 都写 <prefix>\Scripts，后者被前者覆盖 ⇒ gts.exe 是合法 PE 但一跑就死。
+          $sp = python -c "import site;print(site.getsitepackages()[-1])"
+          $scripts = Split-Path (Get-Command python).Source
+          Write-Host "scripts = $scripts"
+          Write-Host "site-packages = $sp"
+          # 数据文件应落在 share\dsh-gitea-search 下，而不是 Scripts\ 里
+          $bad = Get-ChildItem -Path $scripts -Filter 'gts' -File -ErrorAction SilentlyContinue |
+                   Where-Object { $_.Length -gt 4096 }
+          if ($bad) { throw "Scripts 下的 gts 被数据文件覆盖（$($bad.FullName), $($bad.Length) B）" }
+          Write-Host "✅ Scripts 入口未被数据文件覆盖"
+
+  # ── W6：PowerShell 安装脚本语法合法（不做真机安装，只做静态语法）────────
+  windows-ps:
+    name: W6 setup-windows.ps1 语法
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 语法检查（AST Parser）
+        shell: pwsh
+        run: |
+          $path = Resolve-Path scripts/setup-windows.ps1
+          $errors = $null
+          $tokens = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
+          if ($errors -and $errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host "ERROR: $($_.Extent.StartLineNumber): $($_.Message)" }
+            throw "setup-windows.ps1 有 $($errors.Count) 处语法错误"
+          }
+          Write-Host "✅ W6 通过：0 语法错误（$($tokens.Count) tokens）"
+
+      - name: 参数契约检查（脚本必须仍接受 -Owners / -MirrorRoot / -SkipIndex）
+        shell: pwsh
+        run: |
+          $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path scripts/setup-windows.ps1), [ref]$null, [ref]$null)
+          $params = $ast.ParamBlock.Parameters.Name.VariablePath.UserPath
+          Write-Host "参数: $($params -join ', ')"
+          foreach ($p in @('MirrorRoot','Owners','SkipIndex')) {
+            if ($params -notcontains $p) { throw "缺少参数 -$p" }
+          }
+          Write-Host "✅ 参数契约完整"
+
+  # ── W7/W8：运行时行为测试（锁排他 / 引号往返）在真实 Windows 上跑 ────────
+  windows-tests:
+    name: W7/W8 运行时行为（py${{ matrix.python }} / node${{ matrix.node }}）
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+        node: ['20', '22']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: npm test（全部用例，含 Windows 专属）
+        run: npm test
+
+      - name: 断言 Windows 专属用例没有被静默跳过
+        shell: pwsh
+        run: |
+          $out = (npm test 2>&1 | Out-String)
+          Write-Host $out
+          if ($out -match 'W8-6.*# ') { throw "W8-6 在 Windows 上被跳过了 —— 它本应在本平台执行" }
+          if ($out -match 'W8-7.*# ') { throw "W8-7 在 Windows 上被跳过了 —— 命令注入防护未获验证" }
+          if ($out -match 'W8-8.*# ') { throw "W8-8 在 Windows 上被跳过了 —— 已知限制未被实测固定" }
+          if ($out -match 'W8-9.*# ') { throw "W8-9 在 Windows 上被跳过了 —— 尾部反斜杠回归未获验证" }
+          if ($out -match 'W7-2.*# ') { throw "W7-2 在 Windows 上被跳过了 —— 锁排他性未获验证" }
+          Write-Host "✅ Windows 专属用例均已真实执行"
+
+  # ── W9：git grep 在 CRLF 工作区上的路径/换行行为，必须被显式固定 ─────────
+  windows-grep-crlf:
+    name: W9 git grep 的 CRLF 与路径分隔符行为
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 记录并固定 checkout 后的行尾与路径形态
+        shell: pwsh
+        run: |
+          # GitHub checkout 在 Windows 上默认 core.autocrlf=true（工作区为 CRLF）
+          $crlf = git config --get core.autocrlf
+          Write-Host "core.autocrlf = $crlf"
+
+          $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path README.md))
+          $hasCR = $bytes -contains 13
+          Write-Host "README.md 含 CR(13) = $hasCR"
+
+          # 判据 1：git grep 的路径分隔符形态（决定 read_gitea_file 能否解析）
+          $hit = git grep -l "dsh-gitea-search" -- "*.md" | Select-Object -First 1
+          Write-Host "git grep 首个命中路径 = $hit"
+          if (-not $hit) { throw "git grep 未命中，无法判定路径形态" }
+
+          # 记录形态但不强制其一：真正的要求是「server.mjs 的路径处理要与之匹配」。
+          # 若路径是反斜杠，说明必须在服务端做归一化。
+          if ($hit -match '\\') {
+            Write-Host "⚠️ 路径使用反斜杠 —— MCP 输出的 path 需归一化为 / 才能跨平台一致"
+          } else {
+            Write-Host "✅ 路径使用正斜杠"
+          }
+
+      - name: 端到端 —— 真实建一个 bare 仓并走 git grep
+        shell: pwsh
+        run: |
+          $tmp = Join-Path $env:RUNNER_TEMP "gts-win-grep"
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          Push-Location $tmp
+          git init -q src
+          Push-Location src
+          "hello windows
+          second line" | Set-Content -Path sample.txt -Encoding utf8
+          git add .
+          git -c user.email=ci@example.com -c user.name=ci commit -qm "init"
+          Pop-Location
+          git clone -q --bare src mirror.git
+          Pop-Location
+
+          Push-Location (Join-Path $tmp "mirror.git")
+          $r = git grep -n "hello" HEAD 2>&1 | Out-String
+          Write-Host $r
+          if ($r -notmatch 'hello') { throw "bare 仓 git grep 未命中" }
+          if ($r -match "`r") { Write-Host "⚠️ git grep 输出含 CR —— 调用方需 strip" }
+          Write-Host "✅ W9 通过：bare 仓检索可用"
+          Pop-Location

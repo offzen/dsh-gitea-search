@@ -136,7 +136,8 @@ def _stream(cmd, cap):
     lines, capped = [], False
     try:
         for raw in p.stdout:
-            lines.append(raw.decode("utf-8", "replace").rstrip("\n"))
+            # rstrip("\r\n")：Windows/CRLF 仓库下剥除尾部 \r，避免污染 JSON 结果与终端渲染
+            lines.append(raw.decode("utf-8", "replace").rstrip("\r\n"))
             if len(lines) >= cap:
                 capped = True
                 p.kill()
@@ -351,7 +352,44 @@ def read_last_sync():
     return None
 
 
+def _force_utf8_stdio():
+    """把 stdout/stderr 切到 UTF-8，避免 Windows 上用非 UTF-8 代码页时直接崩。
+
+    2026-10-28 实测（GitHub windows-latest）：本脚本的帮助文本、错误信息、检索结果
+    全是中文，而 Windows 控制台默认是 cp1252/cp437（locale.getpreferredencoding()）。
+    `gts --help` 在 argparse 打印 help 时就抛
+
+        UnicodeEncodeError: 'charmap' codec can't encode character '\u8de8'
+
+    —— 也就是说 **Windows 用户装好后第一次运行就必崩**，与检索是否可用无关。
+    这里在入口处显式 reconfigure（Python 3.7+ 的 TextIOWrapper.reconfigure），
+    并对 errors 放宽到 backslashreplace，保证极端情况下也只是显示转义而不是抛异常。
+    注意：这不影响管道/重定向场景（重定向时 Python 用 locale 编码，同样需要它）。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if stream is None:
+            continue
+        # 已经是 UTF-8 就不动它（用户显式配对了就尊重；也避免多一次无谓 reconfigure）。
+        enc = (getattr(stream, "encoding", None) or "").lower().replace("-", "").replace("_", "")
+        if enc in ("utf8", "utf8mb4"):
+            continue
+        rc = getattr(stream, "reconfigure", None)
+        if rc is None:
+            continue
+        try:
+            # 关键：即使 PYTHONIOENCODING 被设成 ascii/cp1252，也必须覆盖它。
+            # 实测（ams2 模拟 CPython + ascii）：仅靠「检测到 PYTHONIOENCODING 就跳过」，
+            # gts --help 依旧在 argparse 打印中文 help 时抛 UnicodeEncodeError / 退出码 120。
+            # errors 再用 backslashreplace 兜底，保证任何残余不可编码字符只是显示为转义，
+            # 而不是把整个 CLI 崩掉。
+            rc(encoding="utf-8", errors="backslashreplace")
+        except (ValueError, OSError):
+            # 某些受限 stdio 包装器不支持 reconfigure —— 宁可不动，不要因此在启动期崩掉。
+            pass
+
+
 def main():
+    _force_utf8_stdio()
     ap = argparse.ArgumentParser(add_help=True, description="跨 gitea 全量镜像搜索")
     ap.add_argument("pattern", nargs="?", help="搜索模式")
     ap.add_argument("-q", "--query", dest="query_alias", help="搜索模式（别名）")

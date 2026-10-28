@@ -1,7 +1,7 @@
 {
   "name": "dsh-gitea-search",
   "type": "module",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "DeepSeek Harness (DSH) 高性能 Gitea/Git 镜像混合检索引擎（git grep + SQLite FTS5 + Jieba + MCP Server）",
   "license": "Apache-2.0",
   "repository": {
@@ -21,7 +21,9 @@
     "jieba"
   ],
   "scripts": {
-    "test": "bash scripts/run-e2e-test.sh /tmp/gts-ci-testbed"
+    "test": "node --test test/windows-adapt.test.mjs test/windows-lock.test.mjs test/windows-quote.test.mjs",
+    "test:e2e": "bash scripts/run-e2e-test.sh /tmp/gts-ci-testbed",
+    "test:all": "node --test test/windows-adapt.test.mjs test/windows-lock.test.mjs test/windows-quote.test.mjs && bash scripts/run-e2e-test.sh /tmp/gts-ci-testbed"
   },
   "engines": {
     "node": ">=20.11.0"

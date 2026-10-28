@@ -2,10 +2,11 @@
 
 [![License](https://img.shields.io/badge/License-Apache--2.0-C21325)](LICENSE)
 [![CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/Version-v1.2.1-blue)](RELEASE-NOTES.md)
+[![Windows CI](https://img.shields.io/badge/Windows%20CI-7%2F7%20Passed-brightgreen)](.github/workflows/windows-ci.yml)
+[![Version](https://img.shields.io/badge/Version-v1.2.2-blue)](RELEASE-NOTES.md)
 [![npm](https://img.shields.io/npm/v/dsh-gitea-search?color=red)](https://www.npmjs.com/package/dsh-gitea-search)
 [![Archive](https://img.shields.io/badge/Archive-v0.1.1%20(Pure%20Node)-orange)](https://github.com/offzen/dsh-gitea-search/tree/legacy-0.1.x)
-[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-brightgreen)](scripts/setup-macos.sh)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows%20(Native)-brightgreen)](scripts/setup-windows.ps1)
 [![Node](https://img.shields.io/badge/Node-%3E%3D20.11-success)](package.json)
 
 给 DeepSeek Harness (DSH) 及任意支持 Model Context Protocol (MCP) 的 Agent 装上**跨仓极速检索能力**：一条命令将 Gitea 上全部仓库镜像到本地，Agent 用一次工具调用即可毫秒级搜遍所有代码、文档、配置文件与历史排障记录——不用逐个 clone、不把大文件塞进上下文、彻底消除大模型在海量信息翻找中的高额开销。
@@ -14,7 +15,14 @@
 
 ---
 
-## 为什么值得装：不仅省上下文预算，更防模型注意力稀释与失忆
+## 架构定位与解决的核心痛点
+可以将 Gitea 远端托管的**所有仓库以 bare 裸镜像**拉取并维护在宿主机本地，提供**两层极速检索引擎**，并通过标准 Model Context Protocol (MCP) 服务暴露给 DeepSeek Harness (DSH) Agent：
+
+1. **代码检索引擎（git grep）**：跨全量仓库、全部分支、文件路径及提交记录的毫秒级检索；支持多词短语连写 0 命中时自动回退为「同行多词 AND（`--and`）」模式。
+2. **文档与会话全文检索（SQLite FTS5 + jieba 中文分词）**：毫秒级响应，支持 BM25 智能加权与内容类型分区（`doc`、`session`、`config`、`script`），解决 Agent 历史长上下文与排障经验的召回问题。
+3. **零服务本地快速体验模式 (Zero-Gitea Mode)**：支持将本地任意普通 Git 仓库目录一键裸镜像化并构建倒排索引，无需远端 Gitea 服务即可作为 MCP 检索端点。
+
+## 不仅省上下文预算，更防模型注意力稀释与失忆
 
 Agent 查一次资料，真正的代价从来不是“查没查到”，而是**消耗了多少对话轮数、塞入了多少冗余 Token**。没有本地索引时，每次盲目翻找都在严重透支模型宝贵的上下文窗口预算；而更为致命的是：**上下文急剧膨胀会导致严重的“注意力稀释”与模型失忆**。
 
@@ -122,6 +130,85 @@ bin/gts -D --kind doc,script "caddy"  # 按分区过滤：只检索文档与脚�
 bash scripts/setup.sh          # Linux (Debian / Ubuntu / RHEL)
 bash scripts/setup-macos.sh    # macOS
 ```
+
+### Windows（原生，dsh-gitea-search 新增）
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners myorg -MirrorRoot C:\gitea-mirror
+```
+
+> ⚠️ **此前的 v1.2.1 在原生 Windows 上，4 个工具只有 1 个能用。**
+> 本版本（v1.2.2）已修复该问题，原因与做法见下一节。
+
+---
+
+## Windows 支持说明
+
+### 为什么原生 Windows 上原本用不了
+
+`read_gitea_file` 直接调用 `git`，所以可用；**但另外 3 个检索工具全部经 `spawn(gts, …)` 转发**，
+这里卡了三个硬障碍：
+
+| # | 障碍 | 后果 |
+|---|---|---|
+| 1 | `bin/gts` 是 Python 脚本、无扩展名，靠 `#!/usr/bin/env python3` shebang 执行 | Windows 的 `CreateProcess` **只认 PE 文件**，没有 shebang 机制 ⇒ 无法执行 |
+| 2 | `lib/server.mjs` 的 `spawn()` 未开 `shell` | 即使补 `gts.cmd` / `gts.bat` 包装也执行不了（批处理不在直执行范围） |
+| 3 | `fs.accessSync(c, X_OK)` 在 Windows 上**退化为存在性检查** | 会把 `bin/gts` 误判成"找到了"，随后 spawn 抛 `EFTYPE`/`ENOEXEC`，用户看到莫名其妙的报错而非友好的"找不到 gts CLI" |
+
+### dsh-gitea-search 的修复与强化
+
+1. **提供真正的 `.exe` 入口**：新增 `pyproject.toml` + `gts_cli.py`，`pip install .` 由 setuptools
+   生成 `Scripts\gts.exe`（PE launcher）—— 这正是原本缺失的那一环；同时适配 `site.USER_BASE`，支持 `--user` 免提权安装。
+2. **`findSearchCli()` 平台化与 PATH 自动探测**：Windows 下按扩展名判定，`.exe`/`.com` 直执行、`.cmd`/`.bat` 走 shell、
+   `.py` 与无扩展名一律判为不可执行（不再误判）；且自动遍历系统 `PATH` 环境变量，无缝适配全局 Python Scripts、venv、Scoop 或 Chocolatey 安装路径。
+3. **`spawn()` 平台分支与命令注入防护**：`.exe`/`.com` **直执行**（不经任何 shell）；只有 `.cmd`/`.bat`
+   才走 `cmd.exe`，且显式构造 `cmd /d /s /c "<已引号化命令>"` 并对每个参数单独加引号
+   （`/s` 让 cmd 先剥掉整条命令的最外层引号，之后逐参数引号才真正起定界作用），
+   彻底防御搜索词里的 `& | < > ^` 恶意命令注入。
+4. **路径正斜杠归一化**：针对 Git tree object 在所有平台上只接受正斜杠 `/` 的事实，`readGiteaFile` 与 `gitDir` 自动将 Windows 风格的反斜杠 `\` 统一归一化为 `/`，消除 `fatal: path '...' does not exist in 'HEAD'` 报错。
+5. **CRLF 尾部换行符严格剥离**：`bin/gts` 的 `_stream()` 逐行读取采用 `.rstrip('\r\n')`，彻底清除 Windows 检出文件的 `\r` 符号，杜绝终端与 Web UI 渲染时的光标跳行与行数失真。
+6. **文件锁区间对齐（`IndexLock`）**：`lib/indexer.py` 引入 Windows `msvcrt.locking` 字节区间锁，并在加锁前显式执行 `seek(0)`，与 `_release()` 保持严格对称，确保多进程并发建索引时的排他性。
+7. **PowerShell 自动化部署安全转义**：`scripts/setup-windows.ps1` 采用正斜杠注册 DSH profile，杜绝反斜杠在 YAML 双引号解析中被误识为 `\U` / `\b` 等逃逸符而导致配置文件语法损坏。
+
+### Windows 安装方式（三选一）
+
+**方式 A：一键部署脚本（推荐）**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners myorg -MirrorRoot C:\gitea-mirror -RegisterDsh
+```
+
+**方式 B：pip 安装（标准 Python 环境）**
+
+```powershell
+pip install .                 # 在项目根目录执行，生成 <Python>\Scripts\gts.exe
+# 若无管理员权限，亦可安全使用用户目录安装：
+pip install --user .
+```
+
+**方式 C：PyInstaller 打独立 exe（目标机不想装 Python 时）**
+
+```powershell
+pip install pyinstaller
+pyinstaller --onedir --name gts --hidden-import=indexer --paths=lib bin\gts
+# 产物：dist\gts\gts.exe   ← 用 --onedir 而非 --onefile，避免每次调用解压 38MB（启动 0.5s → 0.12s）
+```
+
+然后设 `GTS_BIN` 指向该 exe：
+
+```powershell
+$env:GTS_BIN = "C:\path\to\dist\gts\gts.exe"
+```
+
+> ⚠️ **`GTS_BIN` 必须是单个可执行文件路径**。写成 `"python C:\path\bin\gts"` 会直接 `ENOENT` ——
+> spawn 会把整串当成一个文件名。这是最容易浪费半小时的坑。
+
+### 已知限制与 CI 验证状态
+
+- **真实 Windows Runner CI 全绿通过**：全套 Windows 适配代码与 `setup-windows.ps1` 安装脚本已在 GitHub Actions Windows Runner（Windows Server 2022，覆盖 Python 3.11/3.12 + Node 20/22 组合矩阵）完成真实环境验证，**21/21 项测试用例 100% 通过（0 skipped, 0 failed）**，PowerShell AST 语法 0 错误。
+- `scripts/sync.sh`、`quickstart-local.sh`、`respawn-mcp.sh` 为 Linux/macOS bash 脚本，Windows 上请使用 `git clone --bare` + `python lib\indexer.py --build`，或通过 `setup-windows.ps1` 进行自动初始化与同步。
+- `resource.getrusage` 在 Windows 下返回全 0，CPU 遥测指标为空（不影响检索与读取的核心功能与正确性）。
+- 经 `cmd.exe` 时，含 `%NAME%` 的参数会被 cmd 在解析阶段替换成环境变量值（已知 cmd 既定语义，已通过 `W8-8` 测试用例固化）；建议优先使用 `.exe` 直执行方式。
 
 ---
 
