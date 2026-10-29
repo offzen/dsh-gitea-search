@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.2-rc2] - Unreleased
 
-> **Release Scope**：修复 1.2.2 早期候选引入的 POSIX（Linux / macOS）回归。Windows 侧能力全部保留，
+> **Release Scope**：修复 1.2.2-rc 早期候选引入的 POSIX（Linux / macOS）回归。Windows 侧能力全部保留，
 > 本版本只把"无条件 Windows 化"的共享代码改回**按平台分流**。
 
 ### Fixed
@@ -35,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **`test/posix-path.test.mjs`**：5 项 POSIX 路径语义回归用例。
-  实测在 1.2.2 早期候选上 5/5 失败、在 1.2.2-rc2 上 5/5 通过，可锁死此类回归。
+  实测在 1.2.2-rc上 5/5 失败、在 1.2.2-rc2 上 5/5 通过，可锁死此类回归。
 - **macOS CI runner（`.github/workflows/ci.yml`）**：新增 `test-macos` job。
   本项目 v1.2.0 起就带 BSD 兼容代码，但一直没有 macOS runner，
   Apple Silicon / APFS 侧的路径语义从未被验证过。
@@ -43,17 +43,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation
 - 更正 `WINDOWS-PORT.md` 中"过滤目录穿越符号 `..`"的**虚假安全声明**（代码里并无此逻辑）。
 - 更正 `PROVENANCE.json` 的 `source_commit`：原先写的是 `6712a7b`（v1.2.1），
-  但文件哈希取自 1.2.2，溯源链断裂。
+  但文件哈希取自 1.2.2-rc，溯源链断裂。
 - 更正 CHANGELOG / RELEASE-NOTES 中"保持 Linux / macOS 完整兼容""100% 向后兼容"的表述。
 
 ### Acknowledgements
-- 特别感谢外部开发者 **@uaisu** 敏锐发现并详尽复现 v1.2.2 在 POSIX 环境下的路径反斜杠静默串读缺陷（PR #3），并提供了关键的测试用例思路。
+- 特别感谢外部开发者 **@uaisu** 敏锐发现并详尽复现 v1.2.2-rc 在 POSIX 环境下的路径反斜杠静默串读缺陷（PR #3），并提供了关键的测试用例思路。
 
-## [1.2.2] - 2026-10-28
+## [1.2.2-RC] - 2026-10-28
 
 > **Release Scope / 版本说明**：本次发布为**原生 Windows 跨平台支持与稳健性加固里程碑**。彻底打破以往 Windows 下 4 个 MCP 工具 3 个无法运行的限制，提供原生 PE launcher、PATH 自动探测与命令注入安全防护；全面建立覆盖路径归一化、参数防注入、并发锁对齐与环境探测的生产级防护体系，并在 GitHub Actions 真实 Windows Runner 上通过 7/7 jobs 及 21/21 tests（100% 通过、0 skipped、0 failed）。
 >
-> ⚠️ **升级警示（1.2.2 早期候选存在 POSIX 侧回归，已在 1.2.2-rc2 修复）**
+> ⚠️ **升级警示（1.2.2-rc 存在 POSIX 侧回归，已在 1.2.2-rc2 修复）**
 >
 > 本版本**并非**"保持 Linux / macOS 完整兼容"，也**不是** 100% 向后兼容。
 > 由于共享代码里的路径归一化未做平台分流，Linux / macOS 上出现以下行为变更：
@@ -62,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 >   会静默返回另一个文件的内容（如 `a\b.md` 读到 `a/b.md`），**且不报错**；
 > - `classify_kind()` 对这类文件判不出扩展名，`kind` 从 `doc` 落入 `code`，检索漏召回。
 >
-> 若你的镜像仓中存在含反斜杠的文件名，请勿停留在 1.2.2 早期候选，直接升级到 **1.2.2-rc2**。
+> 若你的镜像仓中存在含反斜杠的文件名，请勿停留在 1.2.2-rc，直接升级到 **1.2.2-rc2**。
 
 ### Added
 - **Windows 原生平台架构支持**:
@@ -93,7 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Node.js 子进程平台分支 (`lib/server.mjs`)**：`.exe` / `.com` 直执行不经 shell；`.cmd` / `.bat` 经 `cmd.exe` 时显式构造 `cmd /d /s /c "<已引号化命令>"` 并逐参数加引号，封堵 `& | < > ^` 命令注入通道。
 - **Python 跨平台底层兼容 (`lib/indexer.py`)**：`fcntl` 与 `resource` 改为条件导入，在 Windows 下优雅降级。
-- **版本号升级**：升级至 `1.2.2`。
+- **版本号升级**：升级至 `1.2.2-rc`。
 
 ---
 
