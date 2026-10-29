@@ -4,7 +4,7 @@
 
 ### 版本概述 / Overview
 
-`dsh-gitea-search` v1.2.2 是一个重大的跨平台生态扩展与生产级加固版本。在承接 v1.2.1 架构与规范的基础上，本版本正式推出了**原生 Windows 平台支持**，彻底解决了长期以来 Windows 平台下 4 个 MCP 工具因缺少 PE 可执行入口、跨平台锁缺失和 shebang 无法执行而导致 3 个检索工具不可用的痛点；同时完成了覆盖 7 项高/中危缺陷的专项深度审计与全面修复，并在 GitHub Actions 真实 Windows Runner 上通过了全套自动化工作流验证（7/7 Jobs，21/21 测试用例 100% 通过）。
+`dsh-gitea-search` v1.2.2 是一个重大的跨平台生态扩展与生产级加固版本。在承接 v1.2.1 架构与规范的基础上，本版本正式推出了**原生 Windows 平台支持**，彻底打破以往 Windows 环境下因缺失 PE 入口、文件锁不兼容及 shebang 无法执行导致 3 个检索工具不可用的底层限制；全面建立了覆盖路径归一化、参数防注入、并发锁对齐与环境探测的生产级防护体系，并在 GitHub Actions 真实 Windows Runner 上通过了全套自动化工作流验证（7/7 Jobs，21/21 测试用例 100% 通过）。
 
 ---
 
@@ -16,17 +16,17 @@
 - **一键自动化部署 (`scripts/setup-windows.ps1`)**：提供专为 Windows 打造的 PowerShell 部署脚本，支持 Git 裸镜像拉取、依赖安装、FTS5 倒排索引构建及 DSH `cordis.patch.yml` 自动注册。
 - **跨平台测试支持**：测试架构迁移至 Node 原生 `node --test`，新增 21 项跨平台行为与防注入断言。
 
-#### 2. 专项深度审计与缺陷修复
-- **Git 路径反斜杠归一化**：`readGiteaFile`、`gitDir` 以及 CLI `gts --read` 自动将 Windows 反斜杠 `\` 转换为正斜杠 `/`，彻底根除 Git tree object 抛出 `fatal: path '...' does not exist in 'HEAD'` 的功能性故障。
-- **CLI 同步跨平台容错与前缀规范**：修复 `gts --sync` 硬编码 `/bin/bash` 崩溃问题，增加 `shutil.which('bash')` 动态探测与友好异常回退；统一 `die()` 报错前缀为 `gts:`。
+#### 2. 核心跨平台稳健性设计与安全防护机制
+- **Git 树对象路径统一归一化**：`readGiteaFile`、`gitDir` 以及 CLI `gts --read` 自动将 Windows 反斜杠 `\` 转换为正斜杠 `/`，杜绝 Git tree object 抛出 `fatal: path '...' does not exist in 'HEAD'`。
+- **CLI 同步跨平台容错与前缀规范**：`gts --sync` 增加 `shutil.which('bash')` 动态探测与友好的跨平台回退提示；统一 `die()` 报错前缀为 `gts:`。
 - **PATH 引号清洗与 Gitea Actions 卡滞防护**：增强 `findSearchCli()` 剥离 PATH 双引号能力；为 Windows CI 添加 `github.server_url == 'https://github.com'` 守卫，避免在缺少 Windows runner 的自建 Gitea 环境中永久排队。
-- **PowerShell YAML 路径转义修复**：修复原 `-replace` .NET 正则转义陷阱，改用正斜杠进行 DSH 配置插值，避免 YAML 反斜杠语法错误。
-- **CRLF 尾部换行符彻底清洗**：`bin/gts` 的 `_stream()` 升级为 `.rstrip('\r\n')`，杜绝 Windows 检出代码的 `\r` 符号污染终端与 Web UI 渲染。
-- **Windows 排他锁区间严格对齐**：`lib/indexer.py` 的 `IndexLock` 在 Windows 加锁前显式执行 `seek(0)`，与 `_release()` 保持严格对称，确保多进程建索引互斥有效。
+- **PowerShell YAML 路径转义安全**：改用 `.Replace('\', '/')` 正斜杠进行 DSH 配置插值，彻底避免 YAML 反斜杠转义语法错误。
+- **CRLF 尾部换行符彻底清洗**：`bin/gts` 的 `_stream()` 与 `lib/indexer.py` 的摘要生成器彻底规整孤立 `\r`，杜绝 Windows 检出代码的 `\r` 符号污染终端与 Web UI 渲染。
+- **Windows 排他锁区间严格对齐**：`lib/indexer.py` 的 `IndexLock` 在 Windows 加锁前显式执行 `seek(0)`，与 `_release()` 保持严格对称，确保多进程并发建索引互斥有效。
 - **系统 PATH 环境变量自动探测**：`findSearchCli()` 自动遍历 `process.env.PATH`，无需手动配置环境变量即可开箱识别全局/虚拟环境中的 `gts.exe`。
-- **用户级安装支持**：候选路径增加 `site.USER_BASE`，无管理员权限时可通过 `pip install --user .` 正常使用。
+- **免提权用户级安装支持**：候选路径增加 `site.USER_BASE`，无管理员权限时可通过 `pip install --user .` 正常使用。
 - **PyPI 元数据规范化**：修正 Trove Classifier 为 `"Operating System :: MacOS :: MacOS X"`。
-- **文档体系手册化重构**：将所有安装部署细节从 `README.md` 完整收拢至 `MANUAL.md §3`，校准合成测试断言为 31 项，并补充 Windows 专属行为测试说明。
+- **文档体系手册化重构**：将所有安装部署细节从 `README.md` 完整收拢至 `MANUAL.md §3` 与 `WINDOWS-PORT.md`，校准合成测试断言为 31 项，并补充 Windows 专属行为测试说明。
 
 #### 3. 验证与质量保证
 - **GitHub Actions Windows Runner 全绿**：覆盖 Windows Server 2022 下 Python 3.11/3.12 与 Node 20/22 组合矩阵，7/7 jobs 全部 PASS，21/21 tests 真实执行无跳过、零失败。
@@ -38,17 +38,17 @@
 
 #### Highlights
 - **Native Windows Platform Support**: Introduces native PE launcher generation (`Scripts\gts.exe`) via `pyproject.toml` and `gts_cli.py`, overcoming Windows `CreateProcess` limitations on shebang scripts.
-- **Deep Audit & Critical Fixes**:
+- **Robustness Architecture & Security Guards**:
   - Path normalization (backslash to forward-slash) across `server.mjs` and `bin/gts` preventing Git fatal tree lookup errors.
   - Safe YAML path interpolation in `setup-windows.ps1` preventing profile syntax corruption.
   - Cross-platform synchronization fallback in `bin/gts --sync` and unified `gts:` diagnostic prefix.
   - Safe PATH quotes handling in `server.mjs` and GitHub server URL guard in Windows CI preventing queued runner stalls.
-  - Clean CRLF `\r` stripping in `bin/gts` stream outputs.
+  - Clean CRLF `\r` stripping in `bin/gts` stream outputs and indexer snippet generation.
   - Consistent byte-range file locking (`IndexLock`) with `seek(0)` alignment on Windows.
   - Automatic `PATH` environment variable traversal for CLI executable discovery.
   - Full support for unprivileged `pip install --user .` installations via `site.USER_BASE`.
   - PyPI compliant Trove classifiers.
-  - Documentation manual restructuring: migrated all installation flows from `README.md` to `MANUAL.md §3` and reconciled 31-assertion testbed metrics.
+  - Documentation manual restructuring: migrated all installation flows from `README.md` to `MANUAL.md §3` and `WINDOWS-PORT.md`, reconciling 31-assertion testbed metrics.
 - **Automated Windows CI**: 7/7 jobs and 21/21 test assertions verified green on GitHub Actions Windows runners with zero skips and zero failures.
 
 ---

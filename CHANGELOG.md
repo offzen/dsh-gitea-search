@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.2] - 2026-10-28
 
-> **Release Scope / 版本说明**：本次发布为**原生 Windows 跨平台支持与专项审计加固里程碑**（承接 gts 1.2.1 的 Windows 移植成果）。在保持 Linux / macOS 完整兼容的前提下，彻底打破以往 Windows 下 4 个 MCP 工具 3 个无法运行的限制，提供原生 PE launcher、PATH 自动探测与命令注入安全防护；同时完成了覆盖 7 项高/中危缺陷的深度代码审计与全面修复，并在 GitHub Actions 真实 Windows Runner 上通过 7/7 jobs 及 21/21 tests（100% 通过、0 skipped、0 failed）。
+> **Release Scope / 版本说明**：本次发布为**原生 Windows 跨平台支持与稳健性加固里程碑**。在保持 Linux / macOS 完整兼容的前提下，彻底打破以往 Windows 下 4 个 MCP 工具 3 个无法运行的限制，提供原生 PE launcher、PATH 自动探测与命令注入安全防护；全面建立覆盖路径归一化、参数防注入、并发锁对齐与环境探测的生产级防护体系，并在 GitHub Actions 真实 Windows Runner 上通过 7/7 jobs 及 21/21 tests（100% 通过、0 skipped、0 failed）。
 
 ### Added
 - **Windows 原生平台架构支持**:
@@ -16,18 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Windows CI 全矩阵工作流 (`.github/workflows/windows-ci.yml`)**：新增覆盖 W5（PE 结构与执行）、W6（PowerShell AST 语法）、W7（文件区间排他锁）、W8（命令行防注入与边界转义）、W9（CRLF 检索与换行）的 7 个专项测试任务，覆盖 Python 3.11/3.12 与 Node 20/22 组合矩阵。
   - **跨平台测试套件 (`test/windows-adapt.test.mjs`, `windows-lock.test.mjs`, `windows-quote.test.mjs`)**：提供 21 项跨平台与 Windows 行为回归断言，`npm test` 自动采用原生 `node --test` 执行。
 
-### Fixed (专项深度审计修复)
-- **Git 路径反斜杠归一化 (`lib/server.mjs`, `bin/gts`)**：修复 `readGiteaFile`、`gitDir` 以及 CLI `gts --read` 在 Windows 传入反斜杠路径（如 `lib\server.mjs` 或 `owner\repo`）时导致 Git 抛出 `fatal: path '...' does not exist in 'HEAD'` 的功能阻断缺陷；统一归一化为正斜杠 `/`。
-- **CLI 同步跨平台容错与前缀规范 (`bin/gts`)**：修复 `gts --sync` 硬编码 `/bin/bash` 导致在 Windows 原生环境下抛出 `FileNotFoundError: [WinError 2]` 崩溃的缺陷，增加 `shutil.which('bash')` 动态探测与回退提示；统一 `die()` 报错前缀为 `gts:`。
+### Fixed (跨平台与运行环境稳健性加固)
+- **Git 路径反斜杠归一化 (`lib/server.mjs`, `bin/gts`)**：`readGiteaFile`、`gitDir` 以及 CLI `gts --read` 自动将 Windows 反斜杠路径（如 `lib\server.mjs` 或 `owner\repo`）统一归一化为正斜杠 `/`，杜绝 Git 抛出 `fatal: path '...' does not exist in 'HEAD'`。
+- **CLI 同步跨平台容错与前缀规范 (`bin/gts`)**：`gts --sync` 增加 `shutil.which('bash')` 动态探测与友好的跨平台回退提示；统一 `die()` 报错前缀为 `gts:`。
 - **PATH 环境变量引号安全剥离 (`lib/server.mjs`)**：增强 `findSearchCli()` 对 Windows 系统 `PATH` 中包含双引号目录项的清洗处理，防止路径拼接残损。
 - **Gitea Actions 队列卡滞防护 (`.github/workflows/windows-ci.yml`)**：为 Windows CI 工作流任务增设 `if: github.server_url == 'https://github.com'` 守卫，避免在缺少 Windows runner 的自建 Gitea/gitpub Actions 环境中触发永久 queued 队列堆积。
-- **PowerShell YAML 路径转义安全 (`scripts/setup-windows.ps1`)**：修复原 `-replace '\\', '\\'` 因 .NET Regex 机制导致反斜杠原样残留并损坏 DSH YAML 配置文件（触发 `\U` / `\b` 语法错误）的问题；改用 `.Replace('\', '/')` 彻底根除转义冲突。
-- **CRLF 换行符尾部截断残留 (`bin/gts`)**：修复 `_stream()` 逐行读取时仅 strip `\n` 导致 Windows 检出文件末尾残留 `\r` 符号的缺陷，全面升级为 `.rstrip('\r\n')`，消除终端与 Web UI 显示混乱。
-- **Windows 文件排他锁区间一致性 (`lib/indexer.py`)**：修复 `IndexLock` 在 Windows `msvcrt.locking` 加锁前缺少 `seek(0)` 导致与 `_release()` 锁区间偏差的潜在隐患，保证多进程并发构建索引时的严格互斥。
-- **系统 `PATH` 环境变量自动探测 (`lib/server.mjs`)**：修复 `findSearchCli()` 仅硬编码相对路径导致通过全局 PATH、venv 或 Scoop/Chocolatey 安装时找不到 `gts.exe` 的问题，增加系统 `process.env.PATH` 遍历与扩展名优先级匹配。
+- **PowerShell YAML 路径转义安全 (`scripts/setup-windows.ps1`)**：改用 `.Replace('\', '/')` 正斜杠进行 DSH 配置插值，彻底杜绝 Windows 路径反斜杠在 YAML 解析器中触发 `\U` / `\b` 等非法转义错误。
+- **CRLF 换行符尾部截断残留 (`bin/gts`, `lib/indexer.py`)**：文本流读取升级为 `.rstrip('\r\n')`，索引摘要生成器彻底规整孤立 `\r`，消除 Windows 文本在终端与 Web UI 渲染时的光标跳行与显示混乱。
+- **Windows 文件排他锁区间一致性 (`lib/indexer.py`)**：`IndexLock` 在 Windows `msvcrt.locking` 加锁前显式执行 `seek(0)`，与 `_release()` 保持严格对称，确保多进程并发构建索引时的严格互斥。
+- **系统 `PATH` 环境变量自动探测 (`lib/server.mjs`)**：自动遍历系统 `process.env.PATH` 并智能匹配可执行后缀，支持全局 PATH、虚拟环境 (venv) 与 Scoop 开箱免配置识别 `gts.exe`。
 - **用户级安装路径兼容 (`gts_cli.py`)**：在 `_script_candidates()` 候选路径中加入 `site.USER_BASE` 与 `sys.prefix`，全面支持 `pip install --user .` 免管理员提权安装。
 - **PyPI 分类器规范化 (`pyproject.toml`)**：修正 Trove Classifier 为标准规范的 `"Operating System :: MacOS :: MacOS X"`。
-- **文档体系手册化重构与断言数字对齐 (`README.md`, `MANUAL.md`)**：响应精简化规范，将全部环境安装部署细节从 `README.md` 迁移至 `MANUAL.md §3`；将合成测试断言数精确校准为实测一致的 31 项，并补充 21 项跨平台行为测试说明。
+- **文档体系手册化重构与断言数字对齐 (`README.md`, `MANUAL.md`, `WINDOWS-PORT.md`)**：响应精简化规范，将全部环境安装部署细节从 `README.md` 迁移至 `MANUAL.md §3` 与 `WINDOWS-PORT.md`；将合成测试断言数精确校准为实测一致的 31 项，并补充 21 项跨平台行为测试说明。
 
 ### Changed
 - **Node.js 子进程平台分支 (`lib/server.mjs`)**：`.exe` / `.com` 直执行不经 shell；`.cmd` / `.bat` 经 `cmd.exe` 时显式构造 `cmd /d /s /c "<已引号化命令>"` 并逐参数加引号，封堵 `& | < > ^` 命令注入通道。

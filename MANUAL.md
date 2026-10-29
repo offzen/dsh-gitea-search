@@ -120,7 +120,7 @@ python3 lib/indexer.py --stats
 
 ### 3.3 场景 C：原生 Windows 环境部署
 
-Windows 的进程创建机制（`CreateProcess`）只认 PE 二进制文件（`.exe` / `.com`），不支持 POSIX shebang 机制；因此无扩展名的 Python 脚本 `bin\gts` 无法被直接执行。v1.2.2 提供了完善的原生 Windows 架构支持，系统提供三种安装接入方式：
+Windows 的进程创建机制（`CreateProcess`）只认 PE 二进制文件（`.exe` / `.com`），不支持 POSIX shebang 机制；因此无扩展名的 Python 脚本 `bin\gts` 无法被直接执行。v1.2.2 提供了完善的原生 Windows 架构支持（详细底层设计、安全护栏与 CI 矩阵见 **[WINDOWS-PORT.md](WINDOWS-PORT.md)**），系统提供三种安装接入方式：
 
 #### 方式 A：PowerShell 一键自动化安装（推荐）
 

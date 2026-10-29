@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache--2.0-C21325)](LICENSE)
 [![CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml)
-[![Windows CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/windows-ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions/workflows/windows-ci.yml)
+[![Windows CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/windows-ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions)
 [![Version](https://img.shields.io/badge/Version-v1.2.2-blue)](RELEASE-NOTES.md)
 [![npm](https://img.shields.io/npm/v/dsh-gitea-search?color=red)](https://www.npmjs.com/package/dsh-gitea-search)
 [![Archive](https://img.shields.io/badge/Archive-v0.1.1%20(Pure%20Node)-orange)](https://github.com/offzen/dsh-gitea-search/tree/legacy-0.1.x)
@@ -129,45 +129,23 @@ bin/gts -D --kind doc,script "caddy"  # 按分区过滤：只检索文档与脚�
 
 ---
 
-## Windows 支持说明
+## Windows 原生跨平台支持
 
-### 为什么原生 Windows 上原本用不了
+`dsh-gitea-search` 自 `v1.2.2` 起正式提供生产级原生 Windows 跨平台支持：
+- **原生 PE 执行入口**：通过标准 `pip install .` 生成原生 `Scripts\gts.exe` PE 二进制启动器，免管理员权限直接运行；
+- **防注入命令安全与环境自适配**：`.exe` 直执行，批处理模式采用双引号严格防转义注入护栏，自动穿透系统 `PATH`、venv 与 Scoop；
+- **全套 CI 真实验证**：已在 GitHub Actions Windows Server 2022 Runner 上完成多版本矩阵验证（21/21 用例全绿）。
 
-`read_gitea_file` 直接调用 `git`，所以可用；**但另外 3 个检索工具全部经 `spawn(gts, …)` 转发**，
-这里卡了三个硬障碍：
-
-| # | 障碍 | 后果 |
-|---|---|---|
-| 1 | `bin/gts` 是 Python 脚本、无扩展名，靠 `#!/usr/bin/env python3` shebang 执行 | Windows 的 `CreateProcess` **只认 PE 文件**，没有 shebang 机制 ⇒ 无法执行 |
-| 2 | `lib/server.mjs` 的 `spawn()` 未开 `shell` | 即使补 `gts.cmd` / `gts.bat` 包装也执行不了（批处理不在直执行范围） |
-| 3 | `fs.accessSync(c, X_OK)` 在 Windows 上**退化为存在性检查** | 会把 `bin/gts` 误判成"找到了"，随后 spawn 抛 `EFTYPE`/`ENOEXEC`，用户看到莫名其妙的报错而非友好的"找不到 gts CLI" |
-
-### Windows 原生支持特性
-
-`dsh-gitea-search` v1.2.2 正式引入了生产级原生 Windows 平台支持，彻底打破以往 Windows 环境下因缺失 PE 入口、文件锁不兼容及 shebang 无法解析导致 3 个检索工具不可用的底层限制：
-
-1. **原生 PE 二进制入口**：通过 `pyproject.toml` 标准构建生成原生 PE 二进制 `Scripts\gts.exe`，支持 `--user` 免提权安装，解决 Windows `CreateProcess` 无法执行无扩展名脚本的硬障碍；
-2. **防注入命令安全与 PATH 自动探测**：`.exe` 直执行（免 shell），批处理模式采用严格引号化定界彻底防御 `& | < > ^` 恶意命令注入；`server.mjs` 自动遍历系统 `PATH` 环境变量识别启动器；
-3. **跨平台机制对齐与鲁棒性加固**：引入 Windows `msvcrt.locking` 字节区间排他锁、Git 路径反斜杠自动归一化，以及严格的 CRLF 尾部换行符剥离。
-
-> 完整技术实现细节、缺陷加固清单与移植历史请参阅 **[CHANGELOG.md](CHANGELOG.md)** 与 **[WINDOWS-PORT.md](WINDOWS-PORT.md)**。
-
-### Windows 原生部署指引
-
-Windows 平台的完整部署流程（包含 PowerShell 一键安装脚本 `setup-windows.ps1`、标准 `pip install .` 生成 PE launcher、PyInstaller 打包独立 exe、环境变量设置与避坑说明）已完整收录于运维手册 **[MANUAL.md §3.3（场景 C：原生 Windows 环境部署）](MANUAL.md#33-场景-c原生-windows-环境部署)**。
-
-### 已知限制与 CI 验证状态
-
-- **真实 Windows Runner CI 全绿通过**：全套 Windows 适配代码与 `setup-windows.ps1` 安装脚本已在 GitHub Actions Windows Runner（Windows Server 2022，覆盖 Python 3.11/3.12 + Node 20/22 组合矩阵）完成真实环境验证，**21/21 项测试用例 100% 通过（0 skipped, 0 failed）**，PowerShell AST 语法 0 错误。
-- `scripts/sync.sh`、`quickstart-local.sh`、`respawn-mcp.sh` 为 Linux/macOS bash 脚本，Windows 上请使用 `git clone --bare` + `python lib\indexer.py --build`，或通过 `setup-windows.ps1` 进行自动初始化与同步。
-- `resource.getrusage` 在 Windows 下返回全 0，CPU 遥测指标为空（不影响检索与读取的核心功能与正确性）。
-- 经 `cmd.exe` 时，含 `%NAME%` 的参数会被 cmd 在解析阶段替换成环境变量值（已知 cmd 既定语义，已通过 `W8-8` 测试用例固化）；建议优先使用 `.exe` 直执行方式。
+> 📖 **深入了解 Windows 平台支持**：
+> - 完整技术架构、跨平台安全护栏与技术细节详见 **[WINDOWS-PORT.md](WINDOWS-PORT.md)**；
+> - 一键 PowerShell 安装与生产环境接入指引详见 **[MANUAL.md §3.3（场景 C：原生 Windows 环境部署）](MANUAL.md#33-场景-c原生-windows-环境部署)**。
 
 ---
 
 ## 文档导航
 
 - **[docs/USAGE.md](docs/USAGE.md)** —— 四个工具参数速查、真实检索场景示范与防爆窗调用范例（**推荐首读**）
+- **[WINDOWS-PORT.md](WINDOWS-PORT.md)** —— Windows 原生跨平台技术架构、安全护栏设计与移植规范
 - **[docs/TOOL-NAMING.md](docs/TOOL-NAMING.md)** —— MCP 工具名前缀机制深度解析、四种典型冲突失败与命名规范
 - **[MANUAL.md](MANUAL.md)** —— 生产级高可用部署、Cron 定时同步、四层安全护栏机制、参数全表与故障排查手册
 - **[CHANGELOG.md](CHANGELOG.md)** / **[RELEASE-NOTES.md](RELEASE-NOTES.md)** —— 版本演进记录

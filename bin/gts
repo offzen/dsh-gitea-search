@@ -112,7 +112,8 @@ def pick_repos(patterns):
 
 
 def fnmatch_any(name, pat):
-    p = pat.split("/", 1)[1] if "/" in pat and "/" not in name else pat
+    norm_pat = (pat or "").replace("\\", "/")
+    p = norm_pat.split("/", 1)[1] if "/" in norm_pat and "/" not in name else norm_pat
     nl, pl = name.lower(), p.lower()
     if any(ch in pl for ch in "*?["):
         return fnmatch.fnmatchcase(nl, pl)

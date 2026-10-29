@@ -36,6 +36,23 @@ else:
     except ImportError:  # 极少数非 Linux 的 POSIX（如某些 BSD 精简环境）
         resource = None
 
+
+def _force_utf8_stdio():
+    """保证 Windows/非 UTF-8 环境下 stdout/stderr 具有 UTF-8 输出能力，防 UnicodeEncodeError。"""
+    for stream in (sys.stdout, sys.stderr):
+        if stream is None:
+            continue
+        enc = (getattr(stream, "encoding", None) or "").lower().replace("-", "").replace("_", "")
+        if enc in ("utf8", "utf8mb4"):
+            continue
+        rc = getattr(stream, "reconfigure", None)
+        if rc is None:
+            continue
+        try:
+            rc(encoding="utf-8", errors="backslashreplace")
+        except (ValueError, OSError):
+            pass
+
 ROOT_DEFAULT = (
     os.environ.get("GITEA_MIRROR_ROOT")
     or os.environ.get("GITEA_MIRROR_PATH")
@@ -134,8 +151,9 @@ def pretokenize(text):
 
 def classify_kind(path_str):
     """按扩展名给 kind 分类：doc / session / config / script / code。"""
-    ext = os.path.splitext(path_str)[1].lower()
-    if path_str.startswith('sessions/') or '/sessions/' in path_str or path_str.endswith('session-summaries.md'):
+    p_norm = (path_str or "").replace("\\", "/")
+    ext = os.path.splitext(p_norm)[1].lower()
+    if p_norm.startswith('sessions/') or '/sessions/' in p_norm or p_norm.endswith('session-summaries.md'):
         return 'session'
     if ext in ('.md', '.markdown', '.txt', '.rst'):
         return 'doc'
@@ -847,7 +865,7 @@ def index_repo(conn, mirror_dir, repo, exts, verbose=False, force=False):
 
 
 def _normalize_repo_pattern(pat):
-    p = pat.strip()
+    p = (pat or "").strip().replace("\\", "/")
     if "/" in p:
         p = p.split("/", 1)[1].strip()
     return p
@@ -997,7 +1015,7 @@ def make_snippet(raw, tokens, width=120):
     """从原文截取命中词附近的片段并加【】高亮（替代 FTS snippet，避免分词空格影响可读性）。"""
     if not raw:
         return ""
-    text = raw.replace("\n", " ")
+    text = re.sub(r'[\r\n]+', ' ', raw)
     low = text.lower()
     pos = -1
     hit_tok = ""
@@ -1142,7 +1160,7 @@ def search_fts(mirror_root, query, repo=None, limit=20, kind=None):
             "path": p,
             "title": title,
             "snippet": (make_snippet(snip, q_tokens) if has_body_raw
-                        else snip.replace("\n", " ").strip()),
+                        else re.sub(r'[\r\n]+', ' ', snip or "").strip()),
             "score": round(rank, 4),
             "kind": kind_v,
             "is_backup": bool(is_backup),
@@ -1470,6 +1488,7 @@ def run_doctor(mirror_root, dsh_home=None, as_json=False):
 
 
 def main():
+    _force_utf8_stdio()
     parser = argparse.ArgumentParser(description="gitea 全文文档/会话 SQLite FTS5 索引工具")
     parser.add_argument("--build", action="store_true", help="构建或增量更新索引")
     parser.add_argument("--full", action="store_true", help="强制全量重新构建")
