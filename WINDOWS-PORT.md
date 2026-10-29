@@ -33,10 +33,31 @@
 
 ### 1. Git 树对象路径统一归一化 (Path Normalization)
 Git 底层对象模型（如 `git cat-file`、`git show` 与 `git ls-tree`）严格要求相对路径使用 POSIX 正斜杠 `/` 分隔。在 Windows 环境下，外部传入或自动补全的路径极易混入 `\`。  
-`lib/server.mjs`（`readGiteaFile` / `gitDir`）与 `lib/indexer.py` 实施了统一拦截：
-- 自动将路径中所有 `\` 归一化为 `/`；
-- 剥除首部多余斜杠并过滤目录穿越符号（`..`）；
-- 杜绝 Git 抛出 `fatal: path '...' does not exist in 'HEAD'` 错误。
+`lib/server.mjs`（`normalizeGitPath` / `gitDir`）与 `lib/indexer.py`（`classify_kind` / `_normalize_repo_pattern`）实施统一拦截：
+- **仅 Windows 侧**将路径中的 `\` 归一化为 `/`；
+- 剥除首部多余斜杠，对齐 Git 的相对路径语义。
+
+> ⚠️ **为什么必须按平台分流（重要）**
+>
+> 反斜杠在两类文件系统上语义完全相反：
+>
+> | 平台 | `\` 的含义 | 后果 |
+> |---|---|---|
+> | Windows (NTFS) | 保留分隔符，文件名中不可能出现 | 见到即转换，安全 |
+> | Linux / macOS (ext4 / APFS) | **合法文件名字符** | 无脑转换会读错文件 |
+>
+> 在 POSIX 上 `a\b.md` 是一个真实存在的**单文件名**，Git 会如实保留它。若把它改成
+> `a/b.md`，`git show HEAD:a/b.md` 会**静默返回另一个文件的内容且不报错**——
+> 调用方（含 LLM）会拿着错误内容继续推理。同理，`foo\.md` 变成 `foo/.md` 后
+> `os.path.splitext` 会把它当成隐藏文件，扩展名判为 `''`，`kind` 落入 `code` 而非
+> `doc`，检索时漏召回。
+>
+> 因此归一化入口统一为 `normalizeGitPath()`（Node 侧）与 `IS_WINDOWS` 分支
+> （Python 侧），POSIX 分支保持路径原样。回归用例见 `test/posix-path.test.mjs`。
+
+**注意**：本节**不做**目录穿越（`..`）过滤。`..` 的拦截依赖 `gitDir()` 里的仓库名白名单
+正则（`/^[A-Za-z0-9._-]+$/`）与 Git 自身的路径解析，路径参数侧没有、也不应声称有
+`..` 过滤逻辑——早期版本曾在此处写下该声明，与实现不符，现已更正。
 
 ### 2. 命令注入主动防御协议 (Command Injection Defense & winQuoteArg)
 检索模式（`pattern`）由大模型生成或用户输入，属于不可信字符串。若未经处理直接传入 `cmd.exe`，包含 `& | < > ^` 的参数会截断命令并执行恶意指令（如 `test & calc.exe`）。  
@@ -47,7 +68,9 @@ Git 底层对象模型（如 `git cat-file`、`git show` 与 `git ls-tree`）严
 
 ### 3. CRLF / LF 混合工作区文本流清洗 (CRLF Stream Sanitation)
 Git for Windows 默认启用 `core.autocrlf=true`，检出代码与文档通常携带 CRLF（`\r\n`）。若直接切分行，残留的 `\r` 会导致控制台光标跳回行首覆盖前序内容，或在 Web 界面渲染出乱码。  
-- `bin/gts` 的输出流解析升级为 `.rstrip('\r\n')`；
+- `bin/gts` 的逐行输出解析改为**只剥除行终止符本身**（先去尾部 `\n`、再去尾部 `\r`）。
+  注意不能用 `rstrip('\r\n')`：那会把行内容尾部的其它 CR 一并吃掉
+  （`'abc\r\r\n'` → `'abc'`），使 JSON 字段内容静默改变；
 - `lib/indexer.py` 摘要生成器（`make_snippet`）使用正则 `re.sub(r'[\r\n]+', ' ', ...)` 彻底清除行内孤立 `\r` 与 `\n`。
 
 ### 4. `msvcrt.locking` 字节区间排他锁对称性设计 (Lock Symmetry)

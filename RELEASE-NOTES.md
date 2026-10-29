@@ -1,5 +1,36 @@
 # Release Notes - DeepSeek Harness (DSH) Gitea Search
 
+## v1.2.3 (Unreleased) — POSIX 回归修复
+
+### 版本概述 / Overview
+
+v1.2.3 修复 v1.2.2 在 Linux / macOS 上引入的回归。**Windows 侧能力全部保留**，
+本版本只把"无条件 Windows 化"的共享代码改回按平台分流。
+
+#### 修复清单
+
+| 级别 | 问题 | 影响 |
+|---|---|---|
+| P0 | 路径归一化未做平台分流 | `read_gitea_file` / `gts --read` 读含反斜杠文件名的文件时，**静默返回另一个文件的内容且不报错** |
+| P1 | PATH 全量扫描 | 命中同名无关命令（如 GNU Triangulated Surface 的 `gts`），退化成含糊的"输出无法解析" |
+| P2 | `rstrip('\r\n')` | 吞掉行内容尾部的 CR，`'abc\r\r\n'` → `'abc'` |
+| P2 | `classify_kind()` 扩展名 | `foo\.md` 判不出扩展名，`kind` 从 `doc` 落入 `code`，检索漏召回 |
+| P3 | 候选探测无缓存 | 候选从 11 膨胀到 69，同步 `statSync` 阻塞事件循环，每次工具调用都触发 |
+
+#### 顺带的改善（v1.2.2 中确实正确的部分）
+
+`_force_utf8_stdio()` 修复了旧版在 `PYTHONIOENCODING=ascii` 下的 `UnicodeEncodeError`
+崩溃；`probeExecutable` 的 `isFile()` 判定、`fcntl` 条件导入、`IndexLock` 重构
+对 POSIX 均无行为变化。这些予以保留。
+
+#### 测试与 CI
+
+- 新增 `test/posix-path.test.mjs`（5 项）：实测在 v1.2.2 上 5/5 失败、v1.2.3 上 5/5 通过。
+- `npm test` 改为自动发现 `test/**/*.test.mjs`，消除覆盖割裂；完整组合用 `npm run test:all`。
+- CI 新增 **macOS runner**（此前从未有过）。
+
+---
+
 ## v1.2.2 (2026-10-28)
 
 ### 版本概述 / Overview
@@ -30,7 +61,10 @@
 
 #### 3. 验证与质量保证
 - **GitHub Actions Windows Runner 全绿**：覆盖 Windows Server 2022 下 Python 3.11/3.12 与 Node 20/22 组合矩阵，7/7 jobs 全部 PASS，21/21 tests 真实执行无跳过、零失败。
-- **全套回归保证**：Linux/macOS 31/31 e2e 测试与单测全量通过，保持 100% 向后兼容。
+- **回归覆盖存在缺口（更正说明）**：Windows CI 7/7 jobs、21/21 tests 属实；
+  但 Linux 侧当时**只跑 e2e、不跑单测**，Windows 侧**只跑单测、不跑 e2e**，
+  且全矩阵**没有 macOS runner**。共享代码的 POSIX 回归正是从这道缝里漏过去的。
+  **本版本并非 100% 向后兼容**，详见下方 v1.2.3 的修复说明。
 
 ---
 

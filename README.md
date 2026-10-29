@@ -6,7 +6,7 @@
 [![Version](https://img.shields.io/badge/Version-v1.2.2-blue)](RELEASE-NOTES.md)
 [![npm](https://img.shields.io/npm/v/dsh-gitea-search?color=red)](https://www.npmjs.com/package/dsh-gitea-search)
 [![Archive](https://img.shields.io/badge/Archive-v0.1.1%20(Pure%20Node)-orange)](https://github.com/offzen/dsh-gitea-search/tree/legacy-0.1.x)
-[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows%20(Native)-brightgreen)](scripts/setup-windows.ps1)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows%20(Native)-brightgreen)](MANUAL.md#3-多场景部署流程)
 [![Node](https://img.shields.io/badge/Node-%3E%3D20.11-success)](package.json)
 
 给 DeepSeek Harness (DSH) 及任意支持 Model Context Protocol (MCP) 的 Agent 装上**跨仓极速检索能力**：一条命令将 Gitea 上全部仓库镜像到本地，Agent 用一次工具调用即可毫秒级搜遍所有代码、文档、配置文件与历史排障记录——不用逐个 clone、不把大文件塞进上下文、彻底消除大模型在海量信息翻找中的高额开销。
@@ -126,6 +126,25 @@ bin/gts -D --kind doc,script "caddy"  # 按分区过滤：只检索文档与脚�
 - **平台支持**：原生跨平台兼容 Linux、macOS 与 Windows（10+ / Server 2019+）。
 
 > 📖 **安装与部署指引**：各平台（Linux / macOS / Windows）的一键初始化脚本、生产环境配置与详细依赖安装流程，请参见部署与运维手册 **[MANUAL.md §3（多场景部署流程）](MANUAL.md#3-多场景部署流程)**。
+
+### 三平台上手命令
+
+```bash
+# Linux / macOS
+git clone https://github.com/offzen/dsh-gitea-search.git
+cd dsh-gitea-search
+bash scripts/setup.sh            # macOS 另有 scripts/setup-macos.sh（处理 BSD 差异）
+npm install && pip install jieba
+
+# Windows（PowerShell，管理员非必需）
+git clone https://github.com/offzen/dsh-gitea-search.git
+cd dsh-gitea-search
+powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
+```
+
+> ⚠️ **v1.2.2 用户请注意**：该版本在 Linux / macOS 上存在路径归一化回归
+> （读取文件名含反斜杠的文件时会静默返回另一个文件的内容）。请直接使用 **v1.2.3+**，
+> 详见 [CHANGELOG](CHANGELOG.md#123---unreleased)。
 
 ---
 

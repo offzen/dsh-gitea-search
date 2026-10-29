@@ -5,9 +5,61 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - Unreleased
+
+> **Release Scope**：修复 1.2.2 引入的 POSIX（Linux / macOS）回归。Windows 侧能力全部保留，
+> 本版本只把"无条件 Windows 化"的共享代码改回**按平台分流**。
+
+### Fixed
+- **P0 路径归一化按平台分流（`lib/server.mjs`, `bin/gts`）**：新增 `normalizeGitPath()`，
+  Windows 侧继续把 `\` 转成 `/`（NTFS 上反斜杠是保留分隔符，安全）；
+  **POSIX 侧保持路径原样**（ext4 / APFS 上反斜杠是合法文件名字符）。
+  修复前 `read_gitea_file(path:"a\\b.md")` 会静默返回 `a/b.md` 的内容且不报错。
+- **P1 PATH 探测不再误命中同名无关命令（`lib/server.mjs`）**：PATH 是内容不可控的搜索面，
+  实测 Linux 上 22 个 PATH 目录 × 3 个基名会生成 63 个候选，其中任何一个恰好叫 `gts`
+  （如 `libgts-bin` 的 GNU Triangulated Surface 工具）都会被"可执行"这一条判据选中，
+  随后报出含糊的"输出无法解析"。现在固定安装位优先命中，PATH 命中须通过一次性
+  身份校验（`--help` 输出含 Gitea / gitq / dsh-search 特征）才被采用。
+- **P2 行尾处理不再吞掉行内容尾部的 CR（`bin/gts`）**：`rstrip('\r\n')` 会把
+  `'abc\r\r\n'` 削成 `'abc'`。改为只剥除行终止符本身。
+- **P2 `classify_kind()` 扩展名判定（`lib/indexer.py`）**：归一化按 `IS_WINDOWS` 分流后，
+  `foo\.md` 在 POSIX 上正确识别为 `.md` → `kind=doc`，不再漏召回。
+
+### Changed
+- **探测结果与开销（`lib/server.mjs`）**：`findSearchCli()` 结果缓存（显式 `GTS_BIN` /
+  `GITQ_BIN` 时不缓存，保证改了立即生效）。候选数已从 11 膨胀到 69 且全为同步 `statSync`，
+  每次工具调用都触发一次，缓存后启动期外不再重复探测。
+- **`npm test` 语义变更**：由"仅 3 个 Windows 用例文件"改为自动发现
+  `test/**/*.test.mjs`，消除此前 Linux 只跑 e2e、Windows 只跑单测的覆盖割裂。
+  完整组合仍用 `npm run test:all`（单测 + e2e）。
+
+### Added
+- **`test/posix-path.test.mjs`**：5 项 POSIX 路径语义回归用例。
+  实测在 1.2.2 上 5/5 失败、在 1.2.3 上 5/5 通过，可锁死此类回归。
+- **macOS CI runner（`.github/workflows/ci.yml`）**：新增 `test-macos` job。
+  本项目 v1.2.0 起就带 BSD 兼容代码，但一直没有 macOS runner，
+  Apple Silicon / APFS 侧的路径语义从未被验证过。
+
+### Documentation
+- 更正 `WINDOWS-PORT.md` 中"过滤目录穿越符号 `..`"的**虚假安全声明**（代码里并无此逻辑）。
+- 更正 `PROVENANCE.json` 的 `source_commit`：原先写的是 `6712a7b`（v1.2.1），
+  但文件哈希取自 1.2.2，溯源链断裂。
+- 更正 CHANGELOG / RELEASE-NOTES 中"保持 Linux / macOS 完整兼容""100% 向后兼容"的表述。
+
 ## [1.2.2] - 2026-10-28
 
-> **Release Scope / 版本说明**：本次发布为**原生 Windows 跨平台支持与稳健性加固里程碑**。在保持 Linux / macOS 完整兼容的前提下，彻底打破以往 Windows 下 4 个 MCP 工具 3 个无法运行的限制，提供原生 PE launcher、PATH 自动探测与命令注入安全防护；全面建立覆盖路径归一化、参数防注入、并发锁对齐与环境探测的生产级防护体系，并在 GitHub Actions 真实 Windows Runner 上通过 7/7 jobs 及 21/21 tests（100% 通过、0 skipped、0 failed）。
+> **Release Scope / 版本说明**：本次发布为**原生 Windows 跨平台支持与稳健性加固里程碑**。彻底打破以往 Windows 下 4 个 MCP 工具 3 个无法运行的限制，提供原生 PE launcher、PATH 自动探测与命令注入安全防护；全面建立覆盖路径归一化、参数防注入、并发锁对齐与环境探测的生产级防护体系，并在 GitHub Actions 真实 Windows Runner 上通过 7/7 jobs 及 21/21 tests（100% 通过、0 skipped、0 failed）。
+>
+> ⚠️ **升级警示（1.2.2 存在 POSIX 侧回归，已在 1.2.3 修复）**
+>
+> 本版本**并非**"保持 Linux / macOS 完整兼容"，也**不是** 100% 向后兼容。
+> 由于共享代码里的路径归一化未做平台分流，Linux / macOS 上出现以下行为变更：
+>
+> - `read_gitea_file`（MCP）与 `gts --read`（CLI）在读取**文件名含反斜杠**的文件时，
+>   会静默返回另一个文件的内容（如 `a\b.md` 读到 `a/b.md`），**且不报错**；
+> - `classify_kind()` 对这类文件判不出扩展名，`kind` 从 `doc` 落入 `code`，检索漏召回。
+>
+> 若你的镜像仓中存在含反斜杠的文件名，请勿停留在 1.2.2，直接升级到 **1.2.3**。
 
 ### Added
 - **Windows 原生平台架构支持**:
@@ -16,8 +68,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Windows CI 全矩阵工作流 (`.github/workflows/windows-ci.yml`)**：新增覆盖 W5（PE 结构与执行）、W6（PowerShell AST 语法）、W7（文件区间排他锁）、W8（命令行防注入与边界转义）、W9（CRLF 检索与换行）的 7 个专项测试任务，覆盖 Python 3.11/3.12 与 Node 20/22 组合矩阵。
   - **跨平台测试套件 (`test/windows-adapt.test.mjs`, `windows-lock.test.mjs`, `windows-quote.test.mjs`)**：提供 21 项跨平台与 Windows 行为回归断言，`npm test` 自动采用原生 `node --test` 执行。
 
+### Changed (行为变更 —— 影响 POSIX 侧，请务必评估)
+- **Git 路径反斜杠归一化 (`lib/server.mjs`, `bin/gts`)**：`readGiteaFile`、`gitDir` 以及 CLI `gts --read` 将路径中的反斜杠统一归一化为正斜杠 `/`（**不再区分平台**）。
+  - Windows：消除 `fatal: path '...' does not exist in 'HEAD'`，属预期修复；
+  - Linux / macOS：**行为回归**。反斜杠在 ext4 / APFS 上是合法文件名字符，
+    `a\b.md` 是一个真实文件名，归一化后会被改写为 `a/b.md`，导致读到另一个文件的内容。
+  - 详见 1.2.3 的修复条目。
+
 ### Fixed (跨平台与运行环境稳健性加固)
-- **Git 路径反斜杠归一化 (`lib/server.mjs`, `bin/gts`)**：`readGiteaFile`、`gitDir` 以及 CLI `gts --read` 自动将 Windows 反斜杠路径（如 `lib\server.mjs` 或 `owner\repo`）统一归一化为正斜杠 `/`，杜绝 Git 抛出 `fatal: path '...' does not exist in 'HEAD'`。
 - **CLI 同步跨平台容错与前缀规范 (`bin/gts`)**：`gts --sync` 增加 `shutil.which('bash')` 动态探测与友好的跨平台回退提示；统一 `die()` 报错前缀为 `gts:`。
 - **PATH 环境变量引号安全剥离 (`lib/server.mjs`)**：增强 `findSearchCli()` 对 Windows 系统 `PATH` 中包含双引号目录项的清洗处理，防止路径拼接残损。
 - **Gitea Actions 队列卡滞防护 (`.github/workflows/windows-ci.yml`)**：为 Windows CI 工作流任务增设 `if: github.server_url == 'https://github.com'` 守卫，避免在缺少 Windows runner 的自建 Gitea/gitpub Actions 环境中触发永久 queued 队列堆积。

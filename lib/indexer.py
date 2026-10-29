@@ -151,7 +151,10 @@ def pretokenize(text):
 
 def classify_kind(path_str):
     """按扩展名给 kind 分类：doc / session / config / script / code。"""
-    p_norm = (path_str or "").replace("\\", "/")
+    # 仅 Windows 侧归一化：POSIX 上 "\" 是合法文件名字符，"foo\.md" 是一个真实文件名，
+    # 其扩展名就是 ".md"。若转成 "foo/.md"，splitext 会把它当成隐藏文件而返回 ""，
+    # 导致 kind 落入 code 而非 doc，检索时漏召回。
+    p_norm = (path_str or "").replace("\\", "/") if IS_WINDOWS else (path_str or "")
     ext = os.path.splitext(p_norm)[1].lower()
     if p_norm.startswith('sessions/') or '/sessions/' in p_norm or p_norm.endswith('session-summaries.md'):
         return 'session'
@@ -865,7 +868,8 @@ def index_repo(conn, mirror_dir, repo, exts, verbose=False, force=False):
 
 
 def _normalize_repo_pattern(pat):
-    p = (pat or "").strip().replace("\\", "/")
+    # 同 classify_kind：仅 Windows 侧把 "\" 视作分隔符
+    p = (pat or "").strip().replace("\\", "/") if IS_WINDOWS else (pat or "").strip()
     if "/" in p:
         p = p.split("/", 1)[1].strip()
     return p

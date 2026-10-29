@@ -21,9 +21,9 @@
     "jieba"
   ],
   "scripts": {
-    "test": "node --test test/windows-adapt.test.mjs test/windows-lock.test.mjs test/windows-quote.test.mjs",
+    "test": "node --test \"test/**/*.test.mjs\"",
     "test:e2e": "bash scripts/run-e2e-test.sh /tmp/gts-ci-testbed",
-    "test:all": "node --test test/windows-adapt.test.mjs test/windows-lock.test.mjs test/windows-quote.test.mjs && bash scripts/run-e2e-test.sh /tmp/gts-ci-testbed"
+    "test:all": "node --test \"test/**/*.test.mjs\" && bash scripts/run-e2e-test.sh /tmp/gts-ci-testbed"
   },
   "engines": {
     "node": ">=20.11.0"

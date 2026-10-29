@@ -8,8 +8,12 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Ubuntu 与 macOS 共用同一套验证（单元测试 + e2e）。
+  # 此前 Linux 只跑 e2e、Windows 只跑单元用例，两个平台各自看不到对方的失败，
+  # v1.2.2-rc 的 POSIX 回归正是从这道缝里漏过去的。现在两个 job 都跑完整组合，
+  # 且单元测试中的 POSIX 语义用例会在 Windows 上自动 skip、在 POSIX 上生效。
   test:
-    name: E2E Test Suite (Ubuntu, py${{ matrix.python }}, node${{ matrix.node }})
+    name: Unit + E2E (Ubuntu, py${{ matrix.python }}, node${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -40,8 +44,45 @@ jobs:
           pip install jieba
           npm install
 
-      - name: Run E2E Test Suite
+      - name: Run Unit + E2E Test Suite
         run: |
           python3 -V
           node -v
-          bash scripts/run-e2e-test.sh /tmp/gts-ci-testbed
+          npm run test:all
+
+  test-macos:
+    name: Unit + E2E (macOS, py3.12, node22)
+    # 本项目 v1.2.0 起就带 BSD 兼容代码（macOS 与 Linux 共用这批共享文件），
+    # 但直到 v1.2.2-rc 仍没有 macOS runner，Apple Silicon/APFS 侧的路径语义
+    # 完全没有被验证过。补上，确保 Windows 适配不会再悄悄改坏 POSIX 行为。
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install System Dependencies
+        run: |
+          # macOS 自带 sqlite3；zstd 视镜像而定，缺了才装
+          command -v sqlite3 || brew install sqlite
+          command -v zstd || brew install zstd
+
+      - name: Install Python & Node Dependencies
+        run: |
+          pip install jieba
+          npm install
+
+      - name: Run Unit + E2E Test Suite
+        run: |
+          python3 -V
+          node -v
+          npm run test:all

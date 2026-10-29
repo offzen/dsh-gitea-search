@@ -120,7 +120,18 @@ python3 lib/indexer.py --stats
 
 ### 3.3 场景 C：原生 Windows 环境部署
 
-Windows 的进程创建机制（`CreateProcess`）只认 PE 二进制文件（`.exe` / `.com`），不支持 POSIX shebang 机制；因此无扩展名的 Python 脚本 `bin\gts` 无法被直接执行。v1.2.2 提供了完善的原生 Windows 架构支持（详细底层设计、安全护栏与 CI 矩阵见 **[WINDOWS-PORT.md](WINDOWS-PORT.md)**），系统提供三种安装接入方式：
+Windows 的进程创建机制（`CreateProcess`）只认 PE 二进制文件（`.exe` / `.com`），不支持 POSIX shebang 机制；因此无扩展名的 Python 脚本 `bin\gts` 无法被直接执行。v1.2.2 提供了完善的原生 Windows 架构支持，系统提供三种安装接入方式：
+
+> 📌 **文档分工（避免两边内容漂移）**
+>
+> | 文档 | 职责 | 唯一真源 |
+> |---|---|---|
+> | **本节（MANUAL §3.3）** | **操作步骤**：照着敲就能装上 | 安装命令、脚本参数 |
+> | **[WINDOWS-PORT.md §五](WINDOWS-PORT.md)** | **技术原理**：为什么这么做 | 底层设计、安全护栏、CI 矩阵 |
+>
+> 两处都涉及 Windows 部署，但**本节只写"怎么做"**，原理与护栏一律链接到
+> `WINDOWS-PORT.md`，不在本手册重复展开。若发现两处步骤不一致，
+> 以 `scripts/setup-windows.ps1` 的实际参数为准（可用 `-?` 查看）。
 
 #### 方式 A：PowerShell 一键自动化安装（推荐）
 
@@ -357,14 +368,27 @@ bash scripts/run-realdata-test.sh /srv/gitea-mirror
 
 验证包含数百个真实裸镜像、万篇文档及数千个真实会话文件下的索引吞吐与检索延迟。
 
-### 9.3 跨平台与 Windows 行为回归测试套件（21 项断言）
+### 9.3 跨平台回归测试套件
 
-基于 Node.js 原生测试运行器（`node --test`），断言平台适配、进程加锁与参数转义安全：
+基于 Node.js 原生测试运行器（`node --test`），断言平台适配、进程加锁、参数转义安全
+与 POSIX 路径语义：
 
 ```bash
-npm test
+npm test          # 单元测试：自动发现 test/**/*.test.mjs（三平台通用）
+npm run test:e2e  # 端到端：31 项合成回归断言（Linux / macOS）
+npm run test:all  # 两者都跑（CI 使用的完整组合）
 ```
 
-- **适配与路径判定 (`test/windows-adapt.test.mjs`)**：验证 Windows 可执行文件扩展名分流（`.exe`/`.com` 直执行 vs `.cmd`/`.bat` 走 shell）、反斜杠路径归一化、POSIX 模块安全降级；
-- **文件区间锁一致性 (`test/windows-lock.test.mjs`)**：W7 锁排他性验证，确保 Windows `msvcrt.locking` 下多进程争锁互斥与释放；
-- **命令行转义与防注入 (`test/windows-quote.test.mjs`)**：W8 命令行注入防护，断言双引号翻倍、尾部反斜杠转义与 `& | < > ^` 恶意元字符隔离。
+> ⚠️ **两个测试集此前是割裂的**：v1.2.2 的 `npm test` 只跑 3 个 Windows 用例文件，
+> 而 e2e（31 项）单独跑；Linux CI 不跑单测、Windows CI 不跑 e2e。
+> v1.2.2 的 POSIX 回归正是从这道缝里漏过去的。v1.2.3 起统一为 `npm run test:all`。
+
+| 测试文件 | 覆盖范围 |
+|---|---|
+| `test/windows-adapt.test.mjs` | Windows 可执行文件扩展名分流（`.exe`/`.com` 直执行 vs `.cmd`/`.bat` 走 shell）、反斜杠路径归一化、POSIX 模块安全降级 |
+| `test/windows-lock.test.mjs` | W7 锁排他性：Windows `msvcrt.locking` 下多进程争锁互斥与释放 |
+| `test/windows-quote.test.mjs` | W8 命令行注入防护：双引号翻倍、尾部反斜杠转义、`& | < > ^` 元字符隔离 |
+| `test/posix-path.test.mjs` | **POSIX 路径语义回归**（v1.2.3 新增）：反斜杠文件名的读取不被张冠李戴、`classify_kind` 扩展名判定、行尾 CR 不被吞掉、归一化按平台分流。Windows 上自动跳过 |
+
+`test/posix-path.test.mjs` 的 5 项用例在 v1.2.2 上**全部失败**、在 v1.2.3 上全部通过，
+可直接用于验证某个构建是否带该回归。

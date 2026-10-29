@@ -66,6 +66,29 @@ GN = ["git", "-c", "core.pager=cat", "-c", "color.ui=false",
       # 中文文件名直接不可用（也读不出来）。必须显式关掉。
       "-c", "core.quotePath=false"]
 
+# ── 平台感知的路径归一化 ────────────────────────────────────────────
+# 背景：git tree object 内部一律以 "/" 作分隔符，所以从 Windows 传入的
+# "docs\readme.md" 必须转成 "docs/readme.md" 才能被 git show 命中。
+#
+# 但反斜杠的语义在两套文件系统上完全相反：
+#   - Windows (NTFS)："\" 是保留分隔符，文件名里不可能出现 → 见到即可安全转换
+#   - POSIX (ext4/APFS/ext4)："\" 是**合法文件名字符**，"a\b.md" 是一个真实存在的
+#     单文件名，Git 会如实保留它。无脑转换会把 "a\b.md" 变成 "a/b.md"，
+#     于是 git show 静默返回另一个文件（"a/b.md"）的内容 —— 不报错、不告警。
+#
+# 因此归一化必须按平台分流，POSIX 侧保持路径原样。
+IS_WINDOWS = os.name == "nt"
+
+
+def normalize_git_path(p):
+    """把用户传入的路径转成 git tree 内可定位的形式（平台感知）。"""
+    s = str(p or "")
+    if IS_WINDOWS:
+        # Windows：反斜杠只可能是分隔符，转换安全
+        s = s.replace("\\", "/")
+    # POSIX：反斜杠是合法文件名字符，禁止转换；仅剥除首部 "/" 以对齐 git 的相对路径语义
+    return s.lstrip("/")
+
 
 def die(msg, code=2):
     print(f"gts: {msg}", file=sys.stderr)
@@ -112,7 +135,9 @@ def pick_repos(patterns):
 
 
 def fnmatch_any(name, pat):
-    norm_pat = (pat or "").replace("\\", "/")
+    # 仅 Windows 侧做 "\" → "/"：POSIX 下反斜杠在 glob 里是转义字符（"a\*b" 匹配字面 a*b），
+    # 无脑替换会破坏转义语义；且 git 的 repo/branch 名本身禁止含 "\"。
+    norm_pat = (pat or "").replace("\\", "/") if IS_WINDOWS else (pat or "")
     p = norm_pat.split("/", 1)[1] if "/" in norm_pat and "/" not in name else norm_pat
     nl, pl = name.lower(), p.lower()
     if any(ch in pl for ch in "*?["):
@@ -138,8 +163,15 @@ def _stream(cmd, cap):
     lines, capped = [], False
     try:
         for raw in p.stdout:
-            # rstrip("\r\n")：Windows/CRLF 仓库下剥除尾部 \r，避免污染 JSON 结果与终端渲染
-            lines.append(raw.decode("utf-8", "replace").rstrip("\r\n"))
+            # 逐行读取时行终止符可能是 "\n"(LF) 或 "\r\n"(CRLF)，两种都要剥除。
+            # 注意不能用 rstrip("\r\n")：那会把行内容尾部的其它 CR 一并吃掉
+            # （"abc\r\r\n" → "abc"），使 JSON 字段内容静默改变。这里只剥终止符本身。
+            s = raw.decode("utf-8", "replace")
+            if s.endswith("\n"):
+                s = s[:-1]
+            if s.endswith("\r"):
+                s = s[:-1]
+            lines.append(s)
             if len(lines) >= cap:
                 capped = True
                 p.kill()
@@ -461,7 +493,7 @@ def main():
         if not os.path.isdir(gd):
             die(f"镜像中不存在仓库：{a.repo[0]}")
         ref = a.branch or "HEAD"
-        clean_rel_path = a.read_path.replace("\\", "/").lstrip("/")
+        clean_rel_path = normalize_git_path(a.read_path)
         p = subprocess.run(GN + [f"--git-dir={gd}", "show", f"{ref}:{clean_rel_path}"], capture_output=True, text=True)
         if p.returncode != 0:
             die(p.stderr.strip() or f"无法读取 {a.repo[0]}@{ref}:{a.read_path}", code=1)
