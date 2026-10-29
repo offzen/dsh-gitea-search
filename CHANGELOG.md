@@ -17,13 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **跨平台测试套件 (`test/windows-adapt.test.mjs`, `windows-lock.test.mjs`, `windows-quote.test.mjs`)**：提供 21 项跨平台与 Windows 行为回归断言，`npm test` 自动采用原生 `node --test` 执行。
 
 ### Fixed (专项深度审计修复)
-- **Git 路径反斜杠归一化 (`lib/server.mjs`)**：修复 `readGiteaFile` 与 `gitDir` 在 Windows 传入反斜杠路径（如 `lib\server.mjs` 或 `owner\repo`）时导致 Git 抛出 `fatal: path '...' does not exist in 'HEAD'` 的功能阻断缺陷；统一归一化为正斜杠 `/`。
+- **Git 路径反斜杠归一化 (`lib/server.mjs`, `bin/gts`)**：修复 `readGiteaFile`、`gitDir` 以及 CLI `gts --read` 在 Windows 传入反斜杠路径（如 `lib\server.mjs` 或 `owner\repo`）时导致 Git 抛出 `fatal: path '...' does not exist in 'HEAD'` 的功能阻断缺陷；统一归一化为正斜杠 `/`。
+- **CLI 同步跨平台容错与前缀规范 (`bin/gts`)**：修复 `gts --sync` 硬编码 `/bin/bash` 导致在 Windows 原生环境下抛出 `FileNotFoundError: [WinError 2]` 崩溃的缺陷，增加 `shutil.which('bash')` 动态探测与回退提示；统一 `die()` 报错前缀为 `gts:`。
+- **PATH 环境变量引号安全剥离 (`lib/server.mjs`)**：增强 `findSearchCli()` 对 Windows 系统 `PATH` 中包含双引号目录项的清洗处理，防止路径拼接残损。
+- **Gitea Actions 队列卡滞防护 (`.github/workflows/windows-ci.yml`)**：为 Windows CI 工作流任务增设 `if: github.server_url == 'https://github.com'` 守卫，避免在缺少 Windows runner 的自建 Gitea/gitpub Actions 环境中触发永久 queued 队列堆积。
 - **PowerShell YAML 路径转义安全 (`scripts/setup-windows.ps1`)**：修复原 `-replace '\\', '\\'` 因 .NET Regex 机制导致反斜杠原样残留并损坏 DSH YAML 配置文件（触发 `\U` / `\b` 语法错误）的问题；改用 `.Replace('\', '/')` 彻底根除转义冲突。
 - **CRLF 换行符尾部截断残留 (`bin/gts`)**：修复 `_stream()` 逐行读取时仅 strip `\n` 导致 Windows 检出文件末尾残留 `\r` 符号的缺陷，全面升级为 `.rstrip('\r\n')`，消除终端与 Web UI 显示混乱。
 - **Windows 文件排他锁区间一致性 (`lib/indexer.py`)**：修复 `IndexLock` 在 Windows `msvcrt.locking` 加锁前缺少 `seek(0)` 导致与 `_release()` 锁区间偏差的潜在隐患，保证多进程并发构建索引时的严格互斥。
 - **系统 `PATH` 环境变量自动探测 (`lib/server.mjs`)**：修复 `findSearchCli()` 仅硬编码相对路径导致通过全局 PATH、venv 或 Scoop/Chocolatey 安装时找不到 `gts.exe` 的问题，增加系统 `process.env.PATH` 遍历与扩展名优先级匹配。
 - **用户级安装路径兼容 (`gts_cli.py`)**：在 `_script_candidates()` 候选路径中加入 `site.USER_BASE` 与 `sys.prefix`，全面支持 `pip install --user .` 免管理员提权安装。
 - **PyPI 分类器规范化 (`pyproject.toml`)**：修正 Trove Classifier 为标准规范的 `"Operating System :: MacOS :: MacOS X"`。
+- **文档体系手册化重构与断言数字对齐 (`README.md`, `MANUAL.md`)**：响应精简化规范，将全部环境安装部署细节从 `README.md` 迁移至 `MANUAL.md §3`；将合成测试断言数精确校准为实测一致的 31 项，并补充 21 项跨平台行为测试说明。
 
 ### Changed
 - **Node.js 子进程平台分支 (`lib/server.mjs`)**：`.exe` / `.com` 直执行不经 shell；`.cmd` / `.bat` 经 `cmd.exe` 时显式构造 `cmd /d /s /c "<已引号化命令>"` 并逐参数加引号，封堵 `& | < > ^` 命令注入通道。

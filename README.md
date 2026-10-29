@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache--2.0-C21325)](LICENSE)
 [![CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml)
-[![Windows CI](https://img.shields.io/badge/Windows%20CI-7%2F7%20Passed-brightgreen)](.github/workflows/windows-ci.yml)
+[![Windows CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/windows-ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions/workflows/windows-ci.yml)
 [![Version](https://img.shields.io/badge/Version-v1.2.2-blue)](RELEASE-NOTES.md)
 [![npm](https://img.shields.io/npm/v/dsh-gitea-search?color=red)](https://www.npmjs.com/package/dsh-gitea-search)
 [![Archive](https://img.shields.io/badge/Archive-v0.1.1%20(Pure%20Node)-orange)](https://github.com/offzen/dsh-gitea-search/tree/legacy-0.1.x)
@@ -122,23 +122,10 @@ bin/gts -D --kind doc,script "caddy"  # 按分区过滤：只检索文档与脚�
 
 - **Node.js ≥ 20.11**（推荐 22.15+ LTS，低版本自动降级调用系统 `sqlite3` 与 `zstd` CLI）；
 - **Python 3 ≥ 3.10**（需安装 `jieba` 分词库与支持 FTS5 的系统 `sqlite3`）；
-- **Git ≥ 2.25**。
+- **Git ≥ 2.25**；
+- **平台支持**：原生跨平台兼容 Linux、macOS 与 Windows（10+ / Server 2019+）。
 
-系统提供一键化环境配置与预检脚本，自动适配 Linux 与 macOS（兼容 macOS 默认 Bash 3.2 及 BSD 工具链）：
-
-```bash
-bash scripts/setup.sh          # Linux (Debian / Ubuntu / RHEL)
-bash scripts/setup-macos.sh    # macOS
-```
-
-### Windows（原生，dsh-gitea-search 新增）
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners myorg -MirrorRoot C:\gitea-mirror
-```
-
-> ⚠️ **此前的 v1.2.1 在原生 Windows 上，4 个工具只有 1 个能用。**
-> 本版本（v1.2.2）已修复该问题，原因与做法见下一节。
+> 📖 **安装与部署指引**：各平台（Linux / macOS / Windows）的一键初始化脚本、生产环境配置与详细依赖安装流程，请参见部署与运维手册 **[MANUAL.md §3（多场景部署流程）](MANUAL.md#3-多场景部署流程)**。
 
 ---
 
@@ -170,38 +157,9 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners myorg
 6. **文件锁区间对齐（`IndexLock`）**：`lib/indexer.py` 引入 Windows `msvcrt.locking` 字节区间锁，并在加锁前显式执行 `seek(0)`，与 `_release()` 保持严格对称，确保多进程并发建索引时的排他性。
 7. **PowerShell 自动化部署安全转义**：`scripts/setup-windows.ps1` 采用正斜杠注册 DSH profile，杜绝反斜杠在 YAML 双引号解析中被误识为 `\U` / `\b` 等逃逸符而导致配置文件语法损坏。
 
-### Windows 安装方式（三选一）
+### Windows 原生部署指引
 
-**方式 A：一键部署脚本（推荐）**
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners myorg -MirrorRoot C:\gitea-mirror -RegisterDsh
-```
-
-**方式 B：pip 安装（标准 Python 环境）**
-
-```powershell
-pip install .                 # 在项目根目录执行，生成 <Python>\Scripts\gts.exe
-# 若无管理员权限，亦可安全使用用户目录安装：
-pip install --user .
-```
-
-**方式 C：PyInstaller 打独立 exe（目标机不想装 Python 时）**
-
-```powershell
-pip install pyinstaller
-pyinstaller --onedir --name gts --hidden-import=indexer --paths=lib bin\gts
-# 产物：dist\gts\gts.exe   ← 用 --onedir 而非 --onefile，避免每次调用解压 38MB（启动 0.5s → 0.12s）
-```
-
-然后设 `GTS_BIN` 指向该 exe：
-
-```powershell
-$env:GTS_BIN = "C:\path\to\dist\gts\gts.exe"
-```
-
-> ⚠️ **`GTS_BIN` 必须是单个可执行文件路径**。写成 `"python C:\path\bin\gts"` 会直接 `ENOENT` ——
-> spawn 会把整串当成一个文件名。这是最容易浪费半小时的坑。
+Windows 平台的完整部署流程（包含 PowerShell 一键安装脚本 `setup-windows.ps1`、标准 `pip install .` 生成 PE launcher、PyInstaller 打包独立 exe、环境变量设置与避坑说明）已完整收录于运维手册 **[MANUAL.md §3.3（场景 C：原生 Windows 环境部署）](MANUAL.md#33-场景-c原生-windows-环境部署)**。
 
 ### 已知限制与 CI 验证状态
 

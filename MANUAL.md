@@ -48,7 +48,8 @@
 | **Node.js** | 运行 `server.mjs` 与诊断工具 | `>= 20.11.0` | **推荐 `>= 22.15 LTS`**（原生支持 `node:sqlite` 与 `zlib.zstdCompressSync`）。在 `20.11 ~ 22.14` 环境下，系统自动降级调用 `sqlite3` CLI 与 `zstd` CLI。 |
 | **Python 3** | FTS5 索引核心、CLI 及分词 | `>= 3.10` | 需系统提供带 FTS5 模块的 `sqlite3`，安装 `jieba` 分词库。 |
 | **macOS 适配** | 跨平台环境与 BSD 工具链 | macOS 12+ | 支持默认 Bash 3.2，自动适配 BSD `stat`/`awk`，内置非阻塞 `timeout()` 替代方案。 |
-| **MCP SDK** | MCP 协议通信 | `@modelcontextprotocol/sdk` | 仓内 `package.json` 声明，通过 `setup.sh` 自动安装。 |
+| **Windows 适配** | 原生运行环境与 MCP 检索支持 | Windows 10+ / Server 2019+ | 原生 PE 启动器 (`gts.exe`)、`msvcrt.locking` 字节区间锁、PowerShell 自动化部署与命令行注入防护。 |
+| **MCP SDK** | MCP 协议通信 | `@modelcontextprotocol/sdk` | 仓内 `package.json` 声明，通过 setup 脚本自动安装。 |
 
 ---
 
@@ -114,6 +115,62 @@ python3 lib/indexer.py --stats
 ```
 
 > **说明**：`sync.sh` 增量同步完成后会自动调用 `python3 lib/indexer.py --build`；未变更的仓库将在毫秒级跳过，整体同步轻量高效。
+
+---
+
+### 3.3 场景 C：原生 Windows 环境部署
+
+Windows 的进程创建机制（`CreateProcess`）只认 PE 二进制文件（`.exe` / `.com`），不支持 POSIX shebang 机制；因此无扩展名的 Python 脚本 `bin\gts` 无法被直接执行。v1.2.2 提供了完善的原生 Windows 架构支持，系统提供三种安装接入方式：
+
+#### 方式 A：PowerShell 一键自动化安装（推荐）
+
+通过内置的 `scripts\setup-windows.ps1` 脚本，自动完成 Python/Node/Git 环境检查、pip 构建 `gts.exe`、镜像目录准备、FTS5 索引初始化以及 DSH `cordis.patch.yml` 自动配置：
+
+```powershell
+# 以管理员或普通用户身份在 PowerShell 中执行（绕过当前进程执行策略）
+powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners myorg -MirrorRoot C:\gitea-mirror -RegisterDsh
+```
+
+**参数说明**：
+- `-MirrorRoot <Path>`：指定裸镜像存储根目录（默认为项目内 `mirror` 目录）；
+- `-Owners <List>`：指定 Gitea 组织或用户名（逗号分隔）；
+- `-RegisterDsh`：自动备份并将 MCP 配置追加到 DSH 的 `cordis.patch.yml`；
+- `-SkipIndex`：仅安装环境与启动器，跳过初次 FTS5 索引构建。
+
+#### 方式 B：标准 pip 安装（适合已配置 Python 环境的 Windows 开发者）
+
+利用 `pyproject.toml` 的 setuptools 配置，编译生成 Windows 原生启动器：
+
+```powershell
+# 在项目根目录下执行（生成 <Python>\Scripts\gts.exe）
+pip install .
+
+# 若无系统管理员权限，可安全使用用户级安装（产物位于 %APPDATA%\Python\Scripts\gts.exe）：
+pip install --user .
+```
+
+安装完成后，可通过 `gts --help` 验证启动器是否正常工作。
+
+#### 方式 C：PyInstaller 单目录打包（适合目标机不想安装完整 Python 环境）
+
+```powershell
+pip install pyinstaller
+pyinstaller --onedir --name gts --hidden-import=indexer --paths=lib bin\gts
+# 产物：dist\gts\gts.exe（采用 --onedir 避免单文件模式每次运行解压数十兆开销）
+```
+
+#### Windows 下的环境变量与接入配置约束
+
+在 Windows 环境下接入 DSH 或手动调试时，请特别注意 `GTS_BIN` 变量的配置规则：
+
+```powershell
+$env:GTS_BIN = "C:\path\to\Scripts\gts.exe"   # 必须是单个 .exe 的完整路径
+$env:GITEA_MIRROR_ROOT = "C:\gitea-mirror"
+$env:GITEA_OWNERS = "myorg"
+```
+
+> ⚠️ **关键陷阱**：`GTS_BIN` **必须是单个可执行文件的实际路径**。严禁写成 `"python bin\gts"` 或带空格的参数组合，否则子进程创建会直接触发 `ENOENT` 致命报错。
+> 另外，`lib/server.mjs` 会自动遍历系统 `PATH` 环境变量识别 `gts.exe`；若已执行 `pip install .` 且 Python Scripts 目录在系统 PATH 中，则无需显式指定 `GTS_BIN`。
 
 ---
 
@@ -253,6 +310,9 @@ $$\text{file\_blobs} == \text{docs\_fts} == \text{doc\_rowid} == (\text{doc\_row
 | **中文关键词检索 0 命中** | FTS5 分词器未构建，或 `jieba` 未正确载入 | 运行 `bin/gts --fts-stats` 检查词元分布；重新执行 `python3 lib/indexer.py --full`。 |
 | **Node.js 运行报错 `Cannot find module 'node:sqlite'`** | Node 版本在 `20.11 ~ 22.14` 且系统未装 `sqlite3` CLI | 运行 `bash scripts/setup.sh` 安装系统 `sqlite3` 命令行，系统将自动回退。 |
 | **macOS 上运行 `sync.sh` 卡在 timeout 管道** | 系统缺少 GNU `timeout` 且 fallback 逻辑受阻塞 | 更新代码至 `v1.2.0`（[PR #2](https://github.com/offzen/dsh-gitea-search/pull/2) 已修复子进程管道阻塞问题）。 |
+| **Windows 报错 `找不到可执行的 gts CLI`** | Windows `CreateProcess` 无法执行无扩展名 shebang 脚本 | 执行 `pip install .` 生成 `Scripts\gts.exe`；或显式指定环境变量 `$env:GTS_BIN="C:\path\to\gts.exe"`。注意严禁带 `"python ..."` 前缀。 |
+| **Windows 执行 PowerShell 脚本报策略错误** | 系统默认执行策略（Restricted）阻止脚本运行 | 在命令中加入参数绕过限制：`powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1`。 |
+| **Windows 读取文件报 `path '...' does not exist in 'HEAD'`** | Git tree object 仅接受正斜杠 `/` 分隔符 | 更新至 `v1.2.2`（已自动将反斜杠 `\` 归一化为 `/`）。在 CLI 中手动执行时亦可使用 `gts --read` 自动归一化。 |
 | **修改了 `server.mjs` 却未生效** | MCP 属于被宿主长期持有并在后台常驻的子进程 | 执行 `bash scripts/respawn-mcp.sh` 平滑重启 MCP 进程（宿主 DSH 会自动重连）。 |
 | **`session-query.sqlite-wal` 膨胀至数百 MB** | 大会话读写或非正常退出导致 WAL 未回收 | 运行 `node scripts/dsh-session-health.mjs --fix` 执行在线 `PRAGMA wal_checkpoint(TRUNCATE)`。 |
 
@@ -260,7 +320,7 @@ $$\text{file\_blobs} == \text{docs\_fts} == \text{doc\_rowid} == (\text{doc\_row
 
 ## 9. 质量验收与自动化测试基线
 
-### 9.1 自建合成回归测试集（32 项完整断言）
+### 9.1 自建合成回归测试集（31 项完整断言）
 
 无需任何外部依赖或现存代码库，在 `/tmp` 独立沙箱中完整验证全生命周期：
 
@@ -281,3 +341,15 @@ bash scripts/run-realdata-test.sh /srv/gitea-mirror
 ```
 
 验证包含数百个真实裸镜像、万篇文档及数千个真实会话文件下的索引吞吐与检索延迟。
+
+### 9.3 跨平台与 Windows 行为回归测试套件（21 项断言）
+
+基于 Node.js 原生测试运行器（`node --test`），断言平台适配、进程加锁与参数转义安全：
+
+```bash
+npm test
+```
+
+- **适配与路径判定 (`test/windows-adapt.test.mjs`)**：验证 Windows 可执行文件扩展名分流（`.exe`/`.com` 直执行 vs `.cmd`/`.bat` 走 shell）、反斜杠路径归一化、POSIX 模块安全降级；
+- **文件区间锁一致性 (`test/windows-lock.test.mjs`)**：W7 锁排他性验证，确保 Windows `msvcrt.locking` 下多进程争锁互斥与释放；
+- **命令行转义与防注入 (`test/windows-quote.test.mjs`)**：W8 命令行注入防护，断言双引号翻倍、尾部反斜杠转义与 `& | < > ^` 恶意元字符隔离。

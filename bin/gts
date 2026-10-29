@@ -23,6 +23,7 @@ import fnmatch
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -67,7 +68,7 @@ GN = ["git", "-c", "core.pager=cat", "-c", "color.ui=false",
 
 
 def die(msg, code=2):
-    print(f"gitq: {msg}", file=sys.stderr)
+    print(f"gts: {msg}", file=sys.stderr)
     sys.exit(code)
 
 
@@ -428,7 +429,11 @@ def main():
     if a.sync:
         if not os.path.exists(SYNC):
             die(f"同步脚本不存在：{SYNC}")
-        subprocess.run(["/bin/bash", SYNC, "-q"], check=False)
+        bash_bin = "/bin/bash" if os.path.exists("/bin/bash") else (shutil.which("bash") or "bash")
+        try:
+            subprocess.run([bash_bin, SYNC, "-q"], check=False)
+        except Exception as e:
+            die(f"执行同步失败：{e}（Windows 环境建议通过 PowerShell 执行 scripts\\setup-windows.ps1 或 git 镜像拉取）")
 
     if a.doctor:
         if not indexer:
@@ -455,7 +460,8 @@ def main():
         if not os.path.isdir(gd):
             die(f"镜像中不存在仓库：{a.repo[0]}")
         ref = a.branch or "HEAD"
-        p = subprocess.run(GN + [f"--git-dir={gd}", "show", f"{ref}:{a.read_path.lstrip('/')}"], capture_output=True, text=True)
+        clean_rel_path = a.read_path.replace("\\", "/").lstrip("/")
+        p = subprocess.run(GN + [f"--git-dir={gd}", "show", f"{ref}:{clean_rel_path}"], capture_output=True, text=True)
         if p.returncode != 0:
             die(p.stderr.strip() or f"无法读取 {a.repo[0]}@{ref}:{a.read_path}", code=1)
         sys.stdout.write(p.stdout)

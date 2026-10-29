@@ -19,6 +19,7 @@ jobs:
   # ── W5：pip install . 必须产出真正的 PE 文件（MZ 头），而不是脚本垫片 ──────
   windows-pe:
     name: W5 gts.exe 是真实 PE 文件
+    if: github.server_url == 'https://github.com'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -84,6 +85,7 @@ jobs:
   # ── W6：PowerShell 安装脚本语法合法（不做真机安装，只做静态语法）────────
   windows-ps:
     name: W6 setup-windows.ps1 语法
+    if: github.server_url == 'https://github.com'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -116,6 +118,7 @@ jobs:
   # ── W7/W8：运行时行为测试（锁排他 / 引号往返）在真实 Windows 上跑 ────────
   windows-tests:
     name: W7/W8 运行时行为（py${{ matrix.python }} / node${{ matrix.node }}）
+    if: github.server_url == 'https://github.com'
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -151,6 +154,7 @@ jobs:
   # ── W9：git grep 在 CRLF 工作区上的路径/换行行为，必须被显式固定 ─────────
   windows-grep-crlf:
     name: W9 git grep 的 CRLF 与路径分隔符行为
+    if: github.server_url == 'https://github.com'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
