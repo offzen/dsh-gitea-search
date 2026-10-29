@@ -281,6 +281,21 @@ UTF-8 完整性保证：Buffer.concat(chunks).toString('utf8')
 （彻底杜绝流式单块解码导致的 U+FFFD 乱码）
 ```
 
+### 6.2 跨平台运行时安全护栏 (Cross-Platform Execution Guards)
+
+在 v1.2.2 跨平台适配中，`lib/server.mjs` 与 `lib/indexer.py` 增设了底层安全护栏：
+
+1. **`cmd.exe` 参数防注入定界**：
+   - Windows 下若必须经由 `cmd.exe` 启动（如批处理脚本），系统采用严格引号定界：显式构造 `cmd /d /s /c "<已引号化命令>"` 并对每个输入参数单独加引号（`/s` 确保 cmd 先剥掉最外层引号，使逐参数引号真正起作用），彻底防御搜索词中恶意注入 `& | < > ^` 触发多指令逃逸执行。
+   - 对原生 `.exe` / `.com` 二进制，一律使用 `shell: false` 直执行，完全绕过 shell 解析层。
+2. **`IndexLock` 跨平台排他锁对齐**：
+   - 在 POSIX 平台上采用 `fcntl.flock`；在 Windows 平台上采用 `msvcrt.locking` 字节区间锁。
+   - Windows 平台在加锁前显式执行 `seek(0)`，与 `_release()` 保持严格对称的字节位置，确保多进程并发建索引与检索时的强排他性。
+3. **Git 路径正斜杠自动归一化**：
+   - Git tree object 在所有平台上均只接受正斜杠 `/`。MCP 服务与 CLI 在接收输入后自动执行反斜杠转义（`replace(/\\/g, '/')`），杜绝因系统路径反斜杠导致 `fatal: path '...' does not exist in 'HEAD'` 异常中断。
+4. **系统 PATH 目录引号清洗**：
+   - 自动遍历 Windows `PATH` 环境变量时，显式清洗带引号的目录项（去除首尾 `"`），防止畸形拼接引起子进程启动失败。
+
 ---
 
 ## 7. FTS5 检索引擎运维原理

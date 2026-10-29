@@ -142,20 +142,15 @@ bin/gts -D --kind doc,script "caddy"  # 按分区过滤：只检索文档与脚�
 | 2 | `lib/server.mjs` 的 `spawn()` 未开 `shell` | 即使补 `gts.cmd` / `gts.bat` 包装也执行不了（批处理不在直执行范围） |
 | 3 | `fs.accessSync(c, X_OK)` 在 Windows 上**退化为存在性检查** | 会把 `bin/gts` 误判成"找到了"，随后 spawn 抛 `EFTYPE`/`ENOEXEC`，用户看到莫名其妙的报错而非友好的"找不到 gts CLI" |
 
-### dsh-gitea-search 的修复与强化
+### Windows 原生支持特性
 
-1. **提供真正的 `.exe` 入口**：新增 `pyproject.toml` + `gts_cli.py`，`pip install .` 由 setuptools
-   生成 `Scripts\gts.exe`（PE launcher）—— 这正是原本缺失的那一环；同时适配 `site.USER_BASE`，支持 `--user` 免提权安装。
-2. **`findSearchCli()` 平台化与 PATH 自动探测**：Windows 下按扩展名判定，`.exe`/`.com` 直执行、`.cmd`/`.bat` 走 shell、
-   `.py` 与无扩展名一律判为不可执行（不再误判）；且自动遍历系统 `PATH` 环境变量，无缝适配全局 Python Scripts、venv、Scoop 或 Chocolatey 安装路径。
-3. **`spawn()` 平台分支与命令注入防护**：`.exe`/`.com` **直执行**（不经任何 shell）；只有 `.cmd`/`.bat`
-   才走 `cmd.exe`，且显式构造 `cmd /d /s /c "<已引号化命令>"` 并对每个参数单独加引号
-   （`/s` 让 cmd 先剥掉整条命令的最外层引号，之后逐参数引号才真正起定界作用），
-   彻底防御搜索词里的 `& | < > ^` 恶意命令注入。
-4. **路径正斜杠归一化**：针对 Git tree object 在所有平台上只接受正斜杠 `/` 的事实，`readGiteaFile` 与 `gitDir` 自动将 Windows 风格的反斜杠 `\` 统一归一化为 `/`，消除 `fatal: path '...' does not exist in 'HEAD'` 报错。
-5. **CRLF 尾部换行符严格剥离**：`bin/gts` 的 `_stream()` 逐行读取采用 `.rstrip('\r\n')`，彻底清除 Windows 检出文件的 `\r` 符号，杜绝终端与 Web UI 渲染时的光标跳行与行数失真。
-6. **文件锁区间对齐（`IndexLock`）**：`lib/indexer.py` 引入 Windows `msvcrt.locking` 字节区间锁，并在加锁前显式执行 `seek(0)`，与 `_release()` 保持严格对称，确保多进程并发建索引时的排他性。
-7. **PowerShell 自动化部署安全转义**：`scripts/setup-windows.ps1` 采用正斜杠注册 DSH profile，杜绝反斜杠在 YAML 双引号解析中被误识为 `\U` / `\b` 等逃逸符而导致配置文件语法损坏。
+`dsh-gitea-search` v1.2.2 正式引入了生产级原生 Windows 平台支持，彻底打破以往 Windows 环境下因缺失 PE 入口、文件锁不兼容及 shebang 无法解析导致 3 个检索工具不可用的底层限制：
+
+1. **原生 PE 二进制入口**：通过 `pyproject.toml` 标准构建生成原生 PE 二进制 `Scripts\gts.exe`，支持 `--user` 免提权安装，解决 Windows `CreateProcess` 无法执行无扩展名脚本的硬障碍；
+2. **防注入命令安全与 PATH 自动探测**：`.exe` 直执行（免 shell），批处理模式采用严格引号化定界彻底防御 `& | < > ^` 恶意命令注入；`server.mjs` 自动遍历系统 `PATH` 环境变量识别启动器；
+3. **跨平台机制对齐与鲁棒性加固**：引入 Windows `msvcrt.locking` 字节区间排他锁、Git 路径反斜杠自动归一化，以及严格的 CRLF 尾部换行符剥离。
+
+> 完整技术实现细节、缺陷加固清单与移植历史请参阅 **[CHANGELOG.md](CHANGELOG.md)** 与 **[WINDOWS-PORT.md](WINDOWS-PORT.md)**。
 
 ### Windows 原生部署指引
 
