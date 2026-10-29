@@ -1,0 +1,17 @@
+{
+  "gitea": {
+    "url": "https://git.example.com",
+    "token": "your_gitea_api_token_here",
+    "owners": ["my-org", "my-username"]
+  },
+  "storage": {
+    "mirror_root": "/srv/gitea-mirror",
+    "db_path": "/srv/gitea-mirror/state/gitea-fts.sqlite"
+  },
+  "search": {
+    "max_results": 200,
+    "max_read_bytes": 60000,
+    "max_search_bytes": 131072,
+    "max_line_bytes": 2000
+  }
+}
