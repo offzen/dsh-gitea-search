@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "package": "dsh-gitea-search",
-  "generated_at": "2026-10-29T14:23:31+0800",
+  "generated_at": "2026-10-29T14:42:17+0800",
   "publisher": "dsh-publish-pipeline (v1.2.2 release)",
-  "source_commit": "4a91a047ee4931d838cc3bd837bcf0f4dd7504e1",
+  "source_commit": "2b4a80adb624dacbb7fbd6ab821f94bc68de11a5",
   "source": "https://github.com/offzen/dsh-gitea-search",
   "note": "Official release provenance manifest with SHA-256 integrity checksums. Community contributions and pull requests are welcomed; please refer to CONTRIBUTING.md for guidelines. [fork 修订] source_commit 原为 6712a7b (v1.2.1)，与文件哈希取自 v1.2.2 不一致，溯源链断裂，已修正为实际提交；并按 fork 的 POSIX 回归修复重新计算全部校验和。",
   "file_count": 35,
