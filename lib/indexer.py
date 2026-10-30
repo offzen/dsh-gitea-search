@@ -8,16 +8,50 @@ indexer.py — gitea 镜像文档/会话 SQLite FTS5 全文索引构建与检索
 """
 
 import argparse
-import fcntl
 import fnmatch
 import json
 import os
 import re
-import resource
 import sqlite3
 import subprocess
 import sys
 import time
+
+# ── 跨平台兼容层（Windows 适配）──────────────────────────────────────
+# fcntl / resource 是 POSIX 专属模块，在 Windows 上 import 即抛 ModuleNotFoundError，
+# 会让 indexer.py 直接无法启动。这里改为条件导入，并在 Windows 侧提供等价实现：
+#   - 文件锁：fcntl.flock  →  msvcrt.locking（Windows 的字节区间锁，语义等价：非阻塞、进程退出自动释放）
+#   - 资源统计：resource.getrusage → 无等价物，返回 0（_read_cpu_ms 本来就有安全回退）
+IS_WINDOWS = os.name == "nt"
+
+if IS_WINDOWS:
+    import msvcrt
+
+    fcntl = None
+    resource = None
+else:
+    import fcntl
+    try:
+        import resource
+    except ImportError:  # 极少数非 Linux 的 POSIX（如某些 BSD 精简环境）
+        resource = None
+
+
+def _force_utf8_stdio():
+    """保证 Windows/非 UTF-8 环境下 stdout/stderr 具有 UTF-8 输出能力，防 UnicodeEncodeError。"""
+    for stream in (sys.stdout, sys.stderr):
+        if stream is None:
+            continue
+        enc = (getattr(stream, "encoding", None) or "").lower().replace("-", "").replace("_", "")
+        if enc in ("utf8", "utf8mb4"):
+            continue
+        rc = getattr(stream, "reconfigure", None)
+        if rc is None:
+            continue
+        try:
+            rc(encoding="utf-8", errors="backslashreplace")
+        except (ValueError, OSError):
+            pass
 
 ROOT_DEFAULT = (
     os.environ.get("GITEA_MIRROR_ROOT")
@@ -117,8 +151,12 @@ def pretokenize(text):
 
 def classify_kind(path_str):
     """按扩展名给 kind 分类：doc / session / config / script / code。"""
-    ext = os.path.splitext(path_str)[1].lower()
-    if path_str.startswith('sessions/') or '/sessions/' in path_str or path_str.endswith('session-summaries.md'):
+    # 仅 Windows 侧归一化：POSIX 上 "\" 是合法文件名字符，"foo\.md" 是一个真实文件名，
+    # 其扩展名就是 ".md"。若转成 "foo/.md"，splitext 会把它当成隐藏文件而返回 ""，
+    # 导致 kind 落入 code 而非 doc，检索时漏召回。
+    p_norm = (path_str or "").replace("\\", "/") if IS_WINDOWS else (path_str or "")
+    ext = os.path.splitext(p_norm)[1].lower()
+    if p_norm.startswith('sessions/') or '/sessions/' in p_norm or p_norm.endswith('session-summaries.md'):
         return 'session'
     if ext in ('.md', '.markdown', '.txt', '.rst'):
         return 'doc'
@@ -167,7 +205,12 @@ def _read_proc_io():
 
 
 def _read_cpu_ms():
-    """读取当前进程及已回收子进程的用户态+内核态 CPU 毫秒数。"""
+    """读取当前进程及已回收子进程的用户态+内核态 CPU 毫秒数。
+
+    Windows 无 resource 模块，返回 (0.0, 0.0)；该指标仅用于性能遥测，不影响检索正确性。
+    """
+    if resource is None:
+        return 0.0, 0.0
     try:
         ru_self = resource.getrusage(resource.RUSAGE_SELF)
         ru_child = resource.getrusage(resource.RUSAGE_CHILDREN)
@@ -358,17 +401,40 @@ def record_perf_event(mirror_root, judgment, quiet=False):
 
 
 class IndexLock:
-    """构建文件锁，防止 cron 与手动触发并发冲突。"""
+    """构建文件锁，防止 cron 与手动触发并发冲突。
+
+    POSIX 用 fcntl.flock；Windows 用 msvcrt.locking（字节区间锁）。
+    两者语义一致：非阻塞抢锁，抢不到抛 RuntimeError，进程退出/句柄关闭自动释放。
+    """
     def __init__(self, mirror_root):
         state_dir = os.path.join(mirror_root, "state")
         os.makedirs(state_dir, exist_ok=True)
         self.lock_path = os.path.join(state_dir, "indexer.lock")
         self.fd = None
 
+    def _acquire(self):
+        if IS_WINDOWS:
+            # 锁定第 0 字节起的 1 个字节；LK_NBLCK = 非阻塞，失败抛 OSError。
+            # 必须先 seek(0)，确保加锁区间与 _release() 解锁区间严格一致（从第 0 字节起）。
+            self.fd.seek(0)
+            msvcrt.locking(self.fd.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _release(self):
+        if IS_WINDOWS:
+            try:
+                self.fd.seek(0)
+                msvcrt.locking(self.fd.fileno(), msvcrt.LK_UNLCK, 1)
+            except Exception:
+                pass
+        else:
+            fcntl.flock(self.fd, fcntl.LOCK_UN)
+
     def __enter__(self):
         self.fd = open(self.lock_path, "a+")
         try:
-            fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self._acquire()
         except (BlockingIOError, OSError):
             self.fd.close()
             self.fd = None
@@ -378,7 +444,7 @@ class IndexLock:
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.fd:
             try:
-                fcntl.flock(self.fd, fcntl.LOCK_UN)
+                self._release()
             except Exception:
                 pass
             self.fd.close()
@@ -802,7 +868,8 @@ def index_repo(conn, mirror_dir, repo, exts, verbose=False, force=False):
 
 
 def _normalize_repo_pattern(pat):
-    p = pat.strip()
+    # 同 classify_kind：仅 Windows 侧把 "\" 视作分隔符
+    p = (pat or "").strip().replace("\\", "/") if IS_WINDOWS else (pat or "").strip()
     if "/" in p:
         p = p.split("/", 1)[1].strip()
     return p
@@ -952,7 +1019,7 @@ def make_snippet(raw, tokens, width=120):
     """从原文截取命中词附近的片段并加【】高亮（替代 FTS snippet，避免分词空格影响可读性）。"""
     if not raw:
         return ""
-    text = raw.replace("\n", " ")
+    text = re.sub(r'[\r\n]+', ' ', raw)
     low = text.lower()
     pos = -1
     hit_tok = ""
@@ -1097,7 +1164,7 @@ def search_fts(mirror_root, query, repo=None, limit=20, kind=None):
             "path": p,
             "title": title,
             "snippet": (make_snippet(snip, q_tokens) if has_body_raw
-                        else snip.replace("\n", " ").strip()),
+                        else re.sub(r'[\r\n]+', ' ', snip or "").strip()),
             "score": round(rank, 4),
             "kind": kind_v,
             "is_backup": bool(is_backup),
@@ -1425,6 +1492,7 @@ def run_doctor(mirror_root, dsh_home=None, as_json=False):
 
 
 def main():
+    _force_utf8_stdio()
     parser = argparse.ArgumentParser(description="gitea 全文文档/会话 SQLite FTS5 索引工具")
     parser.add_argument("--build", action="store_true", help="构建或增量更新索引")
     parser.add_argument("--full", action="store_true", help="强制全量重新构建")

@@ -2,10 +2,11 @@
 
 [![License](https://img.shields.io/badge/License-Apache--2.0-C21325)](LICENSE)
 [![CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/Version-v1.2.1-blue)](RELEASE-NOTES.md)
+[![Windows CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/windows-ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions)
+[![Version](https://img.shields.io/badge/Version-v1.2.2--rc2-blue)](RELEASE-NOTES.md)
 [![npm](https://img.shields.io/npm/v/dsh-gitea-search?color=red)](https://www.npmjs.com/package/dsh-gitea-search)
 [![Archive](https://img.shields.io/badge/Archive-v0.1.1%20(Pure%20Node)-orange)](https://github.com/offzen/dsh-gitea-search/tree/legacy-0.1.x)
-[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-brightgreen)](scripts/setup-macos.sh)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows%20(Native)-brightgreen)](MANUAL.md#3-多场景部署流程)
 [![Node](https://img.shields.io/badge/Node-%3E%3D20.11-success)](package.json)
 
 给 DeepSeek Harness (DSH) 及任意支持 Model Context Protocol (MCP) 的 Agent 装上**跨仓极速检索能力**：一条命令将 Gitea 上全部仓库镜像到本地，Agent 用一次工具调用即可毫秒级搜遍所有代码、文档、配置文件与历史排障记录——不用逐个 clone、不把大文件塞进上下文、彻底消除大模型在海量信息翻找中的高额开销。
@@ -121,20 +122,49 @@ bin/gts -D --kind doc,script "caddy"  # 按分区过滤：只检索文档与脚�
 
 - **Node.js ≥ 20.11**（推荐 22.15+ LTS，低版本自动降级调用系统 `sqlite3` 与 `zstd` CLI）；
 - **Python 3 ≥ 3.10**（需安装 `jieba` 分词库与支持 FTS5 的系统 `sqlite3`）；
-- **Git ≥ 2.25**。
+- **Git ≥ 2.25**；
+- **平台支持**：原生跨平台兼容 Linux、macOS 与 Windows（10+ / Server 2019+）。
 
-系统提供一键化环境配置与预检脚本，自动适配 Linux 与 macOS（兼容 macOS 默认 Bash 3.2 及 BSD 工具链）：
+> 📖 **安装与部署指引**：各平台（Linux / macOS / Windows）的一键初始化脚本、生产环境配置与详细依赖安装流程，请参见部署与运维手册 **[MANUAL.md §3（多场景部署流程）](MANUAL.md#3-多场景部署流程)**。
+
+### 三平台上手命令
 
 ```bash
-bash scripts/setup.sh          # Linux (Debian / Ubuntu / RHEL)
-bash scripts/setup-macos.sh    # macOS
+# Linux / macOS
+git clone https://github.com/offzen/dsh-gitea-search.git
+cd dsh-gitea-search
+bash scripts/setup.sh            # macOS 另有 scripts/setup-macos.sh（处理 BSD 差异）
+npm install && pip install jieba
+
+# Windows（PowerShell，管理员非必需）
+git clone https://github.com/offzen/dsh-gitea-search.git
+cd dsh-gitea-search
+powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
 ```
+
+> ⚠️ **v1.2.2 早期候选用户请注意**：该版本在 Linux / macOS 上存在路径归一化回归
+> （读取文件名含反斜杠的文件时会静默返回另一个文件的内容）。请直接使用 **v1.2.2-rc2+**，
+> 详见 [CHANGELOG](CHANGELOG.md#122-rc2---unreleased)。
+
+---
+
+## Windows 原生跨平台支持
+
+`dsh-gitea-search` 自 `v1.2.2` 起正式提供生产级原生 Windows 跨平台支持：
+- **原生 PE 执行入口**：通过标准 `pip install .` 生成原生 `Scripts\gts.exe` PE 二进制启动器，免管理员权限直接运行；
+- **防注入命令安全与环境自适配**：`.exe` 直执行，批处理模式采用双引号严格防转义注入护栏，自动穿透系统 `PATH`、venv 与 Scoop；
+- **全套 CI 真实验证**：已在 GitHub Actions Windows Server 2022 Runner 上完成多版本矩阵验证（21/21 用例全绿）。
+
+> 📖 **深入了解 Windows 平台支持**：
+> - 完整技术架构、跨平台安全护栏与技术细节详见 **[WINDOWS-PORT.md](WINDOWS-PORT.md)**；
+> - 一键 PowerShell 安装与生产环境接入指引详见 **[MANUAL.md §3.3（场景 C：原生 Windows 环境部署）](MANUAL.md#33-场景-c原生-windows-环境部署)**。
 
 ---
 
 ## 文档导航
 
 - **[docs/USAGE.md](docs/USAGE.md)** —— 四个工具参数速查、真实检索场景示范与防爆窗调用范例（**推荐首读**）
+- **[WINDOWS-PORT.md](WINDOWS-PORT.md)** —— Windows 原生跨平台技术架构、安全护栏设计与移植规范
 - **[docs/TOOL-NAMING.md](docs/TOOL-NAMING.md)** —— MCP 工具名前缀机制深度解析、四种典型冲突失败与命名规范
 - **[MANUAL.md](MANUAL.md)** —— 生产级高可用部署、Cron 定时同步、四层安全护栏机制、参数全表与故障排查手册
 - **[CHANGELOG.md](CHANGELOG.md)** / **[RELEASE-NOTES.md](RELEASE-NOTES.md)** —— 版本演进记录

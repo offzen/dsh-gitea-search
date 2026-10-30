@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dsh-gitea-search"
+version = "1.2.2"
+description = "Windows-capable gts launcher for dsh-gitea-search (Gitea/Git mirror hybrid search CLI)"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "Apache-2.0" }
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS :: MacOS X",
+]
+
+# jieba 仅在 FTS5 文档检索路径用；设为硬依赖会让纯 git-grep 用户也要装它。
+# 需要文档检索时：pip install "dsh-gitea-search[fts]"
+[project.optional-dependencies]
+fts = ["jieba>=0.42"]
+
+# Windows 关键点：setuptools 的 console_scripts 会生成真正的 Scripts\gts.exe（PE launcher），
+# 它能被 lib/server.mjs 的 spawn() 直接执行 —— 这正是原生 Windows 上原本缺失的那一环。
+# POSIX 上则生成无扩展名的 gts 脚本（带 shebang），行为与原来一致。
+[project.scripts]
+gts = "gts_cli:main"
+gitq = "gts_cli:main"
+dsh-search = "gts_cli:main"
+
+[tool.setuptools]
+py-modules = ["gts_cli"]
+
+# bin/gts 与 lib/indexer.py 随 wheel 一起发布，但**不能**装到 <prefix>/bin/gts ——
+# 那里是 [project.scripts] 生成的 gts 启动器，两者会互相覆盖。
+#
+# 实测踩坑（2026-10-28，Windows CI W5 与 ams2 复现）：
+#   旧写法 `"bin" = ["bin/gts"]` 的 data-files 基准是 sys.prefix，安装后写
+#   <venv>/bin/gts，正好盖掉 console_scripts 的启动器。后果是 gts --help 无限递归
+#   （启动器被替换成只有 8 行的 launcher，里面 `from gts_cli import main` 又回到
+#   同一个入口），Windows 上则表现为 gts.exe 是合法 PE 但一跑就 RuntimeError。
+#
+# 现在改放到 gts_cli 专属的数据子目录，避免与 scripts 撞名；定位逻辑见
+# gts_cli._script_candidates()。
+[tool.setuptools.data-files]
+"share/dsh-gitea-search/bin" = ["bin/gts"]
+"share/dsh-gitea-search/lib" = ["lib/indexer.py"]

@@ -48,7 +48,8 @@
 | **Node.js** | 运行 `server.mjs` 与诊断工具 | `>= 20.11.0` | **推荐 `>= 22.15 LTS`**（原生支持 `node:sqlite` 与 `zlib.zstdCompressSync`）。在 `20.11 ~ 22.14` 环境下，系统自动降级调用 `sqlite3` CLI 与 `zstd` CLI。 |
 | **Python 3** | FTS5 索引核心、CLI 及分词 | `>= 3.10` | 需系统提供带 FTS5 模块的 `sqlite3`，安装 `jieba` 分词库。 |
 | **macOS 适配** | 跨平台环境与 BSD 工具链 | macOS 12+ | 支持默认 Bash 3.2，自动适配 BSD `stat`/`awk`，内置非阻塞 `timeout()` 替代方案。 |
-| **MCP SDK** | MCP 协议通信 | `@modelcontextprotocol/sdk` | 仓内 `package.json` 声明，通过 `setup.sh` 自动安装。 |
+| **Windows 适配** | 原生运行环境与 MCP 检索支持 | Windows 10+ / Server 2019+ | 原生 PE 启动器 (`gts.exe`)、`msvcrt.locking` 字节区间锁、PowerShell 自动化部署与命令行注入防护。 |
+| **MCP SDK** | MCP 协议通信 | `@modelcontextprotocol/sdk` | 仓内 `package.json` 声明，通过 setup 脚本自动安装。 |
 
 ---
 
@@ -114,6 +115,73 @@ python3 lib/indexer.py --stats
 ```
 
 > **说明**：`sync.sh` 增量同步完成后会自动调用 `python3 lib/indexer.py --build`；未变更的仓库将在毫秒级跳过，整体同步轻量高效。
+
+---
+
+### 3.3 场景 C：原生 Windows 环境部署
+
+Windows 的进程创建机制（`CreateProcess`）只认 PE 二进制文件（`.exe` / `.com`），不支持 POSIX shebang 机制；因此无扩展名的 Python 脚本 `bin\gts` 无法被直接执行。v1.2.2 提供了完善的原生 Windows 架构支持，系统提供三种安装接入方式：
+
+> 📌 **文档分工（避免两边内容漂移）**
+>
+> | 文档 | 职责 | 唯一真源 |
+> |---|---|---|
+> | **本节（MANUAL §3.3）** | **操作步骤**：照着敲就能装上 | 安装命令、脚本参数 |
+> | **[WINDOWS-PORT.md §五](WINDOWS-PORT.md)** | **技术原理**：为什么这么做 | 底层设计、安全护栏、CI 矩阵 |
+>
+> 两处都涉及 Windows 部署，但**本节只写"怎么做"**，原理与护栏一律链接到
+> `WINDOWS-PORT.md`，不在本手册重复展开。若发现两处步骤不一致，
+> 以 `scripts/setup-windows.ps1` 的实际参数为准（可用 `-?` 查看）。
+
+#### 方式 A：PowerShell 一键自动化安装（推荐）
+
+通过内置的 `scripts\setup-windows.ps1` 脚本，自动完成 Python/Node/Git 环境检查、pip 构建 `gts.exe`、镜像目录准备、FTS5 索引初始化以及 DSH `cordis.patch.yml` 自动配置：
+
+```powershell
+# 以管理员或普通用户身份在 PowerShell 中执行（绕过当前进程执行策略）
+powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners myorg -MirrorRoot C:\gitea-mirror -RegisterDsh
+```
+
+**参数说明**：
+- `-MirrorRoot <Path>`：指定裸镜像存储根目录（默认为项目内 `mirror` 目录）；
+- `-Owners <List>`：指定 Gitea 组织或用户名（逗号分隔）；
+- `-RegisterDsh`：自动备份并将 MCP 配置追加到 DSH 的 `cordis.patch.yml`；
+- `-SkipIndex`：仅安装环境与启动器，跳过初次 FTS5 索引构建。
+
+#### 方式 B：标准 pip 安装（适合已配置 Python 环境的 Windows 开发者）
+
+利用 `pyproject.toml` 的 setuptools 配置，编译生成 Windows 原生启动器：
+
+```powershell
+# 在项目根目录下执行（生成 <Python>\Scripts\gts.exe）
+pip install .
+
+# 若无系统管理员权限，可安全使用用户级安装（产物位于 %APPDATA%\Python\Scripts\gts.exe）：
+pip install --user .
+```
+
+安装完成后，可通过 `gts --help` 验证启动器是否正常工作。
+
+#### 方式 C：PyInstaller 单目录打包（适合目标机不想安装完整 Python 环境）
+
+```powershell
+pip install pyinstaller
+pyinstaller --onedir --name gts --hidden-import=indexer --paths=lib bin\gts
+# 产物：dist\gts\gts.exe（采用 --onedir 避免单文件模式每次运行解压数十兆开销）
+```
+
+#### Windows 下的环境变量与接入配置约束
+
+在 Windows 环境下接入 DSH 或手动调试时，请特别注意 `GTS_BIN` 变量的配置规则：
+
+```powershell
+$env:GTS_BIN = "C:\path\to\Scripts\gts.exe"   # 必须是单个 .exe 的完整路径
+$env:GITEA_MIRROR_ROOT = "C:\gitea-mirror"
+$env:GITEA_OWNERS = "myorg"
+```
+
+> ⚠️ **关键陷阱**：`GTS_BIN` **必须是单个可执行文件的实际路径**。严禁写成 `"python bin\gts"` 或带空格的参数组合，否则子进程创建会直接触发 `ENOENT` 致命报错。
+> 另外，`lib/server.mjs` 会自动遍历系统 `PATH` 环境变量识别 `gts.exe`；若已执行 `pip install .` 且 Python Scripts 目录在系统 PATH 中，则无需显式指定 `GTS_BIN`。
 
 ---
 
@@ -224,6 +292,21 @@ UTF-8 完整性保证：Buffer.concat(chunks).toString('utf8')
 （彻底杜绝流式单块解码导致的 U+FFFD 乱码）
 ```
 
+### 6.2 跨平台运行时安全护栏 (Cross-Platform Execution Guards)
+
+在 v1.2.2 跨平台适配中，`lib/server.mjs` 与 `lib/indexer.py` 增设了底层安全护栏：
+
+1. **`cmd.exe` 参数防注入定界**：
+   - Windows 下若必须经由 `cmd.exe` 启动（如批处理脚本），系统采用严格引号定界：显式构造 `cmd /d /s /c "<已引号化命令>"` 并对每个输入参数单独加引号（`/s` 确保 cmd 先剥掉最外层引号，使逐参数引号真正起作用），彻底防御搜索词中恶意注入 `& | < > ^` 触发多指令逃逸执行。
+   - 对原生 `.exe` / `.com` 二进制，一律使用 `shell: false` 直执行，完全绕过 shell 解析层。
+2. **`IndexLock` 跨平台排他锁对齐**：
+   - 在 POSIX 平台上采用 `fcntl.flock`；在 Windows 平台上采用 `msvcrt.locking` 字节区间锁。
+   - Windows 平台在加锁前显式执行 `seek(0)`，与 `_release()` 保持严格对称的字节位置，确保多进程并发建索引与检索时的强排他性。
+3. **Git 路径正斜杠自动归一化**：
+   - Git tree object 在所有平台上均只接受正斜杠 `/`。MCP 服务与 CLI 在接收输入后自动执行反斜杠转义（`replace(/\\/g, '/')`），杜绝因系统路径反斜杠导致 `fatal: path '...' does not exist in 'HEAD'` 异常中断。
+4. **系统 PATH 目录引号清洗**：
+   - 自动遍历 Windows `PATH` 环境变量时，显式清洗带引号的目录项（去除首尾 `"`），防止畸形拼接引起子进程启动失败。
+
 ---
 
 ## 7. FTS5 检索引擎运维原理
@@ -253,6 +336,9 @@ $$\text{file\_blobs} == \text{docs\_fts} == \text{doc\_rowid} == (\text{doc\_row
 | **中文关键词检索 0 命中** | FTS5 分词器未构建，或 `jieba` 未正确载入 | 运行 `bin/gts --fts-stats` 检查词元分布；重新执行 `python3 lib/indexer.py --full`。 |
 | **Node.js 运行报错 `Cannot find module 'node:sqlite'`** | Node 版本在 `20.11 ~ 22.14` 且系统未装 `sqlite3` CLI | 运行 `bash scripts/setup.sh` 安装系统 `sqlite3` 命令行，系统将自动回退。 |
 | **macOS 上运行 `sync.sh` 卡在 timeout 管道** | 系统缺少 GNU `timeout` 且 fallback 逻辑受阻塞 | 更新代码至 `v1.2.0`（[PR #2](https://github.com/offzen/dsh-gitea-search/pull/2) 已修复子进程管道阻塞问题）。 |
+| **Windows 报错 `找不到可执行的 gts CLI`** | Windows `CreateProcess` 无法执行无扩展名 shebang 脚本 | 执行 `pip install .` 生成 `Scripts\gts.exe`；或显式指定环境变量 `$env:GTS_BIN="C:\path\to\gts.exe"`。注意严禁带 `"python ..."` 前缀。 |
+| **Windows 执行 PowerShell 脚本报策略错误** | 系统默认执行策略（Restricted）阻止脚本运行 | 在命令中加入参数绕过限制：`powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1`。 |
+| **Windows 读取文件报 `path '...' does not exist in 'HEAD'`** | Git tree object 仅接受正斜杠 `/` 分隔符 | 更新至 `v1.2.2`（已自动将反斜杠 `\` 归一化为 `/`）。在 CLI 中手动执行时亦可使用 `gts --read` 自动归一化。 |
 | **修改了 `server.mjs` 却未生效** | MCP 属于被宿主长期持有并在后台常驻的子进程 | 执行 `bash scripts/respawn-mcp.sh` 平滑重启 MCP 进程（宿主 DSH 会自动重连）。 |
 | **`session-query.sqlite-wal` 膨胀至数百 MB** | 大会话读写或非正常退出导致 WAL 未回收 | 运行 `node scripts/dsh-session-health.mjs --fix` 执行在线 `PRAGMA wal_checkpoint(TRUNCATE)`。 |
 
@@ -260,7 +346,7 @@ $$\text{file\_blobs} == \text{docs\_fts} == \text{doc\_rowid} == (\text{doc\_row
 
 ## 9. 质量验收与自动化测试基线
 
-### 9.1 自建合成回归测试集（32 项完整断言）
+### 9.1 自建合成回归测试集（31 项完整断言）
 
 无需任何外部依赖或现存代码库，在 `/tmp` 独立沙箱中完整验证全生命周期：
 
@@ -281,3 +367,28 @@ bash scripts/run-realdata-test.sh /srv/gitea-mirror
 ```
 
 验证包含数百个真实裸镜像、万篇文档及数千个真实会话文件下的索引吞吐与检索延迟。
+
+### 9.3 跨平台回归测试套件
+
+基于 Node.js 原生测试运行器（`node --test`），断言平台适配、进程加锁、参数转义安全
+与 POSIX 路径语义：
+
+```bash
+npm test          # 单元测试：node --test 自动递归发现 test/*.test.mjs（Node 20/22/24 通用）
+npm run test:e2e  # 端到端：31 项合成回归断言（Linux / macOS）
+npm run test:all  # 两者都跑（CI 使用的完整组合）
+```
+
+> ⚠️ **两个测试集此前是割裂的**：v1.2.2 的 `npm test` 只跑 3 个 Windows 用例文件，
+> 而 e2e（31 项）单独跑；Linux CI 不跑单测、Windows CI 不跑 e2e。
+> v1.2.2 的 POSIX 回归正是从这道缝里漏过去的。v1.2.2-rc2 起统一为 `npm run test:all`。
+
+| 测试文件 | 覆盖范围 |
+|---|---|
+| `test/windows-adapt.test.mjs` | Windows 可执行文件扩展名分流（`.exe`/`.com` 直执行 vs `.cmd`/`.bat` 走 shell）、反斜杠路径归一化、POSIX 模块安全降级 |
+| `test/windows-lock.test.mjs` | W7 锁排他性：Windows `msvcrt.locking` 下多进程争锁互斥与释放 |
+| `test/windows-quote.test.mjs` | W8 命令行注入防护：双引号翻倍、尾部反斜杠转义、`& | < > ^` 元字符隔离 |
+| `test/posix-path.test.mjs` | **POSIX 路径语义回归**（v1.2.2-rc2 新增）：反斜杠文件名的读取不被张冠李戴、`classify_kind` 扩展名判定、行尾 CR 不被吞掉、归一化按平台分流。Windows 上自动跳过 |
+
+`test/posix-path.test.mjs` 的 5 项用例在 v1.2.2 上**全部失败**、在 v1.2.2-rc2 上全部通过，
+可直接用于验证某个构建是否带该回归。

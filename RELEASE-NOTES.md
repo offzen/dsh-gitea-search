@@ -1,5 +1,92 @@
 # Release Notes - DeepSeek Harness (DSH) Gitea Search
 
+## v1.2.2-rc2 (Unreleased) — POSIX 回归修复
+
+### 版本概述 / Overview
+
+v1.2.2-rc2 修复 v1.2.2 早期候选在 Linux / macOS 上引入的回归。**Windows 侧能力全部保留**，
+本版本只把"无条件 Windows 化"的共享代码改回按平台分流。
+
+#### 修复清单
+
+| 级别 | 问题 | 影响 |
+|---|---|---|
+| P0 | 路径归一化未做平台分流 | `read_gitea_file` / `gts --read` 读含反斜杠文件名的文件时，**静默返回另一个文件的内容且不报错** |
+| P1 | PATH 全量扫描 | 命中同名无关命令（如 GNU Triangulated Surface 的 `gts`），退化成含糊的"输出无法解析" |
+| P2 | `rstrip('\r\n')` | 吞掉行内容尾部的 CR，`'abc\r\r\n'` → `'abc'` |
+| P2 | `classify_kind()` 扩展名 | `foo\.md` 判不出扩展名，`kind` 从 `doc` 落入 `code`，检索漏召回 |
+| P3 | 候选探测无缓存 | 候选从 11 膨胀到 69，同步 `statSync` 阻塞事件循环，每次工具调用都触发 |
+
+#### 顺带的改善（v1.2.2 中确实正确的部分）
+
+`_force_utf8_stdio()` 修复了旧版在 `PYTHONIOENCODING=ascii` 下的 `UnicodeEncodeError`
+崩溃；`probeExecutable` 的 `isFile()` 判定、`fcntl` 条件导入、`IndexLock` 重构
+对 POSIX 均无行为变化。这些予以保留。
+
+#### 测试与 CI
+
+- 新增 `test/posix-path.test.mjs`（5 项）：实测在 v1.2.2 早期候选上 5/5 失败、v1.2.2-rc2 上 5/5 通过。
+- `npm test` 改为 `node --test` 自动递归发现 `test/*.test.mjs`（不带 glob 参数，兼容 Node 20/22/24），消除覆盖割裂；完整组合用 `npm run test:all`。
+- CI 新增 **macOS runner**（此前从未有过）。
+
+---
+
+## v1.2.2 (2026-10-28)
+
+### 版本概述 / Overview
+
+`dsh-gitea-search` v1.2.2 是一个重大的跨平台生态扩展与生产级加固版本。在承接 v1.2.1 架构与规范的基础上，本版本正式推出了**原生 Windows 平台支持**，彻底打破以往 Windows 环境下因缺失 PE 入口、文件锁不兼容及 shebang 无法执行导致 3 个检索工具不可用的底层限制；全面建立了覆盖路径归一化、参数防注入、并发锁对齐与环境探测的生产级防护体系，并在 GitHub Actions 真实 Windows Runner 上通过了全套自动化工作流验证（7/7 Jobs，21/21 测试用例 100% 通过）。
+
+---
+
+### 中文更新说明
+
+#### 1. 原生 Windows 平台支持 (dsh-gitea-search)
+- **原生 PE Launcher**：新增 `pyproject.toml` 与 `gts_cli.py`，通过 setuptools `[project.scripts]` 在 Windows 上编译生成原生 PE 启动器 `Scripts\gts.exe`，避开 Windows `CreateProcess` 对无扩展名 shebang 脚本的执行限制。
+- **独立数据隔离**：将 `bin/gts` 与 `lib/indexer.py` 安装至 `share/dsh-gitea-search/` 数据子目录，消除与同名启动器的文件覆盖与无限递归风险。
+- **一键自动化部署 (`scripts/setup-windows.ps1`)**：提供专为 Windows 打造的 PowerShell 部署脚本，支持 Git 裸镜像拉取、依赖安装、FTS5 倒排索引构建及 DSH `cordis.patch.yml` 自动注册。
+- **跨平台测试支持**：测试架构迁移至 Node 原生 `node --test`，新增 21 项跨平台行为与防注入断言。
+
+#### 2. 核心跨平台稳健性设计与安全防护机制
+- **Git 树对象路径统一归一化**：`readGiteaFile`、`gitDir` 以及 CLI `gts --read` 自动将 Windows 反斜杠 `\` 转换为正斜杠 `/`，杜绝 Git tree object 抛出 `fatal: path '...' does not exist in 'HEAD'`。
+- **CLI 同步跨平台容错与前缀规范**：`gts --sync` 增加 `shutil.which('bash')` 动态探测与友好的跨平台回退提示；统一 `die()` 报错前缀为 `gts:`。
+- **PATH 引号清洗与 Gitea Actions 卡滞防护**：增强 `findSearchCli()` 剥离 PATH 双引号能力；为 Windows CI 添加 `github.server_url == 'https://github.com'` 守卫，避免在缺少 Windows runner 的自建 Gitea 环境中永久排队。
+- **PowerShell YAML 路径转义安全**：改用 `.Replace('\', '/')` 正斜杠进行 DSH 配置插值，彻底避免 YAML 反斜杠转义语法错误。
+- **CRLF 尾部换行符彻底清洗**：`bin/gts` 的 `_stream()` 与 `lib/indexer.py` 的摘要生成器彻底规整孤立 `\r`，杜绝 Windows 检出代码的 `\r` 符号污染终端与 Web UI 渲染。
+- **Windows 排他锁区间严格对齐**：`lib/indexer.py` 的 `IndexLock` 在 Windows 加锁前显式执行 `seek(0)`，与 `_release()` 保持严格对称，确保多进程并发建索引互斥有效。
+- **系统 PATH 环境变量自动探测**：`findSearchCli()` 自动遍历 `process.env.PATH`，无需手动配置环境变量即可开箱识别全局/虚拟环境中的 `gts.exe`。
+- **免提权用户级安装支持**：候选路径增加 `site.USER_BASE`，无管理员权限时可通过 `pip install --user .` 正常使用。
+- **PyPI 元数据规范化**：修正 Trove Classifier 为 `"Operating System :: MacOS :: MacOS X"`。
+- **文档体系手册化重构**：将所有安装部署细节从 `README.md` 完整收拢至 `MANUAL.md §3` 与 `WINDOWS-PORT.md`，校准合成测试断言为 31 项，并补充 Windows 专属行为测试说明。
+
+#### 3. 验证与质量保证
+- **GitHub Actions Windows Runner 全绿**：覆盖 Windows Server 2022 下 Python 3.11/3.12 与 Node 20/22 组合矩阵，7/7 jobs 全部 PASS，21/21 tests 真实执行无跳过、零失败。
+- **回归覆盖存在缺口（更正说明）**：Windows CI 7/7 jobs、21/21 tests 属实；
+  但 Linux 侧当时**只跑 e2e、不跑单测**，Windows 侧**只跑单测、不跑 e2e**，
+  且全矩阵**没有 macOS runner**。共享代码的 POSIX 回归正是从这道缝里漏过去的。
+  **本版本并非 100% 向后兼容**，详见下方 v1.2.2-rc2 的修复说明。
+
+---
+
+### English Release Notes
+
+#### Highlights
+- **Native Windows Platform Support**: Introduces native PE launcher generation (`Scripts\gts.exe`) via `pyproject.toml` and `gts_cli.py`, overcoming Windows `CreateProcess` limitations on shebang scripts.
+- **Robustness Architecture & Security Guards**:
+  - Path normalization (backslash to forward-slash) across `server.mjs` and `bin/gts` preventing Git fatal tree lookup errors.
+  - Safe YAML path interpolation in `setup-windows.ps1` preventing profile syntax corruption.
+  - Cross-platform synchronization fallback in `bin/gts --sync` and unified `gts:` diagnostic prefix.
+  - Safe PATH quotes handling in `server.mjs` and GitHub server URL guard in Windows CI preventing queued runner stalls.
+  - Clean CRLF `\r` stripping in `bin/gts` stream outputs and indexer snippet generation.
+  - Consistent byte-range file locking (`IndexLock`) with `seek(0)` alignment on Windows.
+  - Automatic `PATH` environment variable traversal for CLI executable discovery.
+  - Full support for unprivileged `pip install --user .` installations via `site.USER_BASE`.
+  - PyPI compliant Trove classifiers.
+  - Documentation manual restructuring: migrated all installation flows from `README.md` to `MANUAL.md §3` and `WINDOWS-PORT.md`, reconciling 31-assertion testbed metrics.
+- **Automated Windows CI**: 7/7 jobs and 21/21 test assertions verified green on GitHub Actions Windows runners with zero skips and zero failures.
+
+---
+
 ## v1.2.1 (2026-10-27)
 
 ### 版本概述 / Overview
