@@ -51,7 +51,7 @@ function makeFixture() {
   git([...ident, 'add', '-A'], src);
   git([...ident, 'commit', '-qm', 'init'], src);
 
-  const owners = path.join(dir, 'myorg');
+  const owners = path.join(dir, 'test-owner');
   fs.mkdirSync(owners, { recursive: true });
   git(['clone', '-q', '--bare', src, path.join(owners, 'repo.git')], dir);
   return dir;
@@ -60,7 +60,7 @@ function makeFixture() {
 test('CLI: POSIX 下 --read 必须区分 "a\\b.md" 与 "a/b.md"', { skip: SKIP_ON_WIN }, () => {
   const dir = makeFixture();
   try {
-    const env = { ...process.env, GITEA_MIRROR_ROOT: dir, GITEA_OWNERS: 'myorg' };
+    const env = { ...process.env, GITEA_MIRROR_ROOT: dir, GITEA_OWNERS: 'test-owner' };
     const cli = path.join(ROOT, 'bin', 'gts');
     const read = (p) =>
       spawnSync('python3', [cli, '-r', 'repo', '--read', p], { env, encoding: 'utf8' });

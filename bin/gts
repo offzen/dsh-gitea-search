@@ -46,21 +46,16 @@ try:
 except ImportError:
     indexer = None
 
-ROOT = (
-    os.environ.get("GITEA_MIRROR_ROOT")
-    or os.environ.get("GITEA_MIRROR_PATH")
-    or os.environ.get("GITQ_MIRROR_ROOT")
-    or "/srv/gitea-mirror"
-)
-OWNER = (
-    os.environ.get("GITEA_OWNERS")
-    or os.environ.get("GITEA_OWNER")
-    or os.environ.get("GITQ_OWNER")
-    or "myorg"
-)
-OWNERS = [o.strip() for o in OWNER.split(",") if o.strip()] or ["myorg"]
-MIRROR = os.path.join(ROOT, OWNERS[0])
-SYNC = os.path.join(ROOT, "sync.sh")
+try:
+    from config import resolve_config
+except ImportError:
+    resolve_config = None
+
+ROOT = ""
+OWNER = ""
+OWNERS = []
+MIRROR = ""
+SYNC = ""
 GN = ["git", "-c", "core.pager=cat", "-c", "color.ui=false",
       # core.quotePath 默认 true：非 ASCII 路径会被转义成 "\345\257\274…"，
       # 中文文件名直接不可用（也读不出来）。必须显式关掉。
@@ -423,6 +418,7 @@ def _force_utf8_stdio():
 
 
 def main():
+    global ROOT, OWNER, OWNERS, MIRROR, SYNC
     _force_utf8_stdio()
     ap = argparse.ArgumentParser(add_help=True, description="跨 gitea 全量镜像搜索")
     ap.add_argument("pattern", nargs="?", help="搜索模式")
@@ -447,6 +443,10 @@ def main():
     ap.add_argument("--fts-stats", action="store_true", help="查看 FTS5 索引库统计信息")
     ap.add_argument("--perf-stats", action="store_true", help="查看性能与磁盘 I/O 监测统计")
     ap.add_argument("--doctor", action="store_true", help="运行索引与宿主 DSH 会话健康及 I/O 诊断")
+    ap.add_argument("--config", default=None, help="显式配置文件路径（优先于用户/项目 config.json）")
+    ap.add_argument("--mirror-root", default=None, help="显式镜像根目录（最高优先级）")
+    ap.add_argument("--owners", default=None, help="显式 owner 列表，逗号分隔（最高优先级）")
+    ap.add_argument("--show-effective-config", action="store_true", help="显示最终配置及来源，不输出 token")
     ap.add_argument("--dsh-home", default=None, help="指定宿主 .dsh 目录路径（供 --doctor 检查）")
     ap.add_argument("--read", dest="read_path", default=None, help="直接读取指定仓(-r)内的文件内容")
     ap.add_argument("-n", "--max", "--limit", dest="max", type=int, default=200, help="最多输出行数（默认 200）")
@@ -458,6 +458,28 @@ def main():
     a.mode = a.mode or "content"
     if a.query_alias and not a.pattern:
         a.pattern = a.query_alias
+
+    if resolve_config is None:
+        die("未找到共享配置模块 lib/config.py")
+    try:
+        effective = resolve_config(
+            cli_root=a.mirror_root,
+            cli_owners=a.owners,
+            config_path=a.config,
+            project_dir=os.path.normpath(os.path.join(_CUR_DIR, "..")),
+        )
+    except ValueError as exc:
+        die(f"CONFIG_ERROR: {exc}")
+    ROOT = effective["mirror_root"]
+    OWNERS = effective["owners"]
+    OWNER = ",".join(OWNERS)
+    MIRROR = os.path.join(ROOT, OWNERS[0]) if OWNERS else ROOT
+    SYNC = os.path.join(ROOT, "sync.sh")
+    if a.show_effective_config:
+        print(json.dumps(effective, ensure_ascii=False, indent=2))
+        return
+    if not effective["valid"]:
+        die("CONFIG_ERROR: " + "; ".join(effective["errors"]))
 
     if a.sync:
         if not os.path.exists(SYNC):

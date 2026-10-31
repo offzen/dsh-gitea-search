@@ -53,31 +53,21 @@ def _force_utf8_stdio():
         except (ValueError, OSError):
             pass
 
-ROOT_DEFAULT = (
-    os.environ.get("GITEA_MIRROR_ROOT")
-    or os.environ.get("GITEA_MIRROR_PATH")
-    or os.environ.get("GITQ_MIRROR_ROOT")
-    or "/srv/gitea-mirror"
-)
-OWNER_DEFAULT = (
-    os.environ.get("GITEA_OWNERS")
-    or os.environ.get("GITEA_OWNER")
-    or os.environ.get("GITQ_OWNER")
-    or "myorg"
-)
+try:
+    from config import resolve_config
+except ImportError:  # packaged layouts import this module through gts_cli
+    resolve_config = None
 
 
-def get_configured_owners(explicit_owner=None):
-    """获取要处理的 owner 列表。支持逗号分隔。"""
-    raw = (
-        explicit_owner
-        or os.environ.get("GITEA_OWNERS")
-        or os.environ.get("GITEA_OWNER")
-        or os.environ.get("GITQ_OWNER")
-        or "myorg"
-    )
-    owners = [o.strip() for o in raw.split(",") if o.strip()]
-    return owners or ["myorg"]
+def get_configured_owners(explicit_owner=None, config_path=None, project_dir=None):
+    """获取 effective owners；缺失/占位配置返回空列表，由入口 fail closed。"""
+    if resolve_config is None:
+        return []
+    return resolve_config(
+        cli_owners=explicit_owner,
+        config_path=config_path,
+        project_dir=project_dir,
+    )["owners"]
 
 # 2026-10-21 阶段三方案C：文档 + 高价值配置/脚本（源码仍走 git-grep）
 DOC_EXTS = {".md", ".markdown", ".txt", ".rst"}
@@ -963,6 +953,8 @@ def build_index(mirror_root, owners=None, repo_filter=None, exts=DEFAULT_EXTS, f
             owners = get_configured_owners()
         elif isinstance(owners, str):
             owners = [o.strip() for o in owners.split(",") if o.strip()]
+        if not owners:
+            raise ValueError("CONFIG_ERROR: owners are not configured")
 
         t0 = time.time()
         op_name = "index_build" if full else "index_incremental"
@@ -1499,6 +1491,9 @@ def main():
     parser.add_argument("--stats", action="store_true", help="查看索引库状态统计")
     parser.add_argument("--perf-stats", action="store_true", help="查看性能与磁盘 I/O 监测统计")
     parser.add_argument("--doctor", action="store_true", help="运行索引与宿主 DSH 会话健康及 I/O 诊断")
+    parser.add_argument("--config", help="显式配置文件路径")
+    parser.add_argument("--mirror-root", help="显式镜像根目录（最高优先级）")
+    parser.add_argument("--show-effective-config", action="store_true", help="显示最终配置及来源，不输出 token")
     parser.add_argument("--dsh-home", help="指定宿主 .dsh 目录路径（供 --doctor 检查）")
     parser.add_argument("-r", "--repo", help="限定仓库名/通配符")
     parser.add_argument("-q", "--query", help="执行全文检索测试")
@@ -1508,8 +1503,24 @@ def main():
     parser.add_argument("--json", action="store_true", help="输出 JSON 格式")
     args = parser.parse_args()
 
-    mirror_root = ROOT_DEFAULT
-    owners = get_configured_owners(args.owner)
+    if resolve_config is None:
+        parser.error("未找到共享配置模块 lib/config.py")
+    try:
+        effective = resolve_config(
+            cli_root=args.mirror_root,
+            cli_owners=args.owner,
+            config_path=args.config,
+            project_dir=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        )
+    except ValueError as exc:
+        parser.error(f"CONFIG_ERROR: {exc}")
+    mirror_root = effective["mirror_root"]
+    owners = effective["owners"]
+    if args.show_effective_config:
+        print(json.dumps(effective, ensure_ascii=False, indent=2))
+        return
+    if not effective["valid"]:
+        parser.error("CONFIG_ERROR: " + "; ".join(effective["errors"]))
 
     if args.doctor:
         print(run_doctor(mirror_root, dsh_home=args.dsh_home, as_json=args.json))
