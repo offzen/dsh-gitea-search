@@ -137,7 +137,17 @@ test('IndexLock Windows 锁区间一致性：_acquire 前必须 seek(0)', () => 
   assert.match(py, /self\.fd\.seek\(0\)[\r\n\s]+msvcrt\.locking/, 'Windows _acquire 必须在 locking 前 seek(0)');
 });
 
-test('setup-windows.ps1 YAML 路径使用 Replace 避免正则转义缺陷', () => {
+test('setup-windows.ps1 使用共享 profile patcher，避免手拼 YAML 路径', () => {
   const ps = fs.readFileSync(new URL('../scripts/setup-windows.ps1', import.meta.url), 'utf8');
-  assert.match(ps, /\.Replace\(['"]\\['"],\s*['"]\/['"]\)/, 'setup-windows.ps1 应使用 .Replace 避免正则替换损坏');
+  assert.match(ps, /profile-patch\.py/, 'setup-windows.ps1 应复用共享 profile patcher');
+  assert.doesNotMatch(ps, /Add-Content\s+-Path\s+\$patch/, '不应继续盲目追加重复 YAML block');
+});
+
+test('setup-windows.ps1 保持 UTF-8 BOM 并拒绝占位 Owner', () => {
+  const bytes = fs.readFileSync(new URL('../scripts/setup-windows.ps1', import.meta.url));
+  assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+  const ps = bytes.toString('utf8');
+  assert.match(ps, /Parameter\(Mandatory=\$true\).*\$Owners/);
+  assert.match(ps, /CONFIG_ERROR.*placeholder/);
+  assert.match(ps, /SupportsShouldProcess=\$true/);
 });

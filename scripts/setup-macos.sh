@@ -20,8 +20,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 MIRROR_ROOT="${GITEA_MIRROR_ROOT:-$ROOT_DIR/mirror}"
-OWNERS="${GITEA_OWNERS:-myorg}"
+OWNERS="${GITEA_OWNERS:-}"
 VENV_DIR="${GITQ_VENV_DIR:-$ROOT_DIR/.venv}"
+PROFILE="Auto"
+INSTALL_DSH=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --install-dsh) INSTALL_DSH=1 ;;
+    --profile) shift; PROFILE="${1:?--profile requires Auto, desktop, web, headless, or all}" ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+if [ -z "$OWNERS" ] || [ "$OWNERS" = "myorg" ]; then
+  echo "CONFIG_ERROR: set GITEA_OWNERS to a real owner before installing." >&2
+  exit 2
+fi
 
 echo "=== dsh-gitea-search macOS 安装 ($ROOT_DIR) ==="
 
@@ -122,44 +136,27 @@ cat <<EOF
 
 EOF
 
-# ── 可选：写入 DSH profile ────────────────────────────────────────────────
-if [ "${1:-}" = "--install-dsh" ]; then
+# ── 可选：写入显式选择的 DSH profile ─────────────────────────────────────
+if [ "$INSTALL_DSH" = "1" ]; then
   echo "=== 接入 DSH profile ==="
-  PROFILE_DIR="${DSH_PROFILE_DIR:-$HOME/.dsh/profiles/desktop}"
-  PATCH_FILE="$PROFILE_DIR/cordis.patch.yml"
-  [ -f "$PATCH_FILE" ] || { echo "❌ 找不到 $PATCH_FILE"; exit 1; }
-
+  PROFILES_ROOT="${DSH_PROFILES_ROOT:-${DSH_HOME:-$HOME/.dsh}/profiles}"
+  mapfile -t FOUND < <(for f in "$PROFILES_ROOT"/*/cordis.patch.yml; do [ -f "$f" ] && basename "$(dirname "$f")"; done)
+  case "$PROFILE" in
+    all) TARGETS=("${FOUND[@]}") ;;
+    Auto)
+      [ "${#FOUND[@]}" -eq 1 ] || { echo "❌ Auto 需要恰好一个 profile；发现: ${FOUND[*]:-(none)}"; exit 2; }
+      TARGETS=("${FOUND[0]}") ;;
+    desktop|web|headless)
+      [ -f "$PROFILES_ROOT/$PROFILE/cordis.patch.yml" ] || { echo "❌ 找不到 profile: $PROFILE"; exit 2; }
+      TARGETS=("$PROFILE") ;;
+    *) echo "❌ --profile 仅支持 Auto/desktop/web/headless/all"; exit 2 ;;
+  esac
   NODE_BIN="$(command -v node)"
-  # 追加（幂等：先删掉同名旧行）。注意 cordis.patch.yml 顶层必须是**一个** YAML 数组，
-  # 模板里的 [] 是占位符，直接在其后追加会形成两个数组 → 解析报错。
-  python3 - "$PATCH_FILE" "$ROOT_DIR" "$MIRROR_ROOT" "$OWNERS" "$VENV_DIR" "$NODE_BIN" <<'PYEOF'
-import sys, re
-path, root, mirror, owners, venv, node_bin = sys.argv[1:7]
-entry = f"""
-- insert:
-    - id: mcp-gitea-search
-      name: '@deepseek-ai/dsh-mcp-client'
-      config:
-        serverName: gitea_search
-        transport: stdio
-        command: {node_bin}
-        args: ['{root}/lib/server.mjs']
-        cwd: {root}
-        env:
-          GITEA_MIRROR_ROOT: {mirror}
-          GITEA_OWNERS: {owners}
-          GITQ_VENV_PATH: {venv}
-"""
-s = open(path, encoding="utf-8").read()
-# 去掉旧的 mcp-gitea-search 块（含可能存在的裸 - id: 形式）
-s = re.sub(r"\n- insert:\n(?:[ \t]+.*\n)*?[ \t]+- id: mcp-gitea-search\n(?:[ \t]+.*\n)*", "\n", s)
-s = re.sub(r"\n- id: mcp-gitea-search\n(?:[ \t]+.*\n)*", "\n", s)
-if s.strip() == "[]":
-    s = s.replace("[]", entry.strip() + "\n")
-else:
-    s = s.rstrip("\n") + "\n" + entry
-open(path, "w", encoding="utf-8").write(s)
-print(f"已写入 {path}")
-PYEOF
-  echo "✅ DSH profile 已更新（改 cordis.patch.yml 后 DSH 会 HMR 热加载；桌面端若未生效，重启 DSH 应用）"
+  for target in "${TARGETS[@]}"; do
+    python3 "$ROOT_DIR/scripts/profile-patch.py" \
+      --file "$PROFILES_ROOT/$target/cordis.patch.yml" \
+      --node "$NODE_BIN" --server "$ROOT_DIR/lib/server.mjs" --gts "$ROOT_DIR/bin/gts" \
+      --mirror "$MIRROR_ROOT" --owners "$OWNERS" --venv "$VENV_DIR"
+  done
+  echo "✅ DSH profile 已更新；本脚本不会重启 DSH，请在用户批准的时机加载并做 MCP smoke。"
 fi
