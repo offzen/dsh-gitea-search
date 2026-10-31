@@ -18,6 +18,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { launchSpec } from './launch-spec.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 function resolveDefaultCmd() {
@@ -39,7 +40,8 @@ const MAX_OUT_BYTES = 131072;          // GITQ_MAX_SEARCH_BYTES 默认值
 
 if (!existsSync(CMD)) { console.error(`入口不存在：${CMD}`); process.exit(2); }
 
-const p = spawn(CMD, [], { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env } });
+const spec = launchSpec(CMD);
+const p = spawn(spec.command, spec.args, { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env }, windowsHide: true });
 p.on('error', (e) => { console.error(`启动失败：${e.message}`); process.exit(2); });
 
 // —— 收输出：累积 Buffer，按 0x0A 切**完整行**再解码（绝不按块 toString）——

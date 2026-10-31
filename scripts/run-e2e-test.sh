@@ -19,11 +19,17 @@ if [ "$(basename "$SCRIPT_DIR")" = "scripts" ]; then
 else
   ROOT_DIR="$SCRIPT_DIR"
 fi
-MIRROR_ROOT="${1:-${GITQ_MIRROR_ROOT:-/srv/gitea-mirror}}"
-if [ -z "${1:-}" ] && [ -d "$MIRROR_ROOT" ] && [ ! -f "$MIRROR_ROOT/.testbed-marker" ] && [ -n "$(ls -A "$MIRROR_ROOT" 2>/dev/null)" ]; then
-  MIRROR_ROOT="/tmp/gts-e2e-testbed"
+if [ -n "${1:-}" ]; then
+  MIRROR_ROOT="$1"
+elif [ -n "${GITQ_MIRROR_ROOT:-}" ]; then
+  MIRROR_ROOT="$GITQ_MIRROR_ROOT"
+else
+  MIRROR_ROOT="$(node -e 'const fs=require("node:fs"),os=require("node:os"),path=require("node:path");process.stdout.write(fs.mkdtempSync(path.join(os.tmpdir(),"gts-e2e-")))')"
 fi
-OWNER="${GITEA_OWNERS:-myorg}"
+if [ -z "${1:-}" ] && [ -d "$MIRROR_ROOT" ] && [ ! -f "$MIRROR_ROOT/.testbed-marker" ] && [ -n "$(ls -A "$MIRROR_ROOT" 2>/dev/null)" ]; then
+  MIRROR_ROOT="$(node -e 'const fs=require("node:fs"),os=require("node:os"),path=require("node:path");process.stdout.write(fs.mkdtempSync(path.join(os.tmpdir(),"gts-e2e-")))')"
+fi
+OWNER="${GITEA_OWNERS:-test-owner}"
 PRIMARY_OWNER="${OWNER%%,*}"
 GTS_BIN="$ROOT_DIR/bin/gts"
 for cand in "$ROOT_DIR/bin/gts" "$ROOT_DIR/gts" "$ROOT_DIR/../bin/gts" "/usr/local/bin/gts"; do
@@ -88,7 +94,7 @@ exit 0
 EOF
   chmod +x "$MIRROR_ROOT/sync.sh"
 
-  TMP_WORK=$(mktemp -d /tmp/gts-testbed-work.XXXXXX)
+  TMP_WORK="$(node -e 'const fs=require("node:fs"),os=require("node:os"),path=require("node:path");process.stdout.write(fs.mkdtempSync(path.join(os.tmpdir(),"gts-work-")))')"
   trap 'rm -rf "$TMP_WORK"' EXIT
 
   init_Test_repo() {
@@ -246,17 +252,17 @@ echo ""
 echo "[Phase 3] 测试 CLI (git grep + FTS5 + 审计修复回归项) ..."
 
 assert_ok "仓库枚举 (--repos) 返回非空列表" "[ \$(\"$GTS_BIN\" --repos --json | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"count\"])') -ge 4 ]"
-assert_ok "带 owner 前缀与通配符过滤 (--repos -r 'myorg/cpm*')" "[ \$(\"$GTS_BIN\" --repos -r 'myorg/cpm*' --json | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"count\"])') -ge 1 ]"
+assert_ok "带 owner 前缀与通配符过滤 (--repos -r 'test-owner/cpm*')" "[ \$(\"$GTS_BIN\" --repos -r 'test-owner/cpm*' --json | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"count\"])') -ge 1 ]"
 assert_ok "代码字面量检索 (gts 'gitea')" "[ \$(\"$GTS_BIN\" --json 'gitea' | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"total\"])') -ge 1 ]"
 assert_ok "文件路径检索 (gts -p 'docker-compose')" "[ \$(\"$GTS_BIN\" --json -p 'docker-compose' | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"total\"])') -ge 1 ]"
 assert_ok "提交信息检索 (gts -m '初始化')" "[ \$(\"$GTS_BIN\" --json -m '初始化' | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"total\"])') -ge 1 ]"
-assert_ok "单文件读取 (--read 支持带 myorg/ 前缀)" "\"$GTS_BIN\" -r 'myorg/cpm-deploy-guide' --read 'deploy/docker-compose.yml' | grep -q 'cpm-panel'"
+assert_ok "单文件读取 (--read 支持带 test-owner/ 前缀)" "\"$GTS_BIN\" -r 'test-owner/cpm-deploy-guide' --read 'deploy/docker-compose.yml' | grep -q 'cpm-panel'"
 
 # FTS5 专项断言（含审计修复回归验证）
 assert_ok "FTS5 中文 Jieba 分词检索 (gts -D '沙盒隔离')" "[ \$(\"$GTS_BIN\" -D --json '沙盒隔离' | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"total\"])') -ge 1 ]"
 assert_ok "FTS5 连字符/点号查询不崩且命中 (gts -D 'docker-compose.yml') [Audit #1]" "[ \$(\"$GTS_BIN\" -D --json 'docker-compose.yml' | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"total\"])') -ge 1 ]"
 assert_ok "FTS5 前缀通配查询 (gts -D 'dock*') [Audit #1]" "[ \$(\"$GTS_BIN\" -D --json 'dock*' | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"total\"])') -ge 1 ]"
-assert_ok "FTS5 仓库通配符+owner前缀过滤 (gts -D -r 'myorg/cpm*' '证书') [Audit #2]" "[ \$(\"$GTS_BIN\" -D --json -r 'myorg/cpm*' '证书' | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"total\"])') -ge 1 ]"
+assert_ok "FTS5 仓库通配符+owner前缀过滤 (gts -D -r 'test-owner/cpm*' '证书') [Audit #2]" "[ \$(\"$GTS_BIN\" -D --json -r 'test-owner/cpm*' '证书' | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"total\"])') -ge 1 ]"
 assert_ok "FTS5 kind=session 过滤（含根路径 sessions/） [Audit #7]" "[ \$(\"$GTS_BIN\" -D --json --kind session '证书' | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"total\"])') -ge 1 ]"
 assert_ok "FTS5 kind=config 过滤" "[ \$(\"$GTS_BIN\" -D --json --kind config 'cloudflare' | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"total\"])') -ge 1 ]"
 assert_ok "FTS5 kind=script 过滤" "[ \$(\"$GTS_BIN\" -D --json --kind script 'healthcheck' | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"total\"])') -ge 1 ]"
@@ -273,7 +279,8 @@ assert_ok "probe-stdio.mjs 冒烟探针 (6 项协议与 UTF-8/护栏断言)" "no
 MCP_FULL_TEST=$(node - "$MCP_BIN" << 'EOF'
 import { spawn } from 'node:child_process';
 const cmd = process.argv[2];
-const p = spawn(cmd, [], { stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
+const ext = cmd.toLowerCase().match(/\.(?:m?js|cjs)$/);
+const p = spawn(ext ? process.execPath : cmd, ext ? [cmd] : [], { stdio: ['pipe', 'pipe', 'pipe'], env: process.env, windowsHide: true });
 let buf = Buffer.alloc(0);
 const waiters = new Map();
 p.stdout.on('data', (d) => {
@@ -296,9 +303,9 @@ const call = (id, method, params) => new Promise((res) => {
 });
 
 await call(1, 'initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'e2e', version: '1.0' } });
-const rDocs = await call(2, 'tools/call', { name: 'search_gitea_docs', arguments: { query: 'docker-compose', repo: 'myorg/cpm*' } });
-const rRead = await call(3, 'tools/call', { name: 'read_gitea_file', arguments: { repo: 'myorg/cpm-deploy-guide', path: 'deploy/docker-compose.yml' } });
-const rList = await call(4, 'tools/call', { name: 'list_gitea_repos', arguments: { filter: 'myorg/cpm*' } });
+const rDocs = await call(2, 'tools/call', { name: 'search_gitea_docs', arguments: { query: 'docker-compose', repo: 'test-owner/cpm*' } });
+const rRead = await call(3, 'tools/call', { name: 'read_gitea_file', arguments: { repo: 'test-owner/cpm-deploy-guide', path: 'deploy/docker-compose.yml' } });
+const rList = await call(4, 'tools/call', { name: 'list_gitea_repos', arguments: { filter: 'test-owner/cpm*' } });
 p.kill('SIGTERM');
 
 const docsText = rDocs.result?.content?.[0]?.text || '';
@@ -470,10 +477,11 @@ assert_ok "Node <22.15 兼容模式回退验证 (DSH_FORCE_ZSTD_CLI=1 DSH_FORCE_
   "DSH_FORCE_ZSTD_CLI=1 DSH_FORCE_SQLITE_CLI=1 DSH_PERSISTENCE_MODULE=/nonexistent node \"$HEALTH_SCRIPT\" --fix --dsh-home \"$MOCK_DSH_FALLBACK\" --json | python3 -c 'import sys,json; d=json.load(sys.stdin); assert d[\"status\"]==\"OK\" and d[\"sessions\"][\"migrated\"]==1 and d[\"sqlite\"][\"engine\"]==\"sqlite3-cli\" and d[\"sqlite\"][\"long_revisions\"]==0'"
 
 # 回归验证：当 GITEA_MIRROR_ROOT / GITEA_OWNERS 为未初始化占位符（0 镜像仓）时，server.mjs 显式输出空镜像告警而非静默 0 命中
-EMPTY_MIRROR_TEST=$(GITEA_MIRROR_ROOT="$MIRROR_ROOT/empty-placeholder" GITEA_OWNERS="myorg" GITQ_MIRROR_ROOT="$MIRROR_ROOT/empty-placeholder" GITQ_OWNER="myorg" node - "$MCP_BIN" << 'EOF'
+EMPTY_MIRROR_TEST=$(GITEA_MIRROR_ROOT="$MIRROR_ROOT/empty-placeholder" GITEA_OWNERS="test-owner" GITQ_MIRROR_ROOT="$MIRROR_ROOT/empty-placeholder" GITQ_OWNER="test-owner" node - "$MCP_BIN" << 'EOF'
 import { spawn } from 'node:child_process';
 const cmd = process.argv[2];
-const p = spawn(cmd, [], { stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
+const ext = cmd.toLowerCase().match(/\.(?:m?js|cjs)$/);
+const p = spawn(ext ? process.execPath : cmd, ext ? [cmd] : [], { stdio: ['pipe', 'pipe', 'pipe'], env: process.env, windowsHide: true });
 let buf = Buffer.alloc(0);
 const waiters = new Map();
 p.stdout.on('data', (d) => {
@@ -497,7 +505,7 @@ const listTool = toolsRes.result.tools.find((t) => t.name.startsWith('list_')).n
 const r1 = await call(3, 'tools/call', { name: listTool, arguments: {} });
 const txt1 = r1.result.content[0].text;
 p.kill();
-if (txt1.includes('镜像目录为空或未就绪') && txt1.includes('myorg')) {
+if (txt1.includes('镜像目录为空或未就绪') && txt1.includes('test-owner')) {
   console.log('EMPTY_MIRROR_WARN_OK');
 } else {
   console.error('Unexpected:', txt1);
@@ -514,7 +522,8 @@ bash "$ROOT_DIR/scripts/quickstart-local.sh" "$QUICK_DIR" >/dev/null 2>&1
 CONFIG_TEST=$(node - "$MCP_BIN" << 'EOF'
 import { spawn } from 'node:child_process';
 const cmd = process.argv[2];
-const p = spawn(cmd, [], { stdio: ['pipe', 'pipe', 'pipe'], env: { PATH: process.env.PATH, HOME: process.env.HOME } });
+const ext = cmd.toLowerCase().match(/\.(?:m?js|cjs)$/);
+const p = spawn(ext ? process.execPath : cmd, ext ? [cmd] : [], { stdio: ['pipe', 'pipe', 'pipe'], env: { PATH: process.env.PATH, HOME: process.env.HOME }, windowsHide: true });
 let buf = Buffer.alloc(0);
 const waiters = new Map();
 p.stdout.on('data', (d) => {
