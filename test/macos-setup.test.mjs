@@ -4,12 +4,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SETUP = path.join(ROOT, 'scripts', 'setup-macos.sh');
 const SETUP_LINUX = path.join(ROOT, 'scripts', 'setup.sh');
-const PYTHON = spawnSync('sh', ['-c', 'command -v python3'], { encoding: 'utf8' }).stdout.trim();
+const IS_POSIX = process.platform !== 'win32';
+const PYTHON = IS_POSIX ? spawnSync('sh', ['-c', 'command -v python3'], { encoding: 'utf8' }).stdout.trim() : '';
 
 function makeStub(dir, name, body) {
   const file = path.join(dir, name);
@@ -65,13 +67,13 @@ test('POSIX installers share explicit profile selection and the patcher', () => 
   }
 });
 
-test('setup-macos requires explicit profile when Auto finds multiple profiles', () => {
+test('setup-macos requires explicit profile when Auto finds multiple profiles', { skip: !IS_POSIX && 'requires a POSIX shell runtime' }, () => {
   const { result } = run('Auto');
   assert.equal(result.status, 2, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout + result.stderr, /Auto.*恰好一个 profile/);
 });
 
-test('setup-macos updates only the selected profile', () => {
+test('setup-macos updates only the selected profile', { skip: !IS_POSIX && 'requires a POSIX shell runtime' }, () => {
   const { profiles, result } = run('desktop');
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   const desktop = fs.readFileSync(path.join(profiles, 'desktop', 'cordis.patch.yml'), 'utf8');

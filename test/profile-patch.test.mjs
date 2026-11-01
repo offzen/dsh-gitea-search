@@ -4,15 +4,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCRIPT = path.join(ROOT, 'scripts', 'profile-patch.py');
+const PYTHON = process.platform === 'win32' ? 'python' : 'python3';
 
 function run(file, check = false) {
   const args = [SCRIPT, '--file', file, '--node', '/node', '--server', '/app/lib/server.mjs', '--gts', '/python/gts', '--mirror', '/mirror', '--owners', 'team'];
   if (check) args.push('--check');
-  return spawnSync('python3', args, { encoding: 'utf8' });
+  return spawnSync(PYTHON, args, { encoding: 'utf8' });
 }
 
 test('profile patch replaces the same id and stays idempotent', () => {

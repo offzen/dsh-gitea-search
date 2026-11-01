@@ -11,7 +11,8 @@ param(
   [switch]$SkipIndex,
   [switch]$RegisterDsh,
   [ValidateSet('Auto','desktop','web','headless','all')]
-  [string]$Profile = 'Auto'
+  [string]$Profile = 'Auto',
+  [string]$DshHome = ""
 )
 
 $ErrorActionPreference = 'Stop'
@@ -20,6 +21,9 @@ $RootDir = (Resolve-Path (Join-Path $ScriptDir '..')).Path
 if (-not $MirrorRoot) { $MirrorRoot = Join-Path $RootDir 'mirror' }
 if ([string]::IsNullOrWhiteSpace($Owners) -or $Owners -match '^(myorg|example-org|your-org|your-owner)$') {
   throw 'CONFIG_ERROR: -Owners is required and must not be a placeholder.'
+}
+if ($PSBoundParameters.ContainsKey('DshHome') -and [string]::IsNullOrWhiteSpace($DshHome)) {
+  throw 'CONFIG_ERROR: -DshHome must not be empty when explicitly supplied.'
 }
 
 function Write-Step([string]$Message) { Write-Host "`n=== $Message ===" -ForegroundColor Cyan }
@@ -79,10 +83,25 @@ function Find-Profiles([string]$DshHome, [string]$Mode) {
 Write-Step 'Checking Python, Git and Node.js'
 $python = Resolve-Python
 $PythonExe = $python[0]
-$PythonArgs = @($python[1])
+$PythonArgs = if ($python.Count -gt 1 -and $python[1]) { @($python[1]) } else { @() }
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw 'Git for Windows was not found.' }
 $node = Get-Command node -ErrorAction SilentlyContinue
 if (-not $node) { throw 'Node.js >= 20.11 was not found.' }
+
+$profileTargets = @()
+if ($RegisterDsh) {
+  if (-not $DshHome) {
+    $DshHome = if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path $env:USERPROFILE '.dsh' }
+  }
+  $profileTargets = @(Find-Profiles $DshHome $Profile)
+  Write-Host "DSH home: $DshHome"
+  if (Test-Path (Join-Path $DshHome 'sessions')) {
+    Write-Warning 'The selected DSH home contains sessions; profile changes may affect a live installation after reload.'
+  }
+  foreach ($name in $profileTargets) {
+    Write-Host "Profile target: $(Join-Path $DshHome "profiles\$name\cordis.patch.yml")"
+  }
+}
 
 Write-Step 'Installing the Python launcher'
 if ($PSCmdlet.ShouldProcess($RootDir, 'pip install dsh-gitea-search')) {
@@ -120,12 +139,10 @@ if (-not $SkipIndex -and $PSCmdlet.ShouldProcess($MirrorRoot, 'build the FTS ind
 }
 
 if ($RegisterDsh) {
-  Write-Step 'Registering DSH profile(s)'
-  $dshHome = if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path $env:USERPROFILE '.dsh' }
-  $targets = Find-Profiles $dshHome $Profile
+  Write-Step "Registering DSH profile(s) under $DshHome"
   $patcher = Join-Path $RootDir 'scripts\profile-patch.py'
-  foreach ($name in $targets) {
-    $patch = Join-Path $dshHome "profiles\$name\cordis.patch.yml"
+  foreach ($name in $profileTargets) {
+    $patch = Join-Path $DshHome "profiles\$name\cordis.patch.yml"
     if ($PSCmdlet.ShouldProcess($patch, 'idempotently register mcp-gitea-search')) {
       & $PythonExe @PythonArgs $patcher --file $patch --node $node.Source --server (Join-Path $RootDir 'lib\server.mjs') --gts $gtsExe --mirror $MirrorRoot --owners $Owners
       if ($LASTEXITCODE -ne 0) { throw "profile update failed for $name" }

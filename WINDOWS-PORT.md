@@ -115,8 +115,9 @@ Windows 中文控制台默认代码页为 CP936 (GBK)，英文控制台常为 CP
 | **W8: Injection Defense** | 测试 `cmd.exe` 参数转义往返一致性与 `& \| < > ^` 注入拦截 | Py 3.11/3.12 × Node 20/22 | ✅ **4/4 矩阵全绿** |
 | **W9: CRLF & Git Grep** | 在真实 bare 仓库与 CRLF 换行环境下验证路径形态与换行清洗 | Win Server 2022 | ✅ **SUCCESS** |
 | **平台单测集** | 覆盖 Windows 可执行分类、引号转义、路径归一化等 21 项测试断言 | Win Server 2022 | ✅ **21 / 21 PASS (0 fail, 0 skip)** |
-| **rc3 packaging** | wheel 与 sdist 分别在源码树外安装，三个 PE alias 完成 help/config/indexer smoke | Win Server 2022 / Py 3.12 | ⏳ **rc3 runner pending** |
-| **rc3 installer** | Windows PowerShell 5.1 + PowerShell 7 真跑 `-WhatIf`，并验证显式 profile 参数 | Win Server 2022 | ⏳ **rc3 runner pending** |
+| **rc3 packaging** | 隔离 venv 安装 wheel，PE launcher 完成 help/config/indexer smoke | Windows Server 2022 / Python 3.15 | ✅ **vtWSL host native verified；hosted Py3.12 wheel+sdist runner pending** |
+| **rc3 installer** | PowerShell 5.1 隔离 profile 矩阵：Auto fail-closed、desktop/web/headless/all、幂等性与显式 `-DshHome` | Windows Server 2022 | 🟡 **PS5.1 native verified；PS7 hosted runner pending** |
+| **W10: Git Bash E2E** | Git for Windows Bash 执行平台适用 unit/E2E；POSIX `HOME`、sync mock-API、quickstart 判据由 Linux 31/31 覆盖 | Windows Server 2022 / Git Bash | 🟡 **native 40/40 unit + 28/28 E2E verified（3 POSIX-only skip）；hosted runner pending** |
 
 ---
 
@@ -137,6 +138,7 @@ npm install --no-audit --no-fund
 # 3. 运行自动化配置脚本
 powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-org -MirrorRoot C:\gitea-mirror -WhatIf
 # 确认计划后去掉 -WhatIf；接入 DSH 时显式加 -RegisterDsh -Profile desktop/web/headless
+# 隔离验收可显式加 -DshHome C:\temp\isolated-dsh，绝不触碰现役 profile
 ```
 
 脚本会自动检测 Python / Git / Node.js 环境，调用 `pip install .` 生成 `Scripts\gts.exe`，并完成镜像目录初始化。

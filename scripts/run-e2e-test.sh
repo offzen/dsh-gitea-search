@@ -31,15 +31,18 @@ if [ -z "${1:-}" ] && [ -d "$MIRROR_ROOT" ] && [ ! -f "$MIRROR_ROOT/.testbed-mar
 fi
 OWNER="${GITEA_OWNERS:-test-owner}"
 PRIMARY_OWNER="${OWNER%%,*}"
-GTS_BIN="$ROOT_DIR/bin/gts"
-for cand in "$ROOT_DIR/bin/gts" "$ROOT_DIR/gts" "$ROOT_DIR/../bin/gts" "/usr/local/bin/gts"; do
-  if [ -x "$cand" ]; then GTS_BIN="$cand"; break; fi
-done
+GTS_BIN="${GTS_BIN:-$ROOT_DIR/bin/gts}"
+if [ -z "${GTS_BIN:-}" ] || { [ "$GTS_BIN" = "$ROOT_DIR/bin/gts" ] && [ ! -x "$GTS_BIN" ]; }; then
+  for cand in "$ROOT_DIR/bin/gts" "$ROOT_DIR/gts" "$ROOT_DIR/../bin/gts" "/usr/local/bin/gts"; do
+    if [ -x "$cand" ]; then GTS_BIN="$cand"; break; fi
+  done
+fi
 MCP_BIN="$ROOT_DIR/bin/mcp-server"
 # MCP 入口探测：独立仓布局为 bin/mcp-server；部署扁平目录（/srv/gitea-tool 等）只有
-# bin/mcp-server-gitea-search。按顺序回退，避免「脚本只能在自己的目录布局里跑」的漂移。
+# bin/mcp-server-gitea-search。Windows Git Bash 下 NTFS 的 executable bit 不是可靠判据，
+# 所以存在即选中，具体由 Node launchSpec 判断是脚本还是原生 executable。
 for cand in "$ROOT_DIR/bin/mcp-server" "$ROOT_DIR/bin/mcp-server-gitea-search" "$ROOT_DIR/mcp-server" "$ROOT_DIR/mcp-server-gitea-search" "/usr/local/bin/mcp-server-gitea-search"; do
-  if [ -x "$cand" ]; then MCP_BIN="$cand"; break; fi
+  if [ -f "$cand" ]; then MCP_BIN="$cand"; break; fi
 done
 PROBE_STDIO="$ROOT_DIR/scripts/probe-stdio.mjs"
 for cand in "$ROOT_DIR/scripts/probe-stdio.mjs" "$ROOT_DIR/probe-stdio.mjs"; do
@@ -134,10 +137,12 @@ EOF
 3. **热更新不中断**：MCP 子进程通过 `respawn-mcp.sh` 发送 SIGTERM 单点重启，绝不重启 `dsh.service`。
 EOF
   # 生成一段 >12KB 的连续多字节中文文档以验证 8KB 跨块 UTF-8 解码无 U+FFFD
-  python3 -c '
+  python3 - "$TMP_WORK/ops-infra-runbook/docs/utf8-stress.md" << 'PYEOF'
+import sys
 s = "# 多字节中文流式分块解码压测文档\n\n" + ("这是用于验证跨八千字节缓冲区边界时中文多字节字符不会产生替换符的测试段落，包含关键词 gitea 与负载均衡策略。\n" * 120)
-open("'"$TMP_WORK"'/ops-infra-runbook/docs/utf8-stress.md", "w", encoding="utf-8").write(s)
-'
+with open(sys.argv[1], "w", encoding="utf-8") as handle:
+    handle.write(s)
+PYEOF
   cat > "$TMP_WORK/ops-infra-runbook/scripts/healthcheck.sh" << 'EOF'
 #!/usr/bin/env bash
 # 节点健康检查脚本
@@ -243,7 +248,7 @@ assert_ok "删光单仓最后一篇可索引文档时精确触发删除 1 篇（
 git -C "$DEL_TEST_WORK" push -qf origin "$ORIG_HEAD:main"
 rm -rf "$DEL_TEST_WORK"
 RESTORE_OUT=$("$GTS_BIN" --reindex)
-assert_ok "恢复文档后增量重建 1 篇且 doc_rowid 1:1 对齐" "python3 -c 'import sqlite3; c=sqlite3.connect(\"$MIRROR_ROOT/state/gitea-fts.sqlite\"); assert c.execute(\"SELECT COUNT(*) FROM docs_fts\").fetchone()[0]==c.execute(\"SELECT COUNT(*) FROM doc_rowid\").fetchone()[0]==9'"
+assert_ok "恢复文档后增量重建 1 篇且 doc_rowid 1:1 对齐" "python3 -c 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); assert c.execute(\"SELECT COUNT(*) FROM docs_fts\").fetchone()[0]==c.execute(\"SELECT COUNT(*) FROM doc_rowid\").fetchone()[0]==9' \"$MIRROR_ROOT/state/gitea-fts.sqlite\""
 
 # ------------------------------------------------------------------------------
 # Phase 3: CLI (gts / gitq / dsh-search) 混合检索全特性测试
@@ -278,9 +283,12 @@ assert_ok "probe-stdio.mjs 冒烟探针 (6 项协议与 UTF-8/护栏断言)" "no
 # 进一步直接测试 search_gitea_docs / read_gitea_file / list_gitea_repos
 MCP_FULL_TEST=$(node - "$MCP_BIN" << 'EOF'
 import { spawn } from 'node:child_process';
+import path from 'node:path';
 const cmd = process.argv[2];
-const ext = cmd.toLowerCase().match(/\.(?:m?js|cjs)$/);
-const p = spawn(ext ? process.execPath : cmd, ext ? [cmd] : [], { stdio: ['pipe', 'pipe', 'pipe'], env: process.env, windowsHide: true });
+const ext = path.extname(cmd).toLowerCase();
+const base = path.basename(cmd).toLowerCase();
+const isNode = ['.js', '.mjs', '.cjs'].includes(ext) || (process.platform === 'win32' && !ext && ['mcp-server', 'mcp-server-gitea-search'].includes(base));
+const p = spawn(isNode ? process.execPath : cmd, isNode ? [cmd] : [], { stdio: ['pipe', 'pipe', 'pipe'], env: process.env, windowsHide: true });
 let buf = Buffer.alloc(0);
 const waiters = new Map();
 p.stdout.on('data', (d) => {
@@ -390,7 +398,7 @@ if [ ! -f "$HEALTH_SCRIPT" ]; then
 fi
 assert_ok "dsh-session-health.mjs --check 检出旧版 v1 会话与长 revision (WARN)" "node \"$HEALTH_SCRIPT\" --check --dsh-home \"$MOCK_DSH\" --json | python3 -c 'import sys,json; d=json.load(sys.stdin); assert d[\"status\"]==\"WARN\" and d[\"sessions\"][\"legacy_remaining\"]==1 and d[\"sqlite\"][\"long_revisions\"]==1'"
 
-assert_ok "dsh-session-health.mjs --fix 无损迁移 v1->v4、保留原文件并对齐 SQLite revision (OK)" "node \"$HEALTH_SCRIPT\" --fix --dsh-home \"$MOCK_DSH\" --json | python3 -c 'import sys,json,os; d=json.load(sys.stdin); sdir=\"$MOCK_DSH/sessions/--mock-proj--/session-00000000-0000-4000-8000-000000000001\"; assert d[\"status\"]==\"OK\" and d[\"sessions\"][\"migrated\"]==1 and d[\"sessions\"][\"legacy_remaining\"]==0 and d[\"sqlite\"][\"long_revisions\"]==0 and os.path.exists(sdir+\"/session.v4.jsonl.zstd\") and os.path.exists(sdir+\"/session.jsonl.zstd\")'"
+assert_ok "dsh-session-health.mjs --fix 无损迁移 v1->v4、保留原文件并对齐 SQLite revision (OK)" "node \"$HEALTH_SCRIPT\" --fix --dsh-home \"$MOCK_DSH\" --json | python3 -c 'import sys,json,os; d=json.load(sys.stdin); sdir=sys.argv[1]; assert d[\"status\"]==\"OK\" and d[\"sessions\"][\"migrated\"]==1 and d[\"sessions\"][\"legacy_remaining\"]==0 and d[\"sqlite\"][\"long_revisions\"]==0 and os.path.exists(sdir+\"/session.v4.jsonl.zstd\") and os.path.exists(sdir+\"/session.jsonl.zstd\")' \"$MOCK_DSH/sessions/--mock-proj--/session-00000000-0000-4000-8000-000000000001\""
 
 assert_ok "gts --doctor --dsh-home 综合诊断返回 Overall OK" "\"$GTS_BIN\" --doctor --dsh-home \"$MOCK_DSH\" --json | python3 -c 'import sys,json; d=json.load(sys.stdin); assert d[\"overall_status\"]==\"OK\" and d[\"fts_index\"][\"aligned_1to1\"] is True and d[\"dsh_sessions\"][\"status\"]==\"OK\"'"
 
@@ -399,14 +407,27 @@ SANDBOX_HOME="$MIRROR_ROOT/sandbox-home"
 rm -rf "$SANDBOX_HOME"
 mkdir -p "$SANDBOX_HOME/.dsh"
 cp -a "$MOCK_DSH/." "$SANDBOX_HOME/.dsh/"
-assert_ok "默认 HOME (~/.dsh) 自动展开回归测试 (dsh-session-health / gts --doctor / session-export)" \
-  "env -u DSH_HOME HOME=\"$SANDBOX_HOME\" node \"$HEALTH_SCRIPT\" --check --json | python3 -c 'import sys,json; d=json.load(sys.stdin); assert d[\"status\"]==\"OK\" and d[\"dsh_home\"]==\"$SANDBOX_HOME/.dsh\" and d[\"sessions\"][\"after_counts\"][\"v4\"]==1' && env -u DSH_HOME HOME=\"$SANDBOX_HOME\" \"$GTS_BIN\" --doctor --json | python3 -c 'import sys,json; d=json.load(sys.stdin); assert d[\"dsh_sessions\"][\"status\"]==\"OK\" and d[\"dsh_sessions\"][\"dsh_home\"]==\"$SANDBOX_HOME/.dsh\"' && env -u DSH_SESSIONS_SRC -u DSH_SESSIONS_OUT HOME=\"$SANDBOX_HOME\" python3 \"$ROOT_DIR/scripts/session-export-incremental.py\" --dry-run >/dev/null"
+if [ "$(node -p 'process.platform')" = "win32" ]; then
+  echo "  ↷ [SKIP] 默认 HOME (~/.dsh) 自动展开：Windows os.homedir() 不读取 Git Bash HOME；显式 --dsh-home 已覆盖"
+else
+  assert_ok "默认 HOME (~/.dsh) 自动展开回归测试 (dsh-session-health / gts --doctor / session-export)" \
+    "env -u DSH_HOME HOME=\"$SANDBOX_HOME\" node \"$HEALTH_SCRIPT\" --check --json | python3 -c 'import sys,json; d=json.load(sys.stdin); assert d[\"status\"]==\"OK\" and d[\"dsh_home\"]==sys.argv[1] and d[\"sessions\"][\"after_counts\"][\"v4\"]==1' \"$SANDBOX_HOME/.dsh\" && env -u DSH_HOME HOME=\"$SANDBOX_HOME\" \"$GTS_BIN\" --doctor --json | python3 -c 'import sys,json; d=json.load(sys.stdin); assert d[\"dsh_sessions\"][\"status\"]==\"OK\" and d[\"dsh_sessions\"][\"dsh_home\"]==sys.argv[1]' \"$SANDBOX_HOME/.dsh\" && env -u DSH_SESSIONS_SRC -u DSH_SESSIONS_OUT HOME=\"$SANDBOX_HOME\" python3 \"$ROOT_DIR/scripts/session-export-incremental.py\" --dry-run >/dev/null"
+fi
 
 # 回归验证：sync.sh 标准 Gitea HTTP API 枚举（同时兼容 User /api/v1/users/:owner/repos 与 Org /api/v1/orgs/:org/repos + has_wiki）
+if [ "$(node -p 'process.platform')" = "win32" ]; then
+  echo "  ↷ [SKIP] sync.sh mock HTTP API：Windows Git Bash 缺 jq/timeout 同构环境；Linux E2E 负责此判据"
+else
 GITEA_API_TEST=$(python3 - "$ROOT_DIR/scripts/sync.sh" "$MIRROR_ROOT" << 'PYEOF'
 import http.server, json, os, socketserver, subprocess, sys, threading
 
 sync_sh, mirror_root = sys.argv[1], sys.argv[2]
+if os.name == "nt":
+    import shutil
+    bash_exe = shutil.which("bash") or "bash"
+    sync_arg = subprocess.check_output([bash_exe, "-lc", 'cygpath -u "$1"', "bash", sync_sh], text=True).strip()
+else:
+    bash_exe, sync_arg = "bash", sync_sh
 
 class MockGiteaHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
@@ -439,10 +460,10 @@ with socketserver.TCPServer(("127.0.0.1", 0), MockGiteaHandler) as httpd:
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()
     env1 = {**os.environ, "GITEA_MIRROR_ROOT": mirror_root, "GITEA_URL": f"http://127.0.0.1:{port}", "GITEA_TOKEN": "test-gitea-token", "GITEA_OWNERS": "user-owner", "GITQ_ENUM": "api"}
-    out1 = subprocess.check_output(["bash", sync_sh, "--list-only"], env=env1, text=True).strip().splitlines()
+    out1 = subprocess.check_output([bash_exe, sync_arg, "--list-only"], env=env1, text=True).strip().splitlines()
     assert out1 == ["user-repo", "user-repo.wiki"], f"unexpected user repos: {out1}"
     env2 = {**os.environ, "GITEA_MIRROR_ROOT": mirror_root, "GITEA_URL": f"http://127.0.0.1:{port}", "GITEA_TOKEN": "test-gitea-token", "GITEA_OWNERS": "org-owner", "GITQ_ENUM": "api"}
-    out2 = subprocess.check_output(["bash", sync_sh, "--list-only"], env=env2, text=True).strip().splitlines()
+    out2 = subprocess.check_output([bash_exe, sync_arg, "--list-only"], env=env2, text=True).strip().splitlines()
     assert out2 == ["org-repo", "org-docs", "org-docs.wiki"], f"unexpected org repos: {out2}"
     httpd.shutdown()
 
@@ -450,6 +471,7 @@ print("GITEA_API_SYNC_OK")
 PYEOF
 )
 assert_ok "sync.sh 标准 Gitea HTTP API 枚举（User + Org + Wiki 推导）" "[ \"\$GITEA_API_TEST\" = 'GITEA_API_SYNC_OK' ]"
+fi
 
 # 回归验证：模拟 Node < 22.15 (无 zlib.zstdCompressSync / node:sqlite) 时 dsh-session-health.mjs 自动回退至 zstd/sqlite3 CLI
 MOCK_DSH_FALLBACK="$MIRROR_ROOT/mock-dsh-fallback"
@@ -479,9 +501,12 @@ assert_ok "Node <22.15 兼容模式回退验证 (DSH_FORCE_ZSTD_CLI=1 DSH_FORCE_
 # 回归验证：当 GITEA_MIRROR_ROOT / GITEA_OWNERS 为未初始化占位符（0 镜像仓）时，server.mjs 显式输出空镜像告警而非静默 0 命中
 EMPTY_MIRROR_TEST=$(GITEA_MIRROR_ROOT="$MIRROR_ROOT/empty-placeholder" GITEA_OWNERS="test-owner" GITQ_MIRROR_ROOT="$MIRROR_ROOT/empty-placeholder" GITQ_OWNER="test-owner" node - "$MCP_BIN" << 'EOF'
 import { spawn } from 'node:child_process';
+import path from 'node:path';
 const cmd = process.argv[2];
-const ext = cmd.toLowerCase().match(/\.(?:m?js|cjs)$/);
-const p = spawn(ext ? process.execPath : cmd, ext ? [cmd] : [], { stdio: ['pipe', 'pipe', 'pipe'], env: process.env, windowsHide: true });
+const ext = path.extname(cmd).toLowerCase();
+const base = path.basename(cmd).toLowerCase();
+const isNode = ['.js', '.mjs', '.cjs'].includes(ext) || (process.platform === 'win32' && !ext && ['mcp-server', 'mcp-server-gitea-search'].includes(base));
+const p = spawn(isNode ? process.execPath : cmd, isNode ? [cmd] : [], { stdio: ['pipe', 'pipe', 'pipe'], env: process.env, windowsHide: true });
 let buf = Buffer.alloc(0);
 const waiters = new Map();
 p.stdout.on('data', (d) => {
@@ -516,6 +541,9 @@ EOF
 assert_ok "空镜像/占位符配置显式告警回归验证 (list_*_repos 输出 MIRROR_ROOT/OWNERS 提示)" "[ \"\$EMPTY_MIRROR_TEST\" = 'EMPTY_MIRROR_WARN_OK' ]"
 
 # 回归验证：config.json 自动解析与 quickstart-local.sh 冒烟测试
+if [ "$(node -p 'process.platform')" = "win32" ]; then
+  echo "  ↷ [SKIP] quickstart-local.sh：POSIX 本地启动器，由 Linux E2E 覆盖"
+else
 QUICK_DIR="$MIRROR_ROOT/mock-quickstart-verify"
 rm -rf "$QUICK_DIR"
 bash "$ROOT_DIR/scripts/quickstart-local.sh" "$QUICK_DIR" >/dev/null 2>&1
@@ -557,6 +585,7 @@ EOF
 )
 rm -f "$ROOT_DIR/config.json"
 assert_ok "config.json 自动解析与 quickstart-local.sh (无 Gitea 服务本地模式)" "[ \"\$CONFIG_TEST\" = 'CONFIG_JSON_AUTO_LOAD_OK' ]"
+fi
 
 echo ""
 echo "=================================================================="

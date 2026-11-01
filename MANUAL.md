@@ -148,6 +148,7 @@ Windows 的进程创建机制（`CreateProcess`）只认 PE 二进制文件（`.
 # 以管理员或普通用户身份在 PowerShell 中执行（绕过当前进程执行策略）
 powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-org -MirrorRoot C:\gitea-mirror -RegisterDsh -Profile web -WhatIf
 # 确认计划后去掉 -WhatIf；Auto 仅在恰好发现一个 profile 时生效
+# 自动化/验收可用 -DshHome C:\temp\isolated-dsh，避免依赖进程环境变量
 ```
 
 **参数说明**：
@@ -155,6 +156,7 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-or
 - `-Owners <List>`：指定 Gitea 组织或用户名（逗号分隔）；
 - `-RegisterDsh`：备份并幂等更新 DSH profile（同一 id 不重复追加）；
 - `-Profile Auto|desktop|web|headless|all`：显式选择 profile；`Auto` 仅接受唯一候选；
+- `-DshHome <Path>`：可选，显式指定要注册的 DSH 数据根；优先于 `DSH_HOME` 环境变量，适合隔离测试；
 - `-WhatIf`：只显示计划，不安装、不建索引、不写 profile；
 - `-SkipIndex`：仅安装环境与启动器，跳过初次 FTS5 索引构建。
 
@@ -191,7 +193,7 @@ $env:GITEA_OWNERS = "my-org"
 ```
 
 > ⚠️ **关键陷阱**：`GTS_BIN` **必须是单个可执行文件的实际路径**。严禁写成 `"python bin\gts"` 或带空格的参数组合，否则子进程创建会直接触发 `ENOENT` 致命报错。
-> 另外，`lib/server.mjs` 会自动遍历系统 `PATH` 环境变量识别 `gts.exe`；若已执行 `pip install .` 且 Python Scripts 目录在系统 PATH 中，则无需显式指定 `GTS_BIN`。
+> 另外，`lib/server.mjs` 会自动遍历系统 `PATH` 环境变量识别 `gts.exe`；若已执行 `pip install .` 且 Python Scripts 目录在系统 PATH 中，则无需显式指定 `GTS_BIN`。从 Git Bash 执行全链路验收时，也应先把隔离 venv 的 `gts.exe` 路径导出为 `GTS_BIN`，否则 MCP 协议可以启动，但真实 `search_gitea` 会按设计 fail closed。
 
 ---
 

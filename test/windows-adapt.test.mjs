@@ -148,6 +148,9 @@ test('setup-windows.ps1 保持 UTF-8 BOM 并拒绝占位 Owner', () => {
   assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
   const ps = bytes.toString('utf8');
   assert.match(ps, /Parameter\(Mandatory=\$true\).*\$Owners/);
+  assert.match(ps, /\[string\]\$DshHome/);
+  assert.match(ps, /Find-Profiles \$DshHome/);
+  assert.match(ps, /PSBoundParameters\.ContainsKey\('DshHome'\)/);
   assert.match(ps, /CONFIG_ERROR.*placeholder/);
   assert.match(ps, /SupportsShouldProcess=\$true/);
 });

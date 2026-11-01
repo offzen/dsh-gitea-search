@@ -65,7 +65,7 @@ GIT_USER=${GITQ_GIT_USER:-git}           # https 通道的 Gitea 用户名（一
 CACHE_FILE=${GITQ_REPOS_CACHE:-$ROOT/state/repos.cache}
 CACHE_MAXAGE_H=${GITQ_CACHE_MAXAGE_H:-24}   # 缓存仓名列表最长可用小时数（超期只用于救急）
 LOG=$ROOT/sync.log
-HOST=$(hostname -s)
+HOST=$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo unknown)
 export GIT_TERMINAL_PROMPT=0
 # 固定 ssh 连接超时，避免远端半死不活时拖慢整轮同步。
 export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=8 -o ServerAliveInterval=15 -o ServerAliveCountMax=3"

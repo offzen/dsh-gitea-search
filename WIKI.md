@@ -18,12 +18,16 @@
 2. **SQLite 查询本体毫秒级，不代表 MCP 文档搜索端到端毫秒级。** 当前每次调用仍付 Python/jieba 冷启动成本；证据：`lib/server.mjs` tool description 与 `README.md` 性能边界。
 3. **PowerShell 内容是 UTF-8，不代表 PowerShell 5.1 会按 UTF-8 解析。** 含中文的入口脚本仍需 BOM；证据：`test/windows-adapt.test.mjs:146-153` 断言前三字节 `EF BB BF`。
 4. **wheel/sdist 构建成功、甚至 `gts --help` 成功，也不代表安装包可执行真实命令。** argparse 会在配置导入检查前处理 `--help`；`scripts/test-python-package.py` 因此从中立目录进一步验证 config 与 indexer。
+5. **`new URL('..', import.meta.url).pathname` 在 POSIX 正常，不代表 Windows 正常。** 原生 Windows 会得到 `/C:/...`，再经 `path.resolve` 变成 `C:\\C:\\...`；测试定位仓根必须使用 `fileURLToPath(import.meta.url)`。rc3 真机测试已据此修正 config/profile/macOS-static 三组测试。
+6. **Git Bash 里的路径变量可能仍来自 Windows Node/Python。** 把 `C:\\...` 直接插进 Python 源码会触发 `\U` unicode escape；路径必须经 `sys.argv` 传入，而不是拼进 `python -c` 源码。证据：`scripts/run-e2e-test.sh` 的 UTF-8 fixture 与 SQLite 路径均改用 argv，native Windows 已越过 Phase 2/3。
+7. **Windows 可以由 Node 打开无扩展名脚本，但 ESM 动态 import 不能直接吃 `C:\\...` 字符串。** `bin/mcp-server` 先前 `await import(serverScript)` 报 `ERR_UNSUPPORTED_ESM_URL_SCHEME`；必须使用 `new URL('../lib/server.mjs', import.meta.url).href`。`scripts/launch-spec.mjs` 同时负责把无扩展名 MCP wrapper 交给 `process.execPath`。
+8. **MCP server 可启动不代表 search_gitea 走到真实 CLI。** Windows 测试若不显式给隔离 venv 的 `GTS_BIN=<venv>\\Scripts\\gts.exe`，probe 会正确返回“找不到可执行的 gts CLI”，协议绿而搜索判据红；native harness 因而在 Git Bash E2E 期间临时注入该路径，结束后恢复环境。
 
 ### 固定动作序列
 
 1. 构建 Python 发布物时同时生成 wheel 与 sdist；分别安装到隔离 venv，并从源码树外、`PYTHONPATH` 未设置的目录运行三个入口。
 2. `--help` 只能证明 argparse 可启动；还必须跑 `--show-effective-config` 与 `--fts-stats`，才能证明 `config.py` / `indexer.py` 已进入发布物。
-3. profile 注册只能显式选择单个 profile；`Auto` 只在唯一候选时成立，`all` 必须由用户明确选择。
+3. profile 注册只能显式选择单个 profile；`Auto` 只在唯一候选时成立，`all` 必须由用户明确选择。自动化或用户环境 smoke 应传 `-DshHome <临时根>`，不得依赖 ambient `DSH_HOME` 误触现役配置。
 4. rc3 不实现 all-ref FTS、常驻 jieba worker或自动安装 skill。
 
 ### 已排除方案

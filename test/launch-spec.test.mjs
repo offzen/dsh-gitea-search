@@ -12,6 +12,20 @@ test('Node scripts are launched through process.execPath', () => {
   }
 });
 
+test('extensionless MCP Node wrappers are portable on Windows', () => {
+  const file = 'C:\\gts\\bin\\mcp-server';
+  const spec = launchSpec(file, ['x']);
+  if (process.platform === 'win32') {
+    assert.equal(spec.command, process.execPath);
+    assert.deepEqual(spec.args, [file, 'x']);
+    assert.equal(spec.kind, 'node-script');
+  } else {
+    assert.equal(spec.command, file);
+    assert.deepEqual(spec.args, ['x']);
+    assert.equal(spec.kind, 'executable');
+  }
+});
+
 test('executable wrappers are launched directly', () => {
   const spec = launchSpec('C:\\gts\\mcp-server.exe', ['x']);
   assert.equal(spec.command, 'C:\\gts\\mcp-server.exe');

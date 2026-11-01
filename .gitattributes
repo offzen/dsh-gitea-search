@@ -1,0 +1,4 @@
+*.sh text eol=lf
+bin/gts text eol=lf
+bin/mcp-server text eol=lf
+bin/mcp-server-gitea-search text eol=lf
