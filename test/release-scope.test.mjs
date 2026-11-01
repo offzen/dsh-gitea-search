@@ -53,6 +53,7 @@ test('Python artifacts include every module used by installed gts', () => {
 test('Windows hosted gates preserve UTF-8 output and native fallback prerequisites', () => {
   assert.match(packageGate, /encoding="utf-8"/);
   assert.match(packageGate, /errors="replace"/);
+  assert.match(packageGate, /Path\(config\["mirror_root"\]\)\.mkdir/);
   assert.match(windowsCi, /foreach \(\$isolatedHome in/);
   assert.doesNotMatch(windowsCi, /foreach \(\$home in/);
   assert.match(windowsCi, /choco install sqlite/);

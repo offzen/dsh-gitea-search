@@ -106,6 +106,7 @@ def validate_artifact(artifact, scratch):
         config = json.loads(config_result.stdout)
         if not config["valid"] or config["owners"] != ["acme"]:
             raise AssertionError(f"unexpected config from {alias}: {config}")
+        pathlib.Path(config["mirror_root"]).mkdir(parents=True, exist_ok=True)
         if not same_path(config["mirror_root"], mirror.resolve()):
             raise AssertionError(f"unexpected mirror root from {alias}: {config['mirror_root']}")
         combined = help_result.stderr + config_result.stderr
