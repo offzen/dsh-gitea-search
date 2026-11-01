@@ -68,10 +68,14 @@ mkdir -p "$HOME" "$XDG_CACHE_HOME" "$npm_config_cache" "$PIP_CACHE_DIR"
 cd "$ROOT_DIR"
 npm ci --ignore-scripts --no-audit --no-fund
 npm run test:all
-python3 -c 'import build' >/dev/null
 python3 -c 'import jieba' >/dev/null
 BUILD_ROOT="$SCRATCH/python-build"
-python3 -m build --outdir "$BUILD_ROOT/dist"
+if python3 -c 'import build' >/dev/null 2>&1; then
+  python3 -m build --outdir "$BUILD_ROOT/dist"
+else
+  python3 -m pip wheel --no-deps --no-build-isolation --wheel-dir "$BUILD_ROOT/dist" .
+  python3 -m pip download --no-deps --no-build-isolation --no-binary=:all: --dest "$BUILD_ROOT/dist" .
+fi
 python3 scripts/test-python-package.py "$BUILD_ROOT/dist"
 python3 scripts/check-provenance.py
 git diff --check
