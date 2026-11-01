@@ -58,4 +58,6 @@ test('Windows hosted gates preserve UTF-8 output and native fallback prerequisit
   assert.match(windowsCi, /choco install sqlite/);
   assert.match(windowsCi, /GTS_BIN=.*command -v/);
   assert.match(windowsCi, /export GTS_BIN/);
+  assert.match(setupWindows, /@\('python', @\(\)\), @\('py', @\('-3'\)\)/);
+  assert.match(setupWindows, /pathlib\.Path\(sys\.executable\)\.resolve\(\)\.parent/);
 });

@@ -28,7 +28,7 @@ if ($PSBoundParameters.ContainsKey('DshHome') -and [string]::IsNullOrWhiteSpace(
 
 function Write-Step([string]$Message) { Write-Host "`n=== $Message ===" -ForegroundColor Cyan }
 function Resolve-Python {
-  foreach ($candidate in @(@('py', @('-3')), @('python', @()), @('python3', @()))) {
+  foreach ($candidate in @(@('python', @()), @('py', @('-3')), @('python3', @()))) {
     $exe = $candidate[0]; $prefix = $candidate[1]
     if (-not (Get-Command $exe -ErrorAction SilentlyContinue)) { continue }
     try {
@@ -39,16 +39,34 @@ function Resolve-Python {
   throw 'Python >= 3.8 was not found.'
 }
 function Find-Gts([string]$PythonExe, [object[]]$PythonArgs) {
+  $probe = @'
+import importlib.metadata, pathlib, sys
+candidates = [
+    pathlib.Path(sys.executable).resolve().parent / 'gts.exe',
+    pathlib.Path(sysconfig.get_path('scripts')) / 'gts.exe',
+    pathlib.Path(sysconfig.get_path('scripts', scheme='nt_user')) / 'gts.exe',
+]
+try:
+    dist = importlib.metadata.distribution('dsh-gitea-search')
+    for entry in dist.entry_points:
+        if entry.group == 'console_scripts' and entry.name == 'gts':
+            candidates.append(pathlib.Path(sys.executable).resolve().parent / 'gts.exe')
+except importlib.metadata.PackageNotFoundError:
+    pass
+for candidate in candidates:
+    if candidate.is_file():
+        print(candidate.resolve())
+'@
+  $probe = "import sysconfig;" + $probe
   $dirs = @()
-  foreach ($code in @(
-    "import sysconfig;print(sysconfig.get_path('scripts'))",
-    "import sysconfig;print(sysconfig.get_path('scripts', scheme='nt_user'))"
-  )) {
-    try {
-      $value = & $PythonExe @PythonArgs -c $code 2>$null
-      if ($LASTEXITCODE -eq 0 -and $value) { $dirs += $value.Trim() }
-    } catch { }
-  }
+  try {
+    $values = & $PythonExe @PythonArgs -c $probe 2>$null
+    if ($LASTEXITCODE -eq 0 -and $values) {
+      foreach ($value in @($values)) {
+        if ($value) { $dirs += (Split-Path -Parent $value.Trim()) }
+      }
+    }
+  } catch { }
   $commands = Get-Command gts -All -ErrorAction SilentlyContinue
   foreach ($command in $commands) { if ($command.Source) { $dirs += (Split-Path -Parent $command.Source) } }
   foreach ($dir in ($dirs | Select-Object -Unique)) {

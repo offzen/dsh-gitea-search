@@ -25,7 +25,7 @@
 |---|---|---|---|
 | `scripts/setup.sh` | Linux 依赖检查、软链与显式 profile 安装 | 可安装依赖、写软链/profile | syntax/static/profile contract verified；未真装生产 |
 | `scripts/setup-macos.sh` | macOS venv、软链、显式 profile 安装 | 可安装依赖、写 HOME/profile | Linux syntax/helper tests；native macOS unverified |
-| `scripts/setup-windows.ps1` | Windows pip 安装、PE 发现、显式 profile 注册 | 可安装包、建索引、写 profile | PS5.1 真机隔离安装/profile smoke verified；PS7 runner pending |
+| `scripts/setup-windows.ps1` | Windows pip 安装、与 active interpreter 绑定的 PE 发现、显式 profile 注册 | 可安装包、建索引、写 profile | PS5.1 真机隔离安装/profile smoke verified；PS5.1/PS7 WhatIf hosted verified，runtime interpreter-binding 修复待新候选 hosted 重验 |
 | `scripts/profile-patch.py` | 备份、原子、幂等修改单个 profile | 写目标与时间戳备份 | 临时 profile unit verified |
 | `scripts/launch-spec.mjs` | Node script / executable launcher 分类；Windows 无扩展名 MCP wrapper 走 Node | 无持久写入 | Linux unit + native Windows MCP smoke verified |
 | `scripts/probe-stdio.mjs` | MCP initialize/tools/list/tools/call 探针 | 临时进程 | Linux E2E verified |
