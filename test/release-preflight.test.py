@@ -14,6 +14,14 @@ import unittest
 SOURCE = pathlib.Path(__file__).resolve().parent.parent
 
 
+def remove_test_tree(path: pathlib.Path) -> None:
+    def clear_readonly_and_retry(function, target, _exc_info):
+        os.chmod(target, 0o700)
+        function(target)
+
+    shutil.rmtree(path, onerror=clear_readonly_and_retry)
+
+
 class ReleasePreflightTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = pathlib.Path(tempfile.mkdtemp(prefix="release-preflight-test-"))
@@ -38,7 +46,7 @@ class ReleasePreflightTest(unittest.TestCase):
         self.write_all_receipts()
 
     def tearDown(self) -> None:
-        shutil.rmtree(self.temp)
+        remove_test_tree(self.temp)
 
     def git(self, *args: str) -> str:
         result = subprocess.run(["git", *args], cwd=self.repo, check=True, text=True, capture_output=True)

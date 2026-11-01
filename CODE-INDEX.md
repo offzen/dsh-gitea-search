@@ -59,7 +59,7 @@
 | `.github/workflows/ci.yml` | Ubuntu/macOS unit+E2E、wheel/sdist，并在 required jobs 成功后上传 exact-P Linux/macOS hosted receipts | offline syntax/contract configured; final exact-P hosted receipts pending |
 | `.github/workflows/windows-ci.yml` | PE、PS5.1/PS7、Windows runtime/CRLF/Git Bash/profile gates；全部 required jobs 成功后上传 hosted-clean Windows receipt | 历史运行不作为新候选 receipt；final exact-P GitHub hosted receipt pending |
 | `.github/scripts/write-gate-receipt.py` | 在 GitHub hosted job 内绑定 formal repo、exact SHA/tree、runner label 与 run identity，原子写 artifact | offline Linux contract fixtures configured；Windows/macOS runtime pending |
-| `test/release-preflight.test.py` / `test/hosted-receipt.test.py` | D/P、receipt exact SHA、缺件、本机 Windows receipt、错误 repo/SHA 拒绝 | offline fixture suite configured |
+| `test/release-preflight.test.py` / `test/hosted-receipt.test.py` | D/P、receipt exact SHA、缺件、本机 Windows receipt、错误 repo/SHA 拒绝；Windows readonly Git object cleanup 与平台对应 hosted gate | Linux/Windows offline fixture suite verified |
 
 ## 5. 发布元数据与可选资产
 
