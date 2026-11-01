@@ -22,8 +22,9 @@
   ],
   "scripts": {
     "test": "node --test",
+    "test:preflight": "python3 test/release-preflight.test.py && python3 test/hosted-receipt.test.py",
     "test:e2e": "bash scripts/run-e2e-test.sh",
-    "test:all": "node --test && bash scripts/run-e2e-test.sh"
+    "test:all": "node --test && python3 test/release-preflight.test.py && python3 test/hosted-receipt.test.py && bash scripts/run-e2e-test.sh"
   },
   "engines": {
     "node": ">=20.11.0"

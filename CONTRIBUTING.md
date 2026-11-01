@@ -23,7 +23,7 @@ We actively welcome community contributions, bug reports, and pull requests!
    ```bash
    bash scripts/run-e2e-test.sh
    ```
-   All phases must pass (PASS 100%).
+   All phases must pass (PASS 100%). For release-candidate freezing and the exact-SHA receipt contract, see [docs/DEVELOPMENT-AND-RELEASE.md](docs/DEVELOPMENT-AND-RELEASE.md).
 4. **Submit a Pull Request**:
    - Provide a clear summary of what was fixed or added.
    - Reference any related issues or discussions.

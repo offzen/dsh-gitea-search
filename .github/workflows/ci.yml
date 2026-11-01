@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ main, 'release/**' ]
   workflow_dispatch:
+    inputs:
+      exact_sha:
+        description: Full 40-hex candidate SHA; must equal the dispatched ref SHA
+        required: true
+        type: string
 
 jobs:
   # Ubuntu 与 macOS 共用同一套验证（单元测试 + e2e）。
@@ -109,3 +114,71 @@ jobs:
           python3 -V
           node -v
           npm run test:all
+
+  hosted-linux-receipt:
+    name: Hosted Linux exact-SHA receipt
+    if: github.server_url == 'https://github.com' && github.event_name != 'pull_request'
+    needs: [test, package]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact event commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Write exact-SHA hosted receipt
+        env:
+          GTS_DISPATCH_EXACT_SHA: ${{ github.event.inputs.exact_sha || github.sha }}
+        run: >-
+          python .github/scripts/write-gate-receipt.py
+          --gate github-linux
+          --commit "${{ github.sha }}"
+          --runner-label ubuntu-latest
+          --output "${{ runner.temp }}/github-linux.json"
+      - name: Upload hosted receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-linux-${{ github.sha }}
+          path: ${{ runner.temp }}/github-linux.json
+          if-no-files-found: error
+          retention-days: 30
+
+  hosted-macos-receipt:
+    name: Hosted macOS exact-SHA receipt
+    if: github.server_url == 'https://github.com' && github.event_name != 'pull_request'
+    needs: [test-macos]
+    runs-on: macos-latest
+    steps:
+      - name: Checkout exact event commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Write exact-SHA hosted receipt
+        env:
+          GTS_DISPATCH_EXACT_SHA: ${{ github.event.inputs.exact_sha || github.sha }}
+        run: >-
+          python .github/scripts/write-gate-receipt.py
+          --gate github-macos
+          --commit "${{ github.sha }}"
+          --runner-label macos-latest
+          --output "${{ runner.temp }}/github-macos.json"
+      - name: Upload hosted receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-macos-${{ github.sha }}
+          path: ${{ runner.temp }}/github-macos.json
+          if-no-files-found: error
+          retention-days: 30

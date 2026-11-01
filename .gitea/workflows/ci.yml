@@ -1,0 +1,58 @@
+name: gate2 Linux CI
+
+# Once .gitea/workflows exists it is the complete Gitea Actions authority for
+# this repository. GitHub clean-platform jobs remain in .github/workflows.
+on:
+  push:
+    branches: [main, 'v*', 'release/**', 'fix/**', 'rc/**']
+  pull_request:
+    branches: [main, 'release/**']
+  workflow_dispatch:
+
+jobs:
+  linux-gate:
+    name: Exact-SHA Linux gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact event commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install system and Python build dependencies
+        run: |
+          set -euo pipefail
+          if command -v apk >/dev/null 2>&1; then
+            apk add --no-cache bash curl git jq nodejs npm python3 py3-pip py3-virtualenv sqlite zstd
+            PIP_SYSTEM_FLAG=--break-system-packages
+          elif command -v apt-get >/dev/null 2>&1; then
+            APT_PREFIX=
+            if [ "$(id -u)" -ne 0 ]; then APT_PREFIX=sudo; fi
+            $APT_PREFIX apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive $APT_PREFIX apt-get install -y curl jq zstd sqlite3 python3-venv python3-pip
+            PIP_SYSTEM_FLAG=
+          else
+            echo "::error::unsupported runner package manager"
+            exit 1
+          fi
+          # shellcheck disable=SC2086 # optional pip flag must remain a separate argv token
+          python3 -m pip install $PIP_SYSTEM_FLAG --disable-pip-version-check --no-input --upgrade build jieba
+
+      - name: Run deterministic exact-SHA gate
+        env:
+          GTS_CI_RECEIPT: ${{ runner.temp }}/dsh-gitea-search-gate2-linux.json
+        run: bash scripts/ci/linux-gate.sh "${{ github.sha }}" "$GTS_CI_RECEIPT"
+
+      - name: Validate receipt remains outside tracked source
+        run: |
+          test ! -e "$GITHUB_WORKSPACE/dsh-gitea-search-gate2-linux.json"
+          test -s "$RUNNER_TEMP/dsh-gitea-search-gate2-linux.json"
+
+      - name: Upload gate2 receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate2-linux-${{ github.sha }}
+          path: ${{ runner.temp }}/dsh-gitea-search-gate2-linux.json
+          if-no-files-found: error
+          retention-days: 30

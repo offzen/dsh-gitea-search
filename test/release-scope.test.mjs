@@ -13,12 +13,18 @@ const setupMac = fs.readFileSync(new URL('../scripts/setup-macos.sh', import.met
 const setupWindows = fs.readFileSync(new URL('../scripts/setup-windows.ps1', import.meta.url), 'utf8');
 const windowsCi = fs.readFileSync(new URL('../.github/workflows/windows-ci.yml', import.meta.url), 'utf8');
 const packageGate = fs.readFileSync(new URL('../scripts/test-python-package.py', import.meta.url), 'utf8');
+const provenance = JSON.parse(fs.readFileSync(new URL('../PROVENANCE.json', import.meta.url), 'utf8'));
 
 test('rc4 version metadata is aligned', () => {
   assert.equal(pkg.version, '1.2.2-rc4');
   assert.match(pyproject, /version = "1\.2\.2rc4"/);
   assert.match(server, /version: '1\.2\.2-rc4'/);
   assert.match(readme, /Version-v1\.2\.2--rc4/);
+});
+
+test('candidate provenance is frozen to an exact content commit', () => {
+  assert.match(provenance.source_commit, /^[0-9a-f]{40}$/);
+  assert.notEqual(provenance.source_commit, 'pending-candidate-freeze');
 });
 
 test('document search declares default-branch scope and cold-start boundary', () => {

@@ -167,6 +167,7 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-or
 - **[docs/USAGE.md](docs/USAGE.md)** —— 四个工具参数速查、真实检索场景示范与防爆窗调用范例（**推荐首读**）
 - **[WINDOWS-PORT.md](WINDOWS-PORT.md)** —— Windows 原生跨平台技术架构、安全护栏设计与移植规范
 - **[docs/TOOL-NAMING.md](docs/TOOL-NAMING.md)** —— MCP 裸名、宿主注册名与 GUI 显示名的三层模型及排查顺序
+- **[docs/DEVELOPMENT-AND-RELEASE.md](docs/DEVELOPMENT-AND-RELEASE.md)** —— gate2/Linux 与 GitHub hosted clean-platform 门禁、D/P 候选及 exact-SHA receipt 契约
 - **[MANUAL.md](MANUAL.md)** —— 生产级高可用部署、Cron 定时同步、四层安全护栏机制、参数全表与故障排查手册
 - **[CHANGELOG.md](CHANGELOG.md)** / **[RELEASE-NOTES.md](RELEASE-NOTES.md)** —— 版本演进记录
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** —— 开发者贡献与双向同步准则

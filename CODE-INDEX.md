@@ -31,6 +31,8 @@
 | `scripts/probe-stdio.mjs` | MCP initialize/tools/list/tools/call 探针 | 临时进程 | Linux E2E verified |
 | `scripts/test-python-package.py` | 从源码树外安装 wheel/sdist 并验证三个入口；以 UTF-8 解码子进程输出，避免 Windows locale reader 崩溃 | 临时 venv/文件 I/O | Ubuntu py3.12 hosted verified；Windows py3.12 首轮暴露 locale 缺陷后已最小修复，待新候选 hosted 重验 |
 | `scripts/generate-provenance.py` / `scripts/check-provenance.py` | 从 `git ls-files` 生成/核验非自引用 SHA-256 manifest | 写/读 `PROVENANCE.json` | Linux local gate verified after candidate freeze |
+| `scripts/ci/linux-gate.sh` | 清理 ambient 配置、绑定 exact SHA、运行 Linux 完整门禁并原子生成树外 receipt | 临时 HOME/cache/mirror、构建目录与树外 receipt | offline implementation; local runtime acceptance pending |
+| `scripts/release-preflight.py` | 只读核验 D/P、provenance-only diff 与 exact-P gate2/GitHub receipts；Windows 仅接受 hosted clean runner | 只读 Git/JSON；不 push/tag/dispatch | negative fixture coverage configured; final hosted receipts pending |
 | `.gitattributes` | 强制 shell/无扩展名入口以 LF 检出 | 无运行负载 | static verified |
 | `scripts/run-e2e-test.sh` | 31 项隔离全链路验收；Windows 路径通过 argv、MCP wrapper 由 Node 启动 | 临时 bare repos/SQLite | Linux 31/31；native Windows 28/28（3 个 POSIX-only 显式 skip）verified |
 | `scripts/run-realdata-test.sh` | 真实镜像验收 | 可能增量写索引；高负载 | 本轮未运行 |
@@ -53,8 +55,11 @@
 | `test/windows-adapt.test.mjs` | Windows 静态适配、BOM、installer 契约 | Linux static verified |
 | `test/windows-lock.test.mjs` | Windows `msvcrt` 锁；非 Windows 跳过 | native Windows verified |
 | `test/windows-quote.test.mjs` | cmd quoting/injection；部分非 Windows 跳过 | native Windows verified |
-| `.github/workflows/ci.yml` | Ubuntu/macOS unit+E2E；独立 wheel/sdist gate | Ubuntu local equivalent verified; macOS remote pending |
-| `.github/workflows/windows-ci.yml` | PE、PS5.1/PS7、Windows runtime/CRLF/Git Bash/profile gates；显式安装 sqlite CLI 并向 Git Bash 传入已安装 gts | 首轮 hosted：4 个 runtime/CRLF jobs success，WhatIf 双壳 success；W5/W6-runtime/W10 暴露三个 gate 缺陷，修复后待新候选重验 |
+| `.gitea/workflows/ci.yml` | gate2 完整 Linux workflow authority；向共享脚本传递 event exact SHA | configured; 需推 private developer ref 后取得 gate2 receipt |
+| `.github/workflows/ci.yml` | Ubuntu/macOS unit+E2E、wheel/sdist，并在 required jobs 成功后上传 exact-P Linux/macOS hosted receipts | offline syntax/contract configured; final exact-P hosted receipts pending |
+| `.github/workflows/windows-ci.yml` | PE、PS5.1/PS7、Windows runtime/CRLF/Git Bash/profile gates；全部 required jobs 成功后上传 hosted-clean Windows receipt | 历史运行不作为新候选 receipt；final exact-P GitHub hosted receipt pending |
+| `.github/scripts/write-gate-receipt.py` | 在 GitHub hosted job 内绑定 formal repo、exact SHA/tree、runner label 与 run identity，原子写 artifact | offline Linux contract fixtures configured；Windows/macOS runtime pending |
+| `test/release-preflight.test.py` / `test/hosted-receipt.test.py` | D/P、receipt exact SHA、缺件、本机 Windows receipt、错误 repo/SHA 拒绝 | offline fixture suite configured |
 
 ## 5. 发布元数据与可选资产
 
@@ -65,3 +70,4 @@
 | `PROVENANCE.json` | 候选树 SHA-256 清单 | 文件哈希已冻结验证；`source_commit` 在候选提交存在后补为 exact SHA |
 | `extras/dsh-skill/gitea-search/SKILL.md` | 可选 Agent 检索指导 | 不由 installer 自动安装 |
 | `WIKI.md` | 本仓耐久踩坑与判别方法 | 只保留有证据且有适用范围的事实 |
+| `docs/DEVELOPMENT-AND-RELEASE.md` | gate2 与 GitHub hosted 双平面、D/P 状态机、receipt 与独立授权边界 | Hosted-only Windows 契约正本；运行态仍以 exact-P receipts 为准 |
