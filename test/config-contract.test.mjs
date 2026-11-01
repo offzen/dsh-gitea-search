@@ -61,18 +61,22 @@ test('explicit config is shared and reports its source', () => {
   assert.equal(cfg.valid, true);
 });
 
-test('Node and Python resolve the same explicit config fixture', async () => {
+test('Node and Python resolve the same explicit config fixture', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'gts-config-'));
   const root = path.join(dir, 'mirror');
   const configPath = path.join(dir, 'config.json');
   writeFileSync(configPath, JSON.stringify({ storage: { mirror_root: root }, gitea: { owners: ['shared-team'] } }));
-  const py = resolveWith(cleanEnv(), { config_path: configPath });
-  const old = process.env.GITEA_SEARCH_CONFIG;
-  process.env.GITEA_SEARCH_CONFIG = configPath;
-  const { resolveConfig } = await import(`${NODE_CONFIG.href}?case=${Date.now()}`);
-  const js = resolveConfig({ configPath, projectDir: ROOT });
-  if (old === undefined) delete process.env.GITEA_SEARCH_CONFIG;
-  else process.env.GITEA_SEARCH_CONFIG = old;
+  const env = cleanEnv();
+  const py = resolveWith(env, { config_path: configPath });
+  const code = [
+    `import { resolveConfig } from ${JSON.stringify(NODE_CONFIG.href)}`,
+    `console.log(JSON.stringify(resolveConfig({ configPath: ${JSON.stringify(configPath)}, projectDir: ${JSON.stringify(ROOT)} })))`,
+  ].join(';');
+  const nodeEnv = { ...process.env };
+  for (const key of env.__unset) delete nodeEnv[key];
+  const node = spawnSync(process.execPath, ['--input-type=module', '-e', code], { encoding: 'utf8', env: nodeEnv });
+  assert.equal(node.status, 0, node.stderr);
+  const js = JSON.parse(node.stdout);
   assert.equal(js.mirror_root, py.mirror_root);
   assert.deepEqual(js.owners, py.owners);
   assert.deepEqual(js.sources, py.sources);

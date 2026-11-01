@@ -14,11 +14,11 @@ const setupWindows = fs.readFileSync(new URL('../scripts/setup-windows.ps1', imp
 const windowsCi = fs.readFileSync(new URL('../.github/workflows/windows-ci.yml', import.meta.url), 'utf8');
 const packageGate = fs.readFileSync(new URL('../scripts/test-python-package.py', import.meta.url), 'utf8');
 
-test('rc3 version metadata is aligned', () => {
-  assert.equal(pkg.version, '1.2.2-rc3');
-  assert.match(pyproject, /version = "1\.2\.2rc3"/);
-  assert.match(server, /version: '1\.2\.2-rc3'/);
-  assert.match(readme, /Version-v1\.2\.2--rc3/);
+test('rc4 version metadata is aligned', () => {
+  assert.equal(pkg.version, '1.2.2-rc4');
+  assert.match(pyproject, /version = "1\.2\.2rc4"/);
+  assert.match(server, /version: '1\.2\.2-rc4'/);
+  assert.match(readme, /Version-v1\.2\.2--rc4/);
 });
 
 test('document search declares default-branch scope and cold-start boundary', () => {

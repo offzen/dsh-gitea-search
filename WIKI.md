@@ -27,6 +27,7 @@
 11. **Windows Git Bash 能运行 Node/Python，不等于具备 SQLite CLI fallback 的同构依赖。** W10 首轮因强制 `DSH_FORCE_SQLITE_CLI=1` 而 runner 缺 `sqlite3`，旧 health helper 又静默吞掉异常，最终只表现为 `KeyError: 'engine'`；CI 必须显式安装 sqlite CLI，helper 必须把非秘密错误写入结构化结果。证据：private hosted run `41273247111`，W10 汇总 27 PASS / 1 FAIL。
 12. **Windows 路径字符串不同不代表文件不同。** Hosted runner 的 `%TEMP%` 参数以 8.3 short path（`RUNNER~1`）进入 CLI，而 Python 解析结果是 long path（`runneradmin`）；`GetLongPathNameW` 与 `samefile` 都要求目标目录实际存在，package gate 的 `--show-effective-config` 本身不创建 mirror。因此 gate 必须先创建 resolver 返回的目录，再用 `os.path.samefile()` 比较 file identity。证据：private hosted runs `41273989314`、`41274376766`、`41274603172`，W5 step 9。
 13. **`py -3` 与 Actions `python` 不保证是同一解释器。** setup-python 将 `python.exe` 置于 PATH，但系统 Python Launcher 可能选到另一安装；安装与 `gts.exe` 发现必须绑定同一解释器，优先 active `python`，并从该解释器的 `sys.executable`/distribution 元数据找 launcher。证据：private hosted run `41273989314`，W6 runtime smoke 在 pip 成功后旧探测仍找不到对应 `gts.exe`。
+14. **显式配置夹具不等于天然隔离。** rc3 release smoke 正确设置隔离 `GITEA_MIRROR_ROOT` / `GITEA_OWNERS` 后，Python parity helper 会清除这些变量，而同一测试中的 Node resolver 继承它们，导致两次 full smoke 都在 unit gate 失败；无这些 ambient 变量的独立诊断则通过。rc4 将 Node resolver 放进独立子进程，并对 Node/Python 使用同一组已清理的配置环境，避免修改父进程环境。
 
 ### 固定动作序列
 

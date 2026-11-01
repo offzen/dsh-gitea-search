@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2-rc4] - Unreleased
+
+### Fixed
+- Isolated the Node/Python explicit-config parity test from ambient `GITEA_*` and legacy `GITQ_*` variables, so release smoke remains deterministic when it supplies a valid isolated runtime configuration.
+
 ## [1.2.2-rc3] - Unreleased
 
 ### Fixed

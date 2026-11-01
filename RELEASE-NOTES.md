@@ -1,5 +1,11 @@
 # Release Notes - DeepSeek Harness (DSH) Gitea Search
 
+## v1.2.2-rc4 (Unreleased) — deterministic isolated release smoke
+
+- Preserves the rc3 product tree while fixing its explicit-config parity test to remove ambient `GITEA_*` / `GITQ_*` variables symmetrically for the Node and Python resolvers.
+- Prevents a valid isolated mirror/owner configuration supplied by release smoke from overriding the explicit fixture on only the Node side.
+- Requires a new immutable rc4 candidate and tag; the existing rc3 tag remains unchanged.
+
 ## v1.2.2-rc3 (Unreleased) — installation and configuration release blockers
 
 - Establishes the maintainable `release/1.2.x` line on the exact `cff4843` topology bridge; release promotion must reuse identical commit/tree/tag objects.
