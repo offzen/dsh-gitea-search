@@ -11,12 +11,12 @@
 可以将远端托管的**所有仓库以 bare 裸镜像**拉取并维护在宿主机本地，提供**两层极速检索引擎**，并通过标准 Model Context Protocol (MCP) 服务暴露给 DeepSeek Harness (DSH) Agent：
 
 1. **代码检索引擎（git grep）**：跨全量仓库、全部分支、文件路径及提交记录的毫秒级检索；支持多词短语连写 0 命中时自动回退为「同行多词 AND（`--and`）」模式。
-2. **文档与会话全文检索（SQLite FTS5 + jieba 中文分词）**：毫秒级响应，支持 BM25 智能加权与内容类型分区（`doc`、`session`、`config`、`script`），解决 Agent 历史长上下文与排障经验的召回问题。
+2. **文档与会话全文检索（SQLite FTS5 + jieba 中文分词）**：索引每仓默认分支；SQLite warm query 可毫秒级响应，MCP 端到端延迟还包含 Python/jieba 冷启动。支持 BM25 与内容类型分区。
 3. **零服务本地快速体验模式 (Zero-Gitea Mode)**：支持将本地任意普通 Git 仓库目录一键裸镜像化并构建倒排索引，无需远端 Gitea 服务即可作为 MCP 检索端点。
 
 ### 为什么必须自建本地检索引擎（实测经验）：
 - **Gitea 网页搜索局限**：单仓内置搜索无需索引器但无法跨仓；全站搜索 `/explore/code` 需要管理员启用 `REPO_INDEXER_ENABLED`（通常未开），且 **Gitea API 无代码搜索端点**（官方 Swagger 规范中不存在该路径）。
-- **分支覆盖局限**：Gitea 网页与内置索引仅覆盖默认分支；本方案裸镜像覆盖全量本地分支。
+- **分支覆盖边界**：代码搜索基于裸镜像覆盖全部本地 heads；FTS 文档索引只覆盖每仓默认分支。非默认分支文档先用代码搜索定位，再按 `ref` 读取。
 - **Agent 上下文保护**：直连原始检索若缺乏有界化约束，单条大输出（如大文本/Base64）极易打爆 LLM 上下文；自建 MCP 接入层提供四层安全护栏。
 
 ---
@@ -81,12 +81,19 @@ bin/gts -D "关键词"
 
 - **Linux (Debian / Ubuntu / RHEL)**：
   ```bash
+  export GITEA_OWNERS="my-org"
   bash scripts/setup.sh
+  # 可选接入一个明确 profile：
+  bash scripts/setup.sh --install-dsh --profile desktop
   ```
 - **macOS**：
   ```bash
+  export GITEA_OWNERS="my-org"
   bash scripts/setup-macos.sh
+  # 可选接入：同样使用 --install-dsh --profile desktop|web|headless
   ```
+
+两个 POSIX 安装器都拒绝缺失/占位 owner；`--profile Auto` 只在恰好发现一个 profile 时生效，只有显式 `--profile all` 才会修改全部候选。
 
 #### 步骤 2：安全凭据与权限配置（生产最小特权原则）
 
@@ -139,13 +146,16 @@ Windows 的进程创建机制（`CreateProcess`）只认 PE 二进制文件（`.
 
 ```powershell
 # 以管理员或普通用户身份在 PowerShell 中执行（绕过当前进程执行策略）
-powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners myorg -MirrorRoot C:\gitea-mirror -RegisterDsh
+powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-org -MirrorRoot C:\gitea-mirror -RegisterDsh -Profile web -WhatIf
+# 确认计划后去掉 -WhatIf；Auto 仅在恰好发现一个 profile 时生效
 ```
 
 **参数说明**：
 - `-MirrorRoot <Path>`：指定裸镜像存储根目录（默认为项目内 `mirror` 目录）；
 - `-Owners <List>`：指定 Gitea 组织或用户名（逗号分隔）；
-- `-RegisterDsh`：自动备份并将 MCP 配置追加到 DSH 的 `cordis.patch.yml`；
+- `-RegisterDsh`：备份并幂等更新 DSH profile（同一 id 不重复追加）；
+- `-Profile Auto|desktop|web|headless|all`：显式选择 profile；`Auto` 仅接受唯一候选；
+- `-WhatIf`：只显示计划，不安装、不建索引、不写 profile；
 - `-SkipIndex`：仅安装环境与启动器，跳过初次 FTS5 索引构建。
 
 #### 方式 B：标准 pip 安装（适合已配置 Python 环境的 Windows 开发者）
@@ -177,7 +187,7 @@ pyinstaller --onedir --name gts --hidden-import=indexer --paths=lib bin\gts
 ```powershell
 $env:GTS_BIN = "C:\path\to\Scripts\gts.exe"   # 必须是单个 .exe 的完整路径
 $env:GITEA_MIRROR_ROOT = "C:\gitea-mirror"
-$env:GITEA_OWNERS = "myorg"
+$env:GITEA_OWNERS = "my-org"
 ```
 
 > ⚠️ **关键陷阱**：`GTS_BIN` **必须是单个可执行文件的实际路径**。严禁写成 `"python bin\gts"` 或带空格的参数组合，否则子进程创建会直接触发 `ENOENT` 致命报错。
@@ -202,14 +212,14 @@ $env:GITEA_OWNERS = "myorg"
     - id: mcp-gitea-search
       name: '@deepseek-ai/dsh-mcp-client'
       config:
-        serverName: gitea-search          # 工具注册名前缀：mcp__gitea-search__*
+        serverName: gitea-search          # 宿主可能据此生成注册名；以实际工具表为准
         transport: stdio                  # 必填项：必须显式声明
         command: node
         args: ["/opt/dsh-gitea-search/lib/server.mjs"]
         cwd: /opt/dsh-gitea-search
         env:
           GITEA_MIRROR_ROOT: "/srv/gitea-mirror"
-          GITEA_OWNERS: "myorg,core-team"
+          GITEA_OWNERS: "my-org,core-team"
 ```
 
 ### 极简配置（利用 `config.json` 自动解析）
@@ -234,38 +244,46 @@ $env:GITEA_OWNERS = "myorg"
 
 ### 5.1 配置文件 `config.json` 规范
 
-`lib/server.mjs` 会从当前工作目录起逐级向上寻找 `config.json`，完整配置字段如下：
+`lib/server.mjs`、`bin/gts` 与 `lib/indexer.py` 共用同一份配置契约。候选顺序为：显式 `--config` / `GITEA_SEARCH_CONFIG`、用户级 `~/.config/dsh-gitea-search/config.json`、项目根目录 `config.json`。配置文件可采用如下嵌套结构：
 
 ```json
 {
-  "mirrorRoot": "/srv/gitea-mirror",
-  "owners": ["myorg", "core-team"],
-  "enumSource": "auto",
-  "apiBase": "https://git.example.com",
-  "token": "your_readonly_token_here",
-  "maxResults": 200,
-  "maxLineBytes": 2000,
-  "maxSearchBytes": 131072,
-  "maxReadBytes": 60000
+  "gitea": {
+    "url": "https://git.example.com",
+    "token": "your_readonly_token_here",
+    "owners": ["my-org", "core-team"]
+  },
+  "storage": {
+    "mirror_root": "/srv/gitea-mirror"
+  },
+  "search": {
+    "max_results": 200,
+    "max_line_bytes": 2000,
+    "max_search_bytes": 131072,
+    "max_read_bytes": 60000
+  }
 }
 ```
 
+运行时 resolver 当前消费 `storage.mirror_root` 与 `gitea.owners`（也兼容顶层 `mirror_root` / `owners`）；同步脚本消费 URL、token 与枚举/传输变量。缺少 owner 或 owner 为 `myorg` 等占位值时，正式 CLI/MCP 操作会 fail closed。
+
 ### 5.2 环境变量对照表
 
-配置加载优先级为：**CLI 参数 > 操作系统环境变量 > `config.json` > 默认值**。
+镜像根与 owner 的加载优先级为：**CLI 参数 > 操作系统环境变量 > 显式配置 > 用户配置 > 项目配置 > 平台默认根目录**。owner 没有运行时默认值。
 
 | 环境变量 (推荐规范) | 兼容历史变量 | 默认值 | 作用与生效范围 |
 |---|---|---|---|
-| `GITEA_MIRROR_ROOT` | `GITQ_MIRROR_ROOT` | `/srv/gitea-mirror` | 裸镜像与倒排索引存储根目录 |
-| `GITEA_OWNERS` | `GITQ_OWNER` | `myorg` | 索引与同步的属主（逗号分隔多 owner） |
-| `GITEA_API_BASE` | `GITQ_API_BASE` | `https://git.example.com` | Gitea API 地址（用于 API 枚举与 https 克隆） |
-| `GITEA_TOKEN` | `GITQ_API_TOKEN` | — | 只读 API Token（用于私有仓库枚举与拉取） |
-| `GITEA_ENUM` | `GITQ_ENUM` | `auto` | 仓库枚举策略：`auto` (优先 API，失败回退 SSH) / `api` / `ssh` |
-| `GITEA_TRANSPORT` | `GITQ_TRANSPORT` | `auto` | 克隆通道策略：`auto` (先 SSH，失败则 HTTPS) / `ssh` / `https` |
-| `GITQ_MAX_RESULTS` | — | `200` (硬上限 1000) | **条数硬夹护栏**：单次检索返回的最大匹配条数 |
-| `GITQ_MAX_LINE_BYTES` | — | `2000` | **单行上限护栏**：单行最大字符数，带 UTF-8 安全截断 |
-| `GITQ_MAX_SEARCH_BYTES` | — | `131072` (128KB) | **总量预算护栏**：MCP 工具返回文本的总字节数上限 |
-| `GITQ_MAX_READ_BYTES` | — | `60000` (60KB) | `read_gitea_file` 单次文件读取的最大字节数限制 |
+| `GITEA_SEARCH_CONFIG` | — | — | 显式指定共享 `config.json` 路径 |
+| `GITEA_MIRROR_ROOT` | `GITEA_MIRROR_PATH` / `GITQ_MIRROR_ROOT` | 平台用户数据目录 | 裸镜像与倒排索引存储根目录 |
+| `GITEA_OWNERS` | `GITEA_OWNER` / `GITQ_OWNER` | **无；缺失即报错** | 索引与同步的属主（逗号分隔多 owner） |
+| `GITEA_URL` / `GITEA_API_BASE` | `GITQ_API_BASE` | `https://git.example.com` | `sync.sh` 的 Gitea API 地址 |
+| `GITEA_TOKEN` | `GITEA_API_TOKEN` / `GITQ_API_TOKEN` | — | `sync.sh` 使用的只读 API Token |
+| `GITQ_ENUM` | — | `auto` | 仓库枚举策略：`auto` / `api` / `ssh` |
+| `GITQ_TRANSPORT` | — | `auto` | 克隆通道策略：`auto` / `ssh` / `https` |
+| `GITEA_MAX_RESULTS` | `GITQ_MAX_RESULTS` | `200` (硬上限 1000) | **条数硬夹护栏** |
+| `GITEA_MAX_LINE_BYTES` | `GITQ_MAX_LINE_BYTES` | `2000` | **单行上限护栏** |
+| `GITEA_MAX_SEARCH_BYTES` | `GITQ_MAX_SEARCH_BYTES` | `131072` (128KB) | **总量预算护栏** |
+| `GITEA_MAX_READ_BYTES` | `GITQ_MAX_READ_BYTES` | `60000` (60KB) | `read_gitea_file` 单次文件读取字节上限 |
 
 ---
 
@@ -302,8 +320,8 @@ UTF-8 完整性保证：Buffer.concat(chunks).toString('utf8')
 2. **`IndexLock` 跨平台排他锁对齐**：
    - 在 POSIX 平台上采用 `fcntl.flock`；在 Windows 平台上采用 `msvcrt.locking` 字节区间锁。
    - Windows 平台在加锁前显式执行 `seek(0)`，与 `_release()` 保持严格对称的字节位置，确保多进程并发建索引与检索时的强排他性。
-3. **Git 路径正斜杠自动归一化**：
-   - Git tree object 在所有平台上均只接受正斜杠 `/`。MCP 服务与 CLI 在接收输入后自动执行反斜杠转义（`replace(/\\/g, '/')`），杜绝因系统路径反斜杠导致 `fatal: path '...' does not exist in 'HEAD'` 异常中断。
+3. **Git 路径按平台归一化**：
+   - Windows 上把反斜杠路径转换为 Git tree 使用的 `/`；POSIX 上保留反斜杠这一合法文件名字符，避免把 `a\\b.md` 静默改写成 `a/b.md`。
 4. **系统 PATH 目录引号清洗**：
    - 自动遍历 Windows `PATH` 环境变量时，显式清洗带引号的目录项（去除首尾 `"`），防止畸形拼接引起子进程启动失败。
 

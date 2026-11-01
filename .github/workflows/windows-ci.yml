@@ -12,7 +12,7 @@ on:
   push:
     branches: [ main, 'v*', 'release/**' ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, 'release/**' ]
   workflow_dispatch:
 
 jobs:
@@ -82,9 +82,16 @@ jobs:
           if ($bad) { throw "Scripts 下的 gts 被数据文件覆盖（$($bad.FullName), $($bad.Length) B）" }
           Write-Host "✅ Scripts 入口未被数据文件覆盖"
 
-  # ── W6：PowerShell 安装脚本语法合法（不做真机安装，只做静态语法）────────
+      - name: Build and validate wheel + sdist from a neutral directory
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+          python scripts/test-python-package.py dist
+
+  # ── W6：PowerShell 5.1 / 7 安装器真实 WhatIf + AST 契约 ───────────────
   windows-ps:
-    name: W6 setup-windows.ps1 语法
+    name: W6 setup-windows.ps1 PS5.1 + PS7 WhatIf
     if: github.server_url == 'https://github.com'
     runs-on: windows-latest
     steps:
@@ -103,17 +110,28 @@ jobs:
           }
           Write-Host "✅ W6 通过：0 语法错误（$($tokens.Count) tokens）"
 
-      - name: 参数契约检查（脚本必须仍接受 -Owners / -MirrorRoot / -SkipIndex）
+      - name: 参数契约检查（Owners / MirrorRoot / SkipIndex / RegisterDsh / Profile）
         shell: pwsh
         run: |
           $ast = [System.Management.Automation.Language.Parser]::ParseFile(
             (Resolve-Path scripts/setup-windows.ps1), [ref]$null, [ref]$null)
           $params = $ast.ParamBlock.Parameters.Name.VariablePath.UserPath
           Write-Host "参数: $($params -join ', ')"
-          foreach ($p in @('MirrorRoot','Owners','SkipIndex')) {
+          foreach ($p in @('MirrorRoot','Owners','SkipIndex','RegisterDsh','Profile')) {
             if ($params -notcontains $p) { throw "缺少参数 -$p" }
           }
           Write-Host "✅ 参数契约完整"
+
+      - name: Windows PowerShell 5.1 和 PowerShell 7 真实执行 WhatIf
+        shell: pwsh
+        run: |
+          $before = (Get-FileHash scripts/setup-windows.ps1 -Algorithm SHA256).Hash
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/setup-windows.ps1 -Owners ci-owner -SkipIndex -WhatIf
+          if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell 5.1 WhatIf 失败: $LASTEXITCODE" }
+          & pwsh -NoProfile -File scripts/setup-windows.ps1 -Owners ci-owner -SkipIndex -WhatIf
+          if ($LASTEXITCODE -ne 0) { throw "PowerShell 7 WhatIf 失败: $LASTEXITCODE" }
+          $after = (Get-FileHash scripts/setup-windows.ps1 -Algorithm SHA256).Hash
+          if ($before -ne $after) { throw 'WhatIf 意外修改了安装器文件' }
 
   # ── W7/W8：运行时行为测试（锁排他 / 引号往返）在真实 Windows 上跑 ────────
   windows-tests:

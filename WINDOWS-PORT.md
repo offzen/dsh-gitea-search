@@ -103,9 +103,9 @@ Windows 中文控制台默认代码页为 CP936 (GBK)，英文控制台常为 CP
 
 ---
 
-## 四、真实 Windows CI 验证矩阵
+## 四、Windows CI 验证矩阵
 
-全套 Windows 适配方案在 GitHub Actions 官方托管的 **Windows Server 2022**（`windows-latest` 完整 Desktop Experience）上配置了严苛的 CI 判据矩阵：
+下表前五项是早期 v1.2.2 候选在 GitHub Actions Windows Server 2022 上取得的历史证据；rc3 新增的 wheel/sdist、PS5.1/PS7 `-WhatIf`、Git Bash E2E 与 profile smoke 必须在候选 commit 上重新跑绿，不能沿用旧结果宣称 rc3 已验证：
 
 | 判据任务 | 验证目标 | 运行环境 | 验证结果 |
 |---|---|---|---|
@@ -115,6 +115,8 @@ Windows 中文控制台默认代码页为 CP936 (GBK)，英文控制台常为 CP
 | **W8: Injection Defense** | 测试 `cmd.exe` 参数转义往返一致性与 `& \| < > ^` 注入拦截 | Py 3.11/3.12 × Node 20/22 | ✅ **4/4 矩阵全绿** |
 | **W9: CRLF & Git Grep** | 在真实 bare 仓库与 CRLF 换行环境下验证路径形态与换行清洗 | Win Server 2022 | ✅ **SUCCESS** |
 | **平台单测集** | 覆盖 Windows 可执行分类、引号转义、路径归一化等 21 项测试断言 | Win Server 2022 | ✅ **21 / 21 PASS (0 fail, 0 skip)** |
+| **rc3 packaging** | wheel 与 sdist 分别在源码树外安装，三个 PE alias 完成 help/config/indexer smoke | Win Server 2022 / Py 3.12 | ⏳ **rc3 runner pending** |
+| **rc3 installer** | Windows PowerShell 5.1 + PowerShell 7 真跑 `-WhatIf`，并验证显式 profile 参数 | Win Server 2022 | ⏳ **rc3 runner pending** |
 
 ---
 
@@ -133,7 +135,8 @@ cd C:\dsh-gitea-search
 npm install --no-audit --no-fund
 
 # 3. 运行自动化配置脚本
-powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners myorg -MirrorRoot C:\gitea-mirror
+powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-org -MirrorRoot C:\gitea-mirror -WhatIf
+# 确认计划后去掉 -WhatIf；接入 DSH 时显式加 -RegisterDsh -Profile desktop/web/headless
 ```
 
 脚本会自动检测 Python / Git / Node.js 环境，调用 `pip install .` 生成 `Scripts\gts.exe`，并完成镜像目录初始化。
@@ -154,7 +157,7 @@ gts --help
 # 3. 配置环境变量并启动 MCP 服务
 $env:GTS_BIN = (Get-Command gts).Source
 $env:GITEA_MIRROR_ROOT = "C:\gitea-mirror"
-$env:GITEA_OWNERS = "myorg"
+$env:GITEA_OWNERS = "my-org"
 
 node lib\server.mjs
 # 正确启动将输出: started; mirror=C:\gitea-mirror; platform=win32; gts=... (direct)

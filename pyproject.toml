@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dsh-gitea-search"
-version = "1.2.2"
+version = "1.2.2rc3"
 description = "Windows-capable gts launcher for dsh-gitea-search (Gitea/Git mirror hybrid search CLI)"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -32,7 +32,7 @@ dsh-search = "gts_cli:main"
 [tool.setuptools]
 py-modules = ["gts_cli"]
 
-# bin/gts 与 lib/indexer.py 随 wheel 一起发布，但**不能**装到 <prefix>/bin/gts ——
+# bin/gts、lib/indexer.py 与 lib/config.py 随 wheel 一起发布，但**不能**装到 <prefix>/bin/gts ——
 # 那里是 [project.scripts] 生成的 gts 启动器，两者会互相覆盖。
 #
 # 实测踩坑（2026-10-28，Windows CI W5 与 ams2 复现）：
@@ -45,4 +45,4 @@ py-modules = ["gts_cli"]
 # gts_cli._script_candidates()。
 [tool.setuptools.data-files]
 "share/dsh-gitea-search/bin" = ["bin/gts"]
-"share/dsh-gitea-search/lib" = ["lib/indexer.py"]
+"share/dsh-gitea-search/lib" = ["lib/indexer.py", "lib/config.py"]

@@ -1,6 +1,6 @@
 # 使用指南（USAGE）
 
-> 本文聚焦于**如何高效使用**：四个核心工具的功能定位、入参规范、省上下文调用法则以及真实工作流场景。  
+> 本文聚焦于**如何高效使用**：四个核心工具的功能定位、入参规范、省上下文调用法则以及真实工作流场景。
 > 生产部署与高可用运维参见 [MANUAL.md](../MANUAL.md)；MCP 工具名前缀机制解析参见 [TOOL-NAMING.md](TOOL-NAMING.md)。
 
 ---
@@ -8,8 +8,8 @@
 ## 1. 核心实践三法则
 
 1. **先定位，再精读**：先使用 `search_*` 工具锁定目标所在的仓库、相对路径与大致行号，再使用 `read_gitea_file` 配合较小的 `limit` 读取目标代码片段。**严禁在未定位前直接尝试抓取全量文件**。
-2. **多词与中文优先走倒排索引**：查找中文短语、故障排查记录或多词组合时，首选 `search_gitea_docs`，利用 SQLite FTS5 + jieba 分词实现毫秒级相关度召回。
-3. **检索范围为已推送到镜像的内容**：索引基于本地 bare 镜像构建。**未推送到远端或未完成镜像同步的本机工作副本不在检索范围内**。若刚提交了代码，请先执行同步刷新。
+2. **多词与中文优先走倒排索引**：查找中文短语、故障排查记录或多词组合时，首选 `search_gitea_docs`，利用 SQLite FTS5 + jieba 分词做相关度召回。SQLite warm query 可达到毫秒级；MCP 端到端延迟还包含 Python/jieba 冷启动。
+3. **分清检索范围**：`search_gitea` 覆盖镜像中的全部本地分支；FTS `search_gitea_docs` 只索引每仓默认分支。两者都只覆盖已经推送并完成镜像同步的内容。
 
 > 💡 **能力公开边界说明**：  
 > 本项目标准开源发布的公共契约包含 4 个核心基础工具（`search_gitea`、`search_gitea_docs`、`read_gitea_file`、`list_gitea_repos`）。若您所在的特定部署环境通过上层网关封装了混合召回（如各类 `*_hybrid` 向量融合工具），请以宿主实际注册的扩展工具清单为准。
@@ -18,9 +18,9 @@
 
 ## 2. 核心工具速查
 
-以下调用名基于默认 `serverName: gitea-search`。若您的宿主配置了自定义名称，仅需替换中间的前缀标识即可。
+以下小节使用 MCP server 的**裸工具名**。宿主可能加前缀、清洗或重命名；安装后必须查看当前宿主的实际工具注册表，不能只替换示例前缀来猜调用名。
 
-### 2.1 `mcp__gitea-search__search_gitea` —— 跨仓代码检索
+### 2.1 `search_gitea` —— 跨仓代码检索
 
 基于本地 bare 镜像执行极速 `git grep`，跨所有仓库检索代码内容、路径及提交信息，无需逐个 clone。
 
@@ -28,7 +28,7 @@
 |---|---|---|
 | `query` | string | **必填**。检索关键词或短语；当 `regex: true` 时按扩展正则表达式（egrep）解析 |
 | `mode` | string | 检索模式：`content`（默认，搜文件内容）/ `path`（搜文件名与路径）/ `message`（搜 commit 提交日志） |
-| `repo` | string | 限定仓库范围，支持逗号分隔与 `*` 通配符（如 `"myorg/dsh-*"`） |
+| `repo` | string | 限定仓库范围，支持逗号分隔与 `*` 通配符（如 `"acme/dsh-*"`） |
 | `branch` | string | 限定分支；省略时检索全部本地分支；`HEAD` 代表仅检索默认分支 |
 | `files_only` | boolean | **省上下文利器**。为 `true` 时仅返回匹配的文件名列表，不返回匹配行文本 |
 | `regex` | boolean | 是否开启正则表达式匹配（默认 `false`） |
@@ -40,9 +40,9 @@
 
 ---
 
-### 2.2 `mcp__gitea-search__search_gitea_docs` —— 文档与历史会话全文检索
+### 2.2 `search_gitea_docs` —— 文档与历史会话全文检索
 
-基于 SQLite FTS5 引擎与 jieba 中文分词，支持 BM25 智能相关度排序与高亮摘要提取。**所有中文查询、历史故障复盘与自然语言场景强烈推荐首选此工具**。
+基于每仓**默认分支**的 SQLite FTS5 索引与 jieba 中文分词，支持 BM25 相关度排序与高亮摘要提取。若目标可能只存在于非默认分支，改用 `search_gitea` 搜全部 heads，再以 `read_gitea_file(ref=...)` 精读。
 
 | 参数 | 类型 | 说明 |
 |---|---|---|
@@ -59,7 +59,7 @@
 
 ---
 
-### 2.3 `mcp__gitea-search__read_gitea_file` —— 切片读取文件内容
+### 2.3 `read_gitea_file` —— 切片读取文件内容
 
 精准读取指定仓库与分支下的文件正文，内置分段机制与超大截断保护。
 
@@ -75,11 +75,11 @@
 
 ---
 
-### 2.4 `mcp__gitea-search__list_gitea_repos` —— 镜像仓库资产盘点
+### 2.4 `list_gitea_repos` —— 镜像仓库资产盘点
 
 | 参数 | 类型 | 说明 |
 |---|---|---|
-| `filter` | string | 仓库名称子串或通配符（如 `"myorg/dsh-*"`）；省略则列出镜像库中所有仓库 |
+| `filter` | string | 仓库名称子串或通配符（如 `"acme/dsh-*"`）；省略则列出镜像库中所有仓库 |
 
 适用于资产梳理、确认新建仓库是否已被同步，或在模糊记忆下进行仓库名称定位。
 
@@ -94,7 +94,7 @@
 ```jsonc
 // 步骤 1：探路。设置 files_only: true 仅返回文件名，消耗极低 Token
 {
-  "name": "mcp__gitea-search__search_gitea",
+  "name": "search_gitea",
   "arguments": {
     "query": "cpm-panel",
     "files_only": true
@@ -105,7 +105,7 @@
 
 // 步骤 2：精读。针对性读取该文件前 50 行，避免全量输出
 {
-  "name": "mcp__gitea-search__read_gitea_file",
+  "name": "read_gitea_file",,
   "arguments": {
     "repo": "cpm-deploy",
     "path": "docker/compose.yml",
@@ -124,7 +124,7 @@
 ```jsonc
 // 检索历史会话导出，快速召回当时的决策和临时绕过命令
 {
-  "name": "mcp__gitea-search__search_gitea_docs",
+  "name": "search_gitea_docs",,
   "arguments": {
     "query": "Caddy 证书 429 续期",
     "kind": "session",
@@ -144,7 +144,7 @@
 ```jsonc
 // 使用扩展正则并开启 files_only 进行全局影响面探测
 {
-  "name": "mcp__gitea-search__search_gitea",
+  "name": "search_gitea",
   "arguments": {
     "query": "validateCustomForm\\(",
     "regex": true,
@@ -162,7 +162,7 @@
 当检索没有返回预期结果时，请按如下顺序递进排查：
 
 1. **确认代码是否已推送**：裸镜像仅抓取 Git 远端已 push 的分支，本地未提交或未推送的工作区不在索引中。
-2. **切换分词索引引擎**：若使用 `search_gitea`（纯文本匹配）搜中文短语无结果，立即换用 `search_gitea_docs`。
+2. **按内容与分支分流**：中文/多词且目标在默认分支时，使用 `search_gitea_docs`；若可能位于非默认分支，使用 `search_gitea` 搜全部 heads，再按 `ref` 读取。
 3. **缩小关键词长度**：长句可能因标点或连字差异导致无法匹配，建议精简至 2~3 个核心技术名词。
 4. **验证仓库范围**：调用 `list_gitea_repos` 确认目标仓库是否已被纳入同步清单。
 5. **触发镜像同步**：若目标是刚刚推送的提交，可添加 `sync: true` 触发增量拉取。

@@ -4,6 +4,24 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+PROFILE="Auto"
+INSTALL_DSH=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --install-dsh) INSTALL_DSH=1 ;;
+    --profile) shift; PROFILE="${1:?--profile requires Auto, desktop, web, headless, or all}" ;;
+    --fix-sessions) DSH_AUTO_FIX_SESSIONS=1 ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+OWNERS="${GITEA_OWNERS:-${GITEA_OWNER:-${GITQ_OWNER:-}}}"
+if [ -z "$OWNERS" ] || [[ "$OWNERS" =~ ^(myorg|example-org|your-org|your-owner)$ ]]; then
+  echo "CONFIG_ERROR: set GITEA_OWNERS to a real owner before installing." >&2
+  exit 2
+fi
+
 echo "=== dsh-gitea-search 环境预检与初始化 ($ROOT_DIR) ==="
 
 # 1. 检查 Python 3 与 Jieba
@@ -97,9 +115,37 @@ echo "✅ CLI 软链 (gts / gitq / dsh-search) 已就绪"
 # 7. 预检测宿主 DSH 会话存储格式 (v1~v4) 与索引健康度（防 <v4 会话冷迁移风暴）
 echo "[7/7] 预检测宿主 DSH 会话格式与索引健康度 ..."
 FIX_FLAG="--check"
-if [ "${DSH_AUTO_FIX_SESSIONS:-0}" = "1" ] || [ "${1:-}" = "--fix-sessions" ]; then
+if [ "${DSH_AUTO_FIX_SESSIONS:-0}" = "1" ]; then
     FIX_FLAG="--fix"
 fi
 node "$ROOT_DIR/scripts/dsh-session-health.mjs" "$FIX_FLAG" || true
+
+if [ "$INSTALL_DSH" = "1" ]; then
+    PROFILES_ROOT="${DSH_PROFILES_ROOT:-${DSH_HOME:-$HOME/.dsh}/profiles}"
+    FOUND=()
+    for f in "$PROFILES_ROOT"/*/cordis.patch.yml; do
+        [ -f "$f" ] || continue
+        FOUND+=("$(basename "$(dirname "$f")")")
+    done
+    case "$PROFILE" in
+        all) TARGETS=("${FOUND[@]}") ;;
+        Auto)
+            [ "${#FOUND[@]}" -eq 1 ] || { echo "CONFIG_ERROR: Auto requires exactly one profile; found: ${FOUND[*]:-(none)}" >&2; exit 2; }
+            TARGETS=("${FOUND[0]}") ;;
+        desktop|web|headless)
+            [ -f "$PROFILES_ROOT/$PROFILE/cordis.patch.yml" ] || { echo "CONFIG_ERROR: profile not found: $PROFILE" >&2; exit 2; }
+            TARGETS=("$PROFILE") ;;
+        *) echo "CONFIG_ERROR: --profile supports Auto/desktop/web/headless/all" >&2; exit 2 ;;
+    esac
+    NODE_BIN="$(command -v node)"
+    for target in "${TARGETS[@]}"; do
+        python3 "$ROOT_DIR/scripts/profile-patch.py" \
+            --file "$PROFILES_ROOT/$target/cordis.patch.yml" \
+            --node "$NODE_BIN" --server "$ROOT_DIR/lib/server.mjs" --gts "$ROOT_DIR/bin/gts" \
+            --mirror "${GITEA_MIRROR_ROOT:-${GITEA_MIRROR_PATH:-${GITQ_MIRROR_ROOT:-$HOME/.local/share/dsh-gitea-search/mirror}}}" \
+            --owners "$OWNERS"
+    done
+    echo "✅ DSH profile 已更新；本脚本不会重启 DSH。"
+fi
 
 echo "=== 全部依赖与安装预检通过！插件已就绪 ==="

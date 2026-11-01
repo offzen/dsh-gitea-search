@@ -5,7 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.2-rc2] - Unreleased
+## [1.2.2-rc3] - Unreleased
+
+### Fixed
+- Unified effective configuration across MCP server, CLI, indexer, and doctor; missing/placeholder owners now fail closed.
+- Made Windows setup BOM-safe for PowerShell 5.1, interpreter-aware for `gts.exe`, profile-selectable, idempotent, and dry-run capable.
+- Unified Linux/macOS profile selection on the shared idempotent patcher; `Auto` now requires exactly one discovered profile.
+- Made Git Bash E2E use native temporary paths and Node script launchers instead of direct `.mjs` spawn.
+- Included the shared Python config resolver in both wheel and sdist artifacts, with isolated install gates for all three console aliases.
+
+### Changed
+- Document search reports `scope: default-branches`; all-ref FTS remains a v1.3 feature.
+- Documentation distinguishes warm SQLite query time from end-to-end Python/jieba cold start.
+- MCP naming documentation separates server bare names, host registration names, and GUI display labels.
+- Added an optional DSH skill under `extras/`; installers do not install it automatically.
+
+## [1.2.2-rc2]
 
 > **Release Scope**：修复 1.2.2-rc 早期候选引入的 POSIX（Linux / macOS）回归。Windows 侧能力全部保留，
 > 本版本只把"无条件 Windows 化"的共享代码改回**按平台分流**。

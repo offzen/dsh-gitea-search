@@ -8,7 +8,7 @@ This repository is maintained openly under the Apache-2.0 license.
 We actively welcome community contributions, bug reports, and pull requests!
 
 - **Public Repository & PR Mainline**: [https://github.com/offzen/dsh-gitea-search](https://github.com/offzen/dsh-gitea-search)
-- **CI Automation**: Every Pull Request triggers automated GitHub Actions workflows running the full 32-assertion E2E regression test suite across multiple Node.js (20.x, 22.x) and Python (3.11-3.13) environments.
+- **CI Automation**: Every Pull Request triggers automated GitHub Actions workflows running the 31-assertion E2E regression suite plus unit and packaging gates across supported Node.js and Python versions.
 - **Upstream Synchronization & Release Discipline**: Community PRs merged on GitHub are automatically verified and synchronized with upstream infrastructure following fast-forward release disciplines (force-pushing or orphan overwrites are strictly prohibited).
 
 ## How to Contribute

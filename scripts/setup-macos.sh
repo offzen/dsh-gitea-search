@@ -140,7 +140,11 @@ EOF
 if [ "$INSTALL_DSH" = "1" ]; then
   echo "=== 接入 DSH profile ==="
   PROFILES_ROOT="${DSH_PROFILES_ROOT:-${DSH_HOME:-$HOME/.dsh}/profiles}"
-  mapfile -t FOUND < <(for f in "$PROFILES_ROOT"/*/cordis.patch.yml; do [ -f "$f" ] && basename "$(dirname "$f")"; done)
+  FOUND=()
+  for f in "$PROFILES_ROOT"/*/cordis.patch.yml; do
+    [ -f "$f" ] || continue
+    FOUND+=("$(basename "$(dirname "$f")")")
+  done
   case "$PROFILE" in
     all) TARGETS=("${FOUND[@]}") ;;
     Auto)

@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main, 'v*', 'release/**' ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, 'release/**' ]
   workflow_dispatch:
 
 jobs:
@@ -49,6 +49,29 @@ jobs:
           python3 -V
           node -v
           npm run test:all
+
+  package:
+    name: Python wheel + sdist (Ubuntu, py3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build wheel and sdist
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+
+      - name: Install artifacts away from the checkout
+        run: python scripts/test-python-package.py dist
+
+      - name: Check frozen provenance manifest
+        run: python scripts/check-provenance.py
 
   test-macos:
     name: Unit + E2E (macOS, py3.12, node22)

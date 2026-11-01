@@ -1,0 +1,33 @@
+# dsh-gitea-search Wiki
+
+## rc3：安装、配置与发布边界（2026-11-01）
+
+### 根因与判别方法
+
+| 结论 | 证据 | 适用范围与失效条件 |
+|---|---|---|
+| placeholder owner（例如 `myorg`）不能作为运行时默认值；缺少真实 owner 应 fail closed。 | `test/config-contract.test.mjs:81-90` 覆盖 missing/placeholder；Linux `npm test` 通过（2026-11-01，精确计数见当次 CI/验收记录）。 | v1.2.2-rc3 配置 resolver；若未来引入经认证 API 自动推导 owner，需重审。 |
+| Windows 安装器不能猜 `gts.exe` 路径；必须向当前 Python 查询 scripts 路径并校验身份。 | `scripts/setup-windows.ps1:37-58` 查询 active/user scripts path，并对候选执行 `--help` 身份校验。 | 原生 Windows + setuptools console script；若 launcher 机制更换则失效。 |
+| profile 接入不能默认写 `web` 或同时写全部 profile。 | `scripts/setup-windows.ps1:60-77` 的 `Auto` 只接受唯一候选；`test/profile-patch.test.mjs:18-43` 验证同 id 唯一且 check mode 零写入。 | desktop/web/headless 风格 DSH profile；若 DSH 配置 schema 改变需迁移 patcher。 |
+| MCP 工具前缀不是协议固定格式。 | `docs/TOOL-NAMING.md:3-29` 区分裸名、宿主注册名与 GUI 名，并要求以实际工具表为准。 | 所有 MCP 宿主；具体宿主版本仍须读取实际工具表。 |
+| FTS 文档搜索覆盖默认分支，不等于 bare mirror 的全部 refs。 | `lib/server.mjs:608-618,688-696` 输出 `scope: default-branches` 并给出 `search_gitea` 回退。 | rc3 当前 indexer；未来若实现可配置 ref scope 则需更新。 |
+
+### 反直觉事实
+
+1. **Node 能运行 `.mjs`，不代表 Windows `spawn(path.mjs)` 能运行。** E2E/probe 应通过 `process.execPath` 启动脚本；证据：`scripts/launch-spec.mjs` 与 `test/launch-spec.test.mjs`。
+2. **SQLite 查询本体毫秒级，不代表 MCP 文档搜索端到端毫秒级。** 当前每次调用仍付 Python/jieba 冷启动成本；证据：`lib/server.mjs` tool description 与 `README.md` 性能边界。
+3. **PowerShell 内容是 UTF-8，不代表 PowerShell 5.1 会按 UTF-8 解析。** 含中文的入口脚本仍需 BOM；证据：`test/windows-adapt.test.mjs:146-153` 断言前三字节 `EF BB BF`。
+4. **wheel/sdist 构建成功、甚至 `gts --help` 成功，也不代表安装包可执行真实命令。** argparse 会在配置导入检查前处理 `--help`；`scripts/test-python-package.py` 因此从中立目录进一步验证 config 与 indexer。
+
+### 固定动作序列
+
+1. 构建 Python 发布物时同时生成 wheel 与 sdist；分别安装到隔离 venv，并从源码树外、`PYTHONPATH` 未设置的目录运行三个入口。
+2. `--help` 只能证明 argparse 可启动；还必须跑 `--show-effective-config` 与 `--fts-stats`，才能证明 `config.py` / `indexer.py` 已进入发布物。
+3. profile 注册只能显式选择单个 profile；`Auto` 只在唯一候选时成立，`all` 必须由用户明确选择。
+4. rc3 不实现 all-ref FTS、常驻 jieba worker或自动安装 skill。
+
+### 已排除方案
+
+- rc3 不实现 all-ref FTS：会扩大索引、重复结果、ref 清理与迁移面；保留到 v1.3。
+- rc3 不实现常驻 jieba worker：属于进程生命周期/并发/崩溃恢复结构性变化；保留到 v1.3。
+- 可选 skill 不自动安装、不写 memory：避免覆盖用户内容与隐藏副作用。

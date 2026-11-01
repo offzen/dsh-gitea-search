@@ -1,6 +1,21 @@
 # Release Notes - DeepSeek Harness (DSH) Gitea Search
 
-## v1.2.2-rc2 (Unreleased) — POSIX 回归修复
+## v1.2.2-rc3 (Unreleased) — installation and configuration release blockers
+
+- Establishes the maintainable `release/1.2.x` line on the exact `cff4843` topology bridge; release promotion must reuse identical commit/tree/tag objects.
+- Makes effective configuration observable across MCP/CLI/indexer and rejects missing or placeholder owners.
+- Makes Windows setup PowerShell 5.1 BOM-safe, interpreter-aware, profile-selectable, idempotent, and dry-run capable without restarting DSH.
+- Gives Linux and macOS the same explicit profile-selection contract through the shared idempotent patcher.
+- Uses native temporary paths and Node-aware MCP launchers for Git Bash/Windows E2E.
+- Packages the shared config resolver in wheel and sdist artifacts and verifies all three console aliases from outside the source checkout.
+- Documents the FTS default-branch scope and Python/jieba cold-start contribution to end-to-end latency.
+- Corrects MCP tool naming into server/host/GUI layers and ships an optional, non-auto-installed DSH skill.
+
+Structural all-ref FTS and a persistent jieba worker remain v1.3 work.
+
+---
+
+## v1.2.2-rc2 — POSIX regression fix
 
 ### 版本概述 / Overview
 

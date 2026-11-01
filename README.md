@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/License-Apache--2.0-C21325)](LICENSE)
 [![CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml)
 [![Windows CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/windows-ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions)
-[![Version](https://img.shields.io/badge/Version-v1.2.2--rc2-blue)](RELEASE-NOTES.md)
+[![Version](https://img.shields.io/badge/Version-v1.2.2--rc3-blue)](RELEASE-NOTES.md)
 [![npm](https://img.shields.io/npm/v/dsh-gitea-search?color=red)](https://www.npmjs.com/package/dsh-gitea-search)
 [![Archive](https://img.shields.io/badge/Archive-v0.1.1%20(Pure%20Node)-orange)](https://github.com/offzen/dsh-gitea-search/tree/legacy-0.1.x)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows%20(Native)-brightgreen)](MANUAL.md#3-多场景部署流程)
@@ -19,7 +19,7 @@
 可以将 Gitea 远端托管的**所有仓库以 bare 裸镜像**拉取并维护在宿主机本地，提供**两层极速检索引擎**，并通过标准 Model Context Protocol (MCP) 服务暴露给 DeepSeek Harness (DSH) Agent：
 
 1. **代码检索引擎（git grep）**：跨全量仓库、全部分支、文件路径及提交记录的毫秒级检索；支持多词短语连写 0 命中时自动回退为「同行多词 AND（`--and`）」模式。
-2. **文档与会话全文检索（SQLite FTS5 + jieba 中文分词）**：毫秒级响应，支持 BM25 智能加权与内容类型分区（`doc`、`session`、`config`、`script`），解决 Agent 历史长上下文与排障经验的召回问题。
+2. **文档与会话全文检索（SQLite FTS5 + jieba 中文分词）**：索引每仓默认分支，SQLite warm query 可毫秒级响应，支持 BM25 与内容类型分区；当前 MCP 端到端延迟还包含 Python/jieba 冷启动。非默认分支请用代码搜索后按 `ref` 精读。
 3. **零服务本地快速体验模式 (Zero-Gitea Mode)**：支持将本地任意普通 Git 仓库目录一键裸镜像化并构建倒排索引，无需远端 Gitea 服务即可作为 MCP 检索端点。
 
 ## 不仅省上下文预算，更防模型注意力稀释与失忆
@@ -78,7 +78,7 @@ bin/gts -D --kind doc,script "caddy"  # 按分区过滤：只检索文档与脚�
     - id: mcp-gitea-search
       name: '@deepseek-ai/dsh-mcp-client'
       config:
-        serverName: gitea-search        # 决定暴露给模型的工具名前缀（见下文说明）
+        serverName: gitea-search        # 宿主可能据此生成前缀；实际调用名以工具注册表为准
         transport: stdio                # 必填项：缺失会导致连接静默失败
         command: node
         args: ["/opt/dsh-gitea-search/lib/server.mjs"]
@@ -94,22 +94,21 @@ bin/gts -D --kind doc,script "caddy"  # 按分区过滤：只检索文档与脚�
 
 1. **必须显式声明 `transport: stdio`**：  
    若遗漏此配置项，配置文件 Schema 校验仍会通过，但客户端底层无法建立传输信道，表现为**静默不连接**——没有明确报错，但所有检索工具都不会出现在 Agent 列表中。
-2. **实际调用名带有宿主服务前缀**：  
-   MCP 协议中工具名在服务器内部是局部的，DSH 等客户端为了避免多服务命名冲突，会按 `mcp__<serverName>__<toolName>` 规则映射。  
-   当配置 `serverName: gitea-search` 时，文档检索工具在 Agent 视角的完整调用名为 `mcp__gitea-search__search_gitea_docs`。若在指令中仅写裸名，会被宿主拒绝。原理解析与自检方法详见 **[docs/TOOL-NAMING.md](docs/TOOL-NAMING.md)**。
+2. **区分裸名、宿主注册名与 GUI 显示名**：
+   MCP server 的裸名固定为 `search_gitea` 等；宿主可能加前缀、清洗或重命名，GUI 又可能显示友好中文名。某些 DSH 版本采用 `mcp__<serverName>__<toolName>`，但实际调用名必须以当前宿主工具表为准。详见 **[docs/TOOL-NAMING.md](docs/TOOL-NAMING.md)**。
 
 ---
 
 ## 四个核心工具
 
-当 `serverName` 采用推荐的 `gitea-search` 时，Agent 可直接调用的 4 个标准工具如下：
+MCP server 声明的 4 个裸工具名如下；宿主侧实际注册名需在安装后查看工具表。
 
-| 完整调用名 | 核心能力 | 典型应用场景 |
+| MCP 裸名 | 核心能力 | 典型应用场景 |
 |---|---|---|
-| `mcp__gitea-search__search_gitea` | 跨所有镜像仓检索代码内容 / 文件路径 / 提交信息 | 查找“某个函数、配置项、Dockerfile 在哪定义” |
-| `mcp__gitea-search__search_gitea_docs` | SQLite FTS5 全文检索文档、历史会话、配置、脚本 | 查找“之前的故障排查记录、决策背景与架构设计” |
-| `mcp__gitea-search__read_gitea_file` | 按仓库与相对路径直接读取文件（无需 clone） | 搜索定位到目标后，精确读取上下文内容 |
-| `mcp__gitea-search__list_gitea_repos` | 列出已镜像的全部仓库名（支持通配符过滤） | 盘点仓库资产，或不确定具体仓名时快速探路 |
+| `search_gitea` | 跨所有镜像仓检索代码内容 / 文件路径 / 提交信息 | 查找“某个函数、配置项、Dockerfile 在哪定义” |
+| `search_gitea_docs` | 默认分支上的 SQLite FTS5 文档、会话、配置、脚本检索 | 查找“之前的故障排查记录、决策背景与架构设计” |
+| `read_gitea_file` | 按仓库、相对路径和可选 ref 读取文件 | 搜索定位后精确读取上下文 |
+| `list_gitea_repos` | 列出已镜像仓库名 | 盘点仓库或确认过滤条件 |
 
 **核心实践法则：先定位，再精读。**  
 通过 `search_*` 工具锁定目标文件与关键行号后，再使用 `read_gitea_file` 配合 `limit: 30~50` 进行小窗口切片精读，切忌盲目读取大文件全文。
@@ -133,18 +132,20 @@ bin/gts -D --kind doc,script "caddy"  # 按分区过滤：只检索文档与脚�
 # Linux / macOS
 git clone https://github.com/offzen/dsh-gitea-search.git
 cd dsh-gitea-search
-bash scripts/setup.sh            # macOS 另有 scripts/setup-macos.sh（处理 BSD 差异）
+bash scripts/setup.sh --install-dsh --profile desktop  # 也可选 web/headless；Auto 仅接受唯一候选
+# macOS 使用 scripts/setup-macos.sh 的同名 --install-dsh/--profile 参数
 npm install && pip install jieba
 
 # Windows（PowerShell，管理员非必需）
 git clone https://github.com/offzen/dsh-gitea-search.git
 cd dsh-gitea-search
-powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
+powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-org -WhatIf
+# 复核计划后去掉 -WhatIf；接入 DSH 时再显式加 -RegisterDsh -Profile desktop/web/headless
 ```
 
 > ⚠️ **v1.2.2 早期候选用户请注意**：该版本在 Linux / macOS 上存在路径归一化回归
 > （读取文件名含反斜杠的文件时会静默返回另一个文件的内容）。请直接使用 **v1.2.2-rc2+**，
-> 详见 [CHANGELOG](CHANGELOG.md#122-rc2---unreleased)。
+> 详见 [CHANGELOG](CHANGELOG.md#122-rc2)。
 
 ---
 
@@ -165,7 +166,7 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
 
 - **[docs/USAGE.md](docs/USAGE.md)** —— 四个工具参数速查、真实检索场景示范与防爆窗调用范例（**推荐首读**）
 - **[WINDOWS-PORT.md](WINDOWS-PORT.md)** —— Windows 原生跨平台技术架构、安全护栏设计与移植规范
-- **[docs/TOOL-NAMING.md](docs/TOOL-NAMING.md)** —— MCP 工具名前缀机制深度解析、四种典型冲突失败与命名规范
+- **[docs/TOOL-NAMING.md](docs/TOOL-NAMING.md)** —— MCP 裸名、宿主注册名与 GUI 显示名的三层模型及排查顺序
 - **[MANUAL.md](MANUAL.md)** —— 生产级高可用部署、Cron 定时同步、四层安全护栏机制、参数全表与故障排查手册
 - **[CHANGELOG.md](CHANGELOG.md)** / **[RELEASE-NOTES.md](RELEASE-NOTES.md)** —— 版本演进记录
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** —— 开发者贡献与双向同步准则
