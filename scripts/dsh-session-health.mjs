@@ -370,7 +370,9 @@ async function inspectAndOptionallyFix(dshHome, doFix) {
         } catch { /* ignore if active reader prevents full truncate */ }
       }
       if (db) db.close();
-    } catch { /* sqlite unavailable or locked */ }
+    } catch (error) {
+      sqliteInfo.error = error instanceof Error ? error.message : String(error);
+    }
   }
 
   // 检查宿主 profiles 下是否存在 node_modules/.pnpm 软链拓扑（提醒勿用递归 glob/grep 扫该目录，严禁改动任何 DSH 官方文件）

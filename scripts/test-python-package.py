@@ -22,7 +22,15 @@ WHEEL_SUFFIXES = (
 
 
 def run(args, *, cwd=None, env=None):
-    result = subprocess.run(args, cwd=cwd, env=env, text=True, capture_output=True)
+    result = subprocess.run(
+        args,
+        cwd=cwd,
+        env=env,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+    )
     if result.returncode:
         raise RuntimeError(
             f"command failed ({result.returncode}): {args!r}\n"

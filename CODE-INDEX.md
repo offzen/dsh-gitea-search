@@ -29,7 +29,7 @@
 | `scripts/profile-patch.py` | 备份、原子、幂等修改单个 profile | 写目标与时间戳备份 | 临时 profile unit verified |
 | `scripts/launch-spec.mjs` | Node script / executable launcher 分类；Windows 无扩展名 MCP wrapper 走 Node | 无持久写入 | Linux unit + native Windows MCP smoke verified |
 | `scripts/probe-stdio.mjs` | MCP initialize/tools/list/tools/call 探针 | 临时进程 | Linux E2E verified |
-| `scripts/test-python-package.py` | 从源码树外安装 wheel/sdist 并验证三个入口 | 临时 venv/文件 I/O | 新增；CI gate configured，本机缺 pip/venv 尚未运行 |
+| `scripts/test-python-package.py` | 从源码树外安装 wheel/sdist 并验证三个入口；以 UTF-8 解码子进程输出，避免 Windows locale reader 崩溃 | 临时 venv/文件 I/O | Ubuntu py3.12 hosted verified；Windows py3.12 首轮暴露 locale 缺陷后已最小修复，待新候选 hosted 重验 |
 | `scripts/generate-provenance.py` / `scripts/check-provenance.py` | 从 `git ls-files` 生成/核验非自引用 SHA-256 manifest | 写/读 `PROVENANCE.json` | Linux local gate verified after candidate freeze |
 | `.gitattributes` | 强制 shell/无扩展名入口以 LF 检出 | 无运行负载 | static verified |
 | `scripts/run-e2e-test.sh` | 31 项隔离全链路验收；Windows 路径通过 argv、MCP wrapper 由 Node 启动 | 临时 bare repos/SQLite | Linux 31/31；native Windows 28/28（3 个 POSIX-only 显式 skip）verified |
@@ -37,7 +37,7 @@
 | `scripts/sync.sh` | Gitea bare mirror 同步与索引刷新 | 网络与磁盘写入 | mock API E2E only |
 | `scripts/quickstart-local.sh` | 本地仓快速镜像/建索引 | 写目标目录 | 隔离 E2E verified |
 | `scripts/respawn-mcp.sh` | 重启单个 MCP 子进程 | 影响运行进程 | 本轮未运行，未动生产 |
-| `scripts/dsh-session-health.mjs` | 隔离会话健康检查/迁移 | `--fix` 可写会话/SQLite | mock HOME E2E verified |
+| `scripts/dsh-session-health.mjs` | 隔离会话健康检查/迁移；SQLite fallback 失败时在 JSON 中公开非秘密错误而非静默吞掉 | `--fix` 可写会话/SQLite | Linux mock HOME E2E verified；Windows sqlite3-cli hosted gate 待新候选重验 |
 | `scripts/session-export-incremental.py` | 增量导出会话 Markdown | 写导出目录 | mock HOME dry-run E2E verified |
 
 ## 4. 自动化测试与 CI
@@ -54,7 +54,7 @@
 | `test/windows-lock.test.mjs` | Windows `msvcrt` 锁；非 Windows 跳过 | native Windows verified |
 | `test/windows-quote.test.mjs` | cmd quoting/injection；部分非 Windows 跳过 | native Windows verified |
 | `.github/workflows/ci.yml` | Ubuntu/macOS unit+E2E；独立 wheel/sdist gate | Ubuntu local equivalent verified; macOS remote pending |
-| `.github/workflows/windows-ci.yml` | PE、PS、Windows runtime/CRLF/Git Bash/profile gates | PS5.1/Windows local equivalent partially verified；PS7/hosted runner pending |
+| `.github/workflows/windows-ci.yml` | PE、PS5.1/PS7、Windows runtime/CRLF/Git Bash/profile gates；显式安装 sqlite CLI 并向 Git Bash 传入已安装 gts | 首轮 hosted：4 个 runtime/CRLF jobs success，WhatIf 双壳 success；W5/W6-runtime/W10 暴露三个 gate 缺陷，修复后待新候选重验 |
 
 ## 5. 发布元数据与可选资产
 

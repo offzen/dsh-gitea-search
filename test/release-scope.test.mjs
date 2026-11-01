@@ -11,6 +11,8 @@ const pyproject = fs.readFileSync(new URL('../pyproject.toml', import.meta.url),
 const setupLinux = fs.readFileSync(new URL('../scripts/setup.sh', import.meta.url), 'utf8');
 const setupMac = fs.readFileSync(new URL('../scripts/setup-macos.sh', import.meta.url), 'utf8');
 const setupWindows = fs.readFileSync(new URL('../scripts/setup-windows.ps1', import.meta.url), 'utf8');
+const windowsCi = fs.readFileSync(new URL('../.github/workflows/windows-ci.yml', import.meta.url), 'utf8');
+const packageGate = fs.readFileSync(new URL('../scripts/test-python-package.py', import.meta.url), 'utf8');
 
 test('rc3 version metadata is aligned', () => {
   assert.equal(pkg.version, '1.2.2-rc3');
@@ -46,4 +48,14 @@ test('Python artifacts include every module used by installed gts', () => {
   assert.match(pyproject, /"share\/dsh-gitea-search\/bin"\s*=\s*\["bin\/gts"\]/);
   assert.match(pyproject, /"share\/dsh-gitea-search\/lib"\s*=\s*\[[^\]]*"lib\/indexer\.py"[^\]]*"lib\/config\.py"[^\]]*\]/s);
   assert.equal(fs.existsSync(new URL('../scripts/test-python-package.py', import.meta.url)), true);
+});
+
+test('Windows hosted gates preserve UTF-8 output and native fallback prerequisites', () => {
+  assert.match(packageGate, /encoding="utf-8"/);
+  assert.match(packageGate, /errors="replace"/);
+  assert.match(windowsCi, /foreach \(\$isolatedHome in/);
+  assert.doesNotMatch(windowsCi, /foreach \(\$home in/);
+  assert.match(windowsCi, /choco install sqlite/);
+  assert.match(windowsCi, /GTS_BIN=.*command -v/);
+  assert.match(windowsCi, /export GTS_BIN/);
 });

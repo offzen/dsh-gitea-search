@@ -22,6 +22,9 @@
 6. **Git Bash 里的路径变量可能仍来自 Windows Node/Python。** 把 `C:\\...` 直接插进 Python 源码会触发 `\U` unicode escape；路径必须经 `sys.argv` 传入，而不是拼进 `python -c` 源码。证据：`scripts/run-e2e-test.sh` 的 UTF-8 fixture 与 SQLite 路径均改用 argv，native Windows 已越过 Phase 2/3。
 7. **Windows 可以由 Node 打开无扩展名脚本，但 ESM 动态 import 不能直接吃 `C:\\...` 字符串。** `bin/mcp-server` 先前 `await import(serverScript)` 报 `ERR_UNSUPPORTED_ESM_URL_SCHEME`；必须使用 `new URL('../lib/server.mjs', import.meta.url).href`。`scripts/launch-spec.mjs` 同时负责把无扩展名 MCP wrapper 交给 `process.execPath`。
 8. **MCP server 可启动不代表 search_gitea 走到真实 CLI。** Windows 测试若不显式给隔离 venv 的 `GTS_BIN=<venv>\\Scripts\\gts.exe`，probe 会正确返回“找不到可执行的 gts CLI”，协议绿而搜索判据红；native harness 因而在 Git Bash E2E 期间临时注入该路径，结束后恢复环境。
+9. **CLI 已强制 UTF-8 输出，不代表 Python 测试父进程会按 UTF-8 解码。** 首次 hosted Windows W5 中，`subprocess.run(text=True)` 的 reader 仍按 Windows locale 解码子进程 UTF-8，先在线程抛 `UnicodeDecodeError`，随后 `stdout=None` 引发 `TypeError`；package gate 必须显式使用 `encoding="utf-8", errors="replace"`。证据：private hosted run `41273247111`，W5 step 9。
+10. **PowerShell 变量不区分大小写。** Workflow 的 `foreach ($home ...)` 会尝试覆盖只读自动变量 `$HOME`；应使用 `$isolatedHome`。证据：private hosted run `41273247111`，W6 runtime smoke 明确报 `Cannot overwrite variable HOME`。
+11. **Windows Git Bash 能运行 Node/Python，不等于具备 SQLite CLI fallback 的同构依赖。** W10 首轮因强制 `DSH_FORCE_SQLITE_CLI=1` 而 runner 缺 `sqlite3`，旧 health helper 又静默吞掉异常，最终只表现为 `KeyError: 'engine'`；CI 必须显式安装 sqlite CLI，helper 必须把非秘密错误写入结构化结果。证据：private hosted run `41273247111`，W10 汇总 27 PASS / 1 FAIL。
 
 ### 固定动作序列
 
@@ -29,6 +32,7 @@
 2. `--help` 只能证明 argparse 可启动；还必须跑 `--show-effective-config` 与 `--fts-stats`，才能证明 `config.py` / `indexer.py` 已进入发布物。
 3. profile 注册只能显式选择单个 profile；`Auto` 只在唯一候选时成立，`all` 必须由用户明确选择。自动化或用户环境 smoke 应传 `-DshHome <临时根>`，不得依赖 ambient `DSH_HOME` 误触现役配置。
 4. rc3 不实现 all-ref FTS、常驻 jieba worker或自动安装 skill。
+5. hosted gate 失败先按 job/step 取证：运行日志下载需要 Actions read 权限；若 job-log endpoint 受限，可下载 run-attempt ZIP 并只提取失败 job 的错误上下文，禁止凭 step 名盲修。
 
 ### 已排除方案
 

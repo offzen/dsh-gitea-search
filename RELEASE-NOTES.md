@@ -7,7 +7,7 @@
 - Makes Windows setup PowerShell 5.1 BOM-safe, interpreter-aware, profile-selectable, idempotent, and dry-run capable without restarting DSH.
 - Gives Linux and macOS the same explicit profile-selection contract through the shared idempotent patcher.
 - Uses native temporary paths and Node-aware MCP launchers for Git Bash/Windows E2E.
-- Packages the shared config resolver in wheel and sdist artifacts and verifies all three console aliases from outside the source checkout.
+- Packages the shared config resolver in wheel and sdist artifacts and verifies all three console aliases from outside the source checkout, including explicit UTF-8 decoding on Windows hosted runners.
 - Documents the FTS default-branch scope and Python/jieba cold-start contribution to end-to-end latency.
 - Corrects MCP tool naming into server/host/GUI layers and ships an optional, non-auto-installed DSH skill.
 
