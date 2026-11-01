@@ -25,7 +25,7 @@
 9. **CLI 已强制 UTF-8 输出，不代表 Python 测试父进程会按 UTF-8 解码。** 首次 hosted Windows W5 中，`subprocess.run(text=True)` 的 reader 仍按 Windows locale 解码子进程 UTF-8，先在线程抛 `UnicodeDecodeError`，随后 `stdout=None` 引发 `TypeError`；package gate 必须显式使用 `encoding="utf-8", errors="replace"`。证据：private hosted run `41273247111`，W5 step 9。
 10. **PowerShell 变量不区分大小写。** Workflow 的 `foreach ($home ...)` 会尝试覆盖只读自动变量 `$HOME`；应使用 `$isolatedHome`。证据：private hosted run `41273247111`，W6 runtime smoke 明确报 `Cannot overwrite variable HOME`。
 11. **Windows Git Bash 能运行 Node/Python，不等于具备 SQLite CLI fallback 的同构依赖。** W10 首轮因强制 `DSH_FORCE_SQLITE_CLI=1` 而 runner 缺 `sqlite3`，旧 health helper 又静默吞掉异常，最终只表现为 `KeyError: 'engine'`；CI 必须显式安装 sqlite CLI，helper 必须把非秘密错误写入结构化结果。证据：private hosted run `41273247111`，W10 汇总 27 PASS / 1 FAIL。
-12. **Windows 路径字符串不同不代表文件不同。** Hosted runner 的 `%TEMP%` 参数以 8.3 short path（`RUNNER~1`）进入 CLI，而 Python 解析结果是 long path（`runneradmin`）；package gate 应比较 canonical long path，而非字符串相等。证据：private hosted run `41273989314`，W5 step 9。
+12. **Windows 路径字符串不同不代表文件不同。** Hosted runner 的 `%TEMP%` 参数以 8.3 short path（`RUNNER~1`）进入 CLI，而 Python 解析结果是 long path（`runneradmin`）；`GetLongPathNameW` 对尚不存在的目标目录不会可靠展开，因此 gate 应在创建 mirror 目录后用 `os.path.samefile()` 比较文件标识，而非字符串相等。证据：private hosted runs `41273989314`、`41274376766`，W5 step 9。
 13. **`py -3` 与 Actions `python` 不保证是同一解释器。** setup-python 将 `python.exe` 置于 PATH，但系统 Python Launcher 可能选到另一安装；安装与 `gts.exe` 发现必须绑定同一解释器，优先 active `python`，并从该解释器的 `sys.executable`/distribution 元数据找 launcher。证据：private hosted run `41273989314`，W6 runtime smoke 在 pip 成功后旧探测仍找不到对应 `gts.exe`。
 
 ### 固定动作序列

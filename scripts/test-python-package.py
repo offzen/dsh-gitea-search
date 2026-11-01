@@ -64,25 +64,8 @@ def same_path(left, right):
     if os.name != "nt":
         return left_path.resolve() == right_path.resolve()
     try:
-        import ctypes
-        from ctypes import wintypes
-
-        get_long_path = ctypes.windll.kernel32.GetLongPathNameW
-        get_long_path.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
-        get_long_path.restype = wintypes.DWORD
-
-        def canonical(value):
-            absolute = os.path.abspath(str(value))
-            needed = get_long_path(absolute, None, 0)
-            if not needed:
-                return os.path.normcase(absolute)
-            buffer = ctypes.create_unicode_buffer(needed)
-            if not get_long_path(absolute, buffer, needed):
-                return os.path.normcase(absolute)
-            return os.path.normcase(buffer.value)
-
-        return canonical(left_path) == canonical(right_path)
-    except (AttributeError, OSError):
+        return os.path.samefile(left_path, right_path)
+    except (FileNotFoundError, OSError):
         return os.path.normcase(os.path.abspath(str(left_path))) == os.path.normcase(
             os.path.abspath(str(right_path))
         )
