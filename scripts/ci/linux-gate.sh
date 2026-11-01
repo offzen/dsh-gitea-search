@@ -72,9 +72,12 @@ python3 -c 'import jieba' >/dev/null
 BUILD_ROOT="$SCRATCH/python-build"
 if python3 -c 'import build' >/dev/null 2>&1; then
   python3 -m build --outdir "$BUILD_ROOT/dist"
-else
+elif python3 -m pip --version >/dev/null 2>&1; then
   python3 -m pip wheel --no-deps --no-build-isolation --wheel-dir "$BUILD_ROOT/dist" .
   python3 -m pip download --no-deps --no-build-isolation --no-binary=:all: --dest "$BUILD_ROOT/dist" .
+else
+  echo "python package build tooling is missing (install build or pip)" >&2
+  exit 68
 fi
 python3 scripts/test-python-package.py "$BUILD_ROOT/dist"
 python3 scripts/check-provenance.py
