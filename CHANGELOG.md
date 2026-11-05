@@ -5,10 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.2-rc4] - Unreleased
+## [1.2.2-rc4] - 2026-11-05
+
+Tagged as `v1.2.2-rc4` (annotated tag object `6c4c516`, peeled commit `a78e456`). The tag is immutable; any subsequent correction requires a new `rc5` candidate.
 
 ### Fixed
 - Isolated the Node/Python explicit-config parity test from ambient `GITEA_*` and legacy `GITQ_*` variables, so release smoke remains deterministic when it supplies a valid isolated runtime configuration.
+
+### Release evidence
+- Fresh-clone full smoke on the tag passed all 17 required checks: identity, provenance (`PROVENANCE_OK files=60`), `npm ci`, 50 node tests (46 pass / 0 fail / 4 platform skip), python release-preflight and hosted-receipt suites, wheel + sdist build, `[fts]` jieba, three console scripts, effective-config, reindex against a real bare mirror, FTS stats, Chinese FTS search, doctor, MCP `initialize`/`tools/list` (4 tools), and the rc2→rc4 upgrade path.
+- Windows receipt under the hosted-only contract remains deferred to v1.3; the `github-windows` gate is intentionally unsatisfied for rc4 and the release is promoted with `--allow-partial`.
 
 ## [1.2.2-rc3] - Unreleased
 

@@ -1,10 +1,14 @@
 # Release Notes - DeepSeek Harness (DSH) Gitea Search
 
-## v1.2.2-rc4 (Unreleased) — deterministic isolated release smoke
+## v1.2.2-rc4 (2026-11-05) — deterministic isolated release smoke
 
 - Preserves the rc3 product tree while fixing its explicit-config parity test to remove ambient `GITEA_*` / `GITQ_*` variables symmetrically for the Node and Python resolvers.
 - Prevents a valid isolated mirror/owner configuration supplied by release smoke from overriding the explicit fixture on only the Node side.
 - Requires a new immutable rc4 candidate and tag; the existing rc3 tag remains unchanged.
+
+Release status: annotated tag `v1.2.2-rc4` (`6c4c516` → commit `a78e456`) is identical across local, gitorca, and gitPUB, and the tag passed all 17 fresh-clone smoke checks. The immutable tag cannot be moved; any fix requires `rc5`.
+
+Known gap: the `github-windows` release receipt is not produced. `release-preflight.py` allows only `github-actions-hosted` providers and structurally rejects `vtwsl` / `self-hosted` evidence, while the repository is not published to GitHub — so the hosted Windows jobs cannot run. This is a deliberate contract boundary, deferred to v1.3, not an rc4 defect.
 
 ## v1.2.2-rc3 (Unreleased) — installation and configuration release blockers
 
