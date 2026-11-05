@@ -54,10 +54,19 @@ jobs:
           test ! -e "$GITHUB_WORKSPACE/dsh-gitea-search-gate2-linux.json"
           test -s "$RUNNER_TEMP/dsh-gitea-search-gate2-linux.json"
 
-      - name: Upload gate2 receipt
-        uses: actions/upload-artifact@v4
-        with:
-          name: gate2-linux-${{ github.sha }}
-          path: ${{ runner.temp }}/dsh-gitea-search-gate2-linux.json
-          if-no-files-found: error
-          retention-days: 30
+      - name: Publish gate2 receipt summary
+        # actions/upload-artifact@v4 fails on the Gitea act_runner with
+        # GHESNotSupportedError, which made an otherwise-green gate report
+        # failure (rc4 run 427/150). The Windows lane never used artifacts
+        # either: its evidence contract is job conclusion plus a receipt file
+        # kept outside the tracked tree. Emit the receipt into the job log as
+        # the durable record instead of relying on artifact storage.
+        run: |
+          set -euo pipefail
+          RECEIPT="$RUNNER_TEMP/dsh-gitea-search-gate2-linux.json"
+          test -s "$RECEIPT"
+          echo "gate2 receipt: $RECEIPT"
+          echo "receipt_sha256=$(sha256sum "$RECEIPT" | cut -d' ' -f1)"
+          echo '--- receipt begin ---'
+          cat "$RECEIPT"
+          echo '--- receipt end ---'

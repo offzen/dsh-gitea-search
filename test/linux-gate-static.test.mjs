@@ -15,8 +15,11 @@ test('gate2 workflow is complete Linux authority and binds event exact SHA', () 
   assert.match(workflow, /name: gate2 Linux CI/);
   assert.match(workflow, /runs-on: ubuntu-latest/);
   assert.match(workflow, /scripts\/ci\/linux-gate\.sh "\$\{\{ github\.sha \}\}"/);
-  assert.match(workflow, /actions\/upload-artifact@v4/);
-  assert.match(workflow, /gate2-linux-\$\{\{ github\.sha \}\}/);
+  // upload-artifact@v4 is unsupported by the Gitea act_runner
+  // (GHESNotSupportedError), so the receipt is published into the job log.
+  assert.doesNotMatch(workflow, /^\s*uses:\s*actions\/upload-artifact/m);
+  assert.match(workflow, /receipt_sha256=/);
+  assert.match(workflow, /--- receipt begin ---/);
   assert.doesNotMatch(workflow, /windows-latest|self-hosted|vtwsl/i);
 });
 
