@@ -1,15 +1,15 @@
 {
   "schema": 2,
   "package": "dsh-gitea-search",
-  "generated_at": "2026-11-05T08:12:02+00:00",
-  "source_commit": "5583f0736e4687898b649f534bc82f96356d9df2",
+  "generated_at": "2026-11-05T08:16:00+00:00",
+  "source_commit": "39f56235cbe92284187453d6d0d0085d4dcb1014",
   "source_commit_role": "exact-candidate-commit-or-pending-freeze",
   "source": "https://github.com/offzen/dsh-gitea-search",
   "note": "Tracked-file SHA-256 manifest. PROVENANCE.json is deliberately excluded to avoid self-reference.",
   "file_count": 60,
   "files": {
     ".gitattributes": "351fdc08faefdbb9031610a555dfade2c8006f28eb4c8e4ebdb16304c2dfa7dd",
-    ".gitea/workflows/ci.yml": "45f433657d3fd95df6bb399385422c212f15a370bb7e37ab9ae618188339ea36",
+    ".gitea/workflows/ci.yml": "2906f1d5bc6c04a9ddd6a8bc8aa262f996861187f53089ee6d261ea5cad1f9fe",
     ".github/scripts/write-gate-receipt.py": "770f80d2e510b7c5fe4a15c5309d54375e5bfb0499ec2199a92222a753b36c28",
     ".github/workflows/ci.yml": "4c343f8913952e676e13a9ff501d69792913e1206ff6de85da00e719f20db6b5",
     ".github/workflows/windows-ci.yml": "961d8f97f62b4fb34e1a9c80fcc9322f980f02657d9c2769437a41f362434abc",
