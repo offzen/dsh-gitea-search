@@ -1,8 +1,8 @@
 {
   "schema": 2,
   "package": "dsh-gitea-search",
-  "generated_at": "2026-11-06T16:31:08+00:00",
-  "source_commit": "pending-candidate-freeze",
+  "generated_at": "2026-11-06T17:32:21+00:00",
+  "source_commit": "374a9f996745e959baea213f6a145506c0ae8562",
   "source_commit_role": "exact-candidate-commit-or-pending-freeze",
   "source": "https://github.com/offzen/dsh-gitea-search",
   "note": "Tracked-file SHA-256 manifest. PROVENANCE.json is deliberately excluded to avoid self-reference.",
