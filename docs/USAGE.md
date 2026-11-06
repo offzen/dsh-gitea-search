@@ -1,5 +1,7 @@
 # 使用指南（USAGE）
 
+> 新安装请先读 [`POST-INSTALL.md`](POST-INSTALL.md) 完成镜像、索引与 MCP 验收；能力边界见 [`BOUNDARIES.md`](BOUNDARIES.md)。
+
 > 本文聚焦于**如何高效使用**：四个核心工具的功能定位、入参规范、省上下文调用法则以及真实工作流场景。
 > 生产部署与高可用运维参见 [MANUAL.md](../MANUAL.md)；MCP 工具名前缀机制解析参见 [TOOL-NAMING.md](TOOL-NAMING.md)。
 
@@ -105,7 +107,7 @@
 
 // 步骤 2：精读。针对性读取该文件前 50 行，避免全量输出
 {
-  "name": "read_gitea_file",,
+  "name": "read_gitea_file",
   "arguments": {
     "repo": "cpm-deploy",
     "path": "docker/compose.yml",
@@ -124,7 +126,7 @@
 ```jsonc
 // 检索历史会话导出，快速召回当时的决策和临时绕过命令
 {
-  "name": "search_gitea_docs",,
+  "name": "search_gitea_docs",
   "arguments": {
     "query": "Caddy 证书 429 续期",
     "kind": "session",

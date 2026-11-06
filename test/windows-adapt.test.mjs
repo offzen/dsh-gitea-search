@@ -140,6 +140,7 @@ test('IndexLock Windows 锁区间一致性：_acquire 前必须 seek(0)', () => 
 test('setup-windows.ps1 使用共享 profile patcher，避免手拼 YAML 路径', () => {
   const ps = fs.readFileSync(new URL('../scripts/setup-windows.ps1', import.meta.url), 'utf8');
   assert.match(ps, /profile-patch\.py/, 'setup-windows.ps1 应复用共享 profile patcher');
+  assert.match(fs.readFileSync(new URL('../scripts/profile-patch.py', import.meta.url), 'utf8'), /yaml_path\(gts\)/, 'GTS_BIN must use YAML-safe quoted path rendering');
   assert.doesNotMatch(ps, /Add-Content\s+-Path\s+\$patch/, '不应继续盲目追加重复 YAML block');
 });
 

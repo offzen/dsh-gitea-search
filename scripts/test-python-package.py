@@ -12,12 +12,14 @@ import venv
 import zipfile
 
 ALIASES = ("gts", "gitq", "dsh-search")
-SDIST_SUFFIXES = ("/gts_cli.py", "/bin/gts", "/lib/indexer.py", "/lib/config.py")
+SDIST_SUFFIXES = ("/gts_cli.py", "/bin/gts", "/lib/indexer.py", "/lib/config.py", "/lib/mirror_state.py", "/scripts/sync.sh")
 WHEEL_SUFFIXES = (
     "gts_cli.py",
     ".data/data/share/dsh-gitea-search/bin/gts",
     ".data/data/share/dsh-gitea-search/lib/indexer.py",
     ".data/data/share/dsh-gitea-search/lib/config.py",
+    ".data/data/share/dsh-gitea-search/lib/mirror_state.py",
+    ".data/data/share/dsh-gitea-search/scripts/sync.sh",
 )
 
 

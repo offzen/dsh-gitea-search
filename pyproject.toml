@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dsh-gitea-search"
-version = "1.2.2rc4"
+version = "1.2.2rc5"
 description = "Windows-capable gts launcher for dsh-gitea-search (Gitea/Git mirror hybrid search CLI)"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -41,8 +41,9 @@ py-modules = ["gts_cli"]
 #   （启动器被替换成只有 8 行的 launcher，里面 `from gts_cli import main` 又回到
 #   同一个入口），Windows 上则表现为 gts.exe 是合法 PE 但一跑就 RuntimeError。
 #
-# 现在改放到 gts_cli 专属的数据子目录，避免与 scripts 撞名；定位逻辑见
+# 现在改放到 gts_cli 专属的数据子目录，避免与 console_scripts 撞名；定位逻辑见
 # gts_cli._script_candidates()。
 [tool.setuptools.data-files]
 "share/dsh-gitea-search/bin" = ["bin/gts"]
-"share/dsh-gitea-search/lib" = ["lib/indexer.py", "lib/config.py"]
+"share/dsh-gitea-search/lib" = ["lib/indexer.py", "lib/config.py", "lib/mirror_state.py"]
+"share/dsh-gitea-search/scripts" = ["scripts/sync.sh"]

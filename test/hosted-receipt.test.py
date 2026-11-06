@@ -42,9 +42,10 @@ class HostedReceiptTest(unittest.TestCase):
 
     def run_writer(self, *, repository: str = "offzen/dsh-gitea-search", sha: str | None = None) -> subprocess.CompletedProcess[str]:
         on_windows = sys.platform == "win32"
-        gate = "github-windows" if on_windows else "github-linux"
+        on_macos = sys.platform == "darwin"
+        gate = "github-windows" if on_windows else "github-macos" if on_macos else "github-linux"
         workflow = "windows-ci.yml" if on_windows else "ci.yml"
-        runner_label = "windows-latest" if on_windows else "ubuntu-latest"
+        runner_label = "windows-latest" if on_windows else "macos-latest" if on_macos else "ubuntu-latest"
         env = {
             **os.environ,
             "GITHUB_ACTIONS": "true",
@@ -71,7 +72,8 @@ class HostedReceiptTest(unittest.TestCase):
         data = json.loads((self.temp / "receipt.json").read_text(encoding="utf-8"))
         self.assertEqual(data["commit"], self.sha)
         self.assertEqual(data["provider"], "github-actions-hosted")
-        self.assertEqual(data["gate"], "github-windows" if sys.platform == "win32" else "github-linux")
+        expected_gate = "github-windows" if sys.platform == "win32" else "github-macos" if sys.platform == "darwin" else "github-linux"
+        self.assertEqual(data["gate"], expected_gate)
         self.assertEqual(data["repository"], "offzen/dsh-gitea-search")
 
     def test_rejects_wrong_repository(self) -> None:
@@ -86,9 +88,10 @@ class HostedReceiptTest(unittest.TestCase):
 
     def test_rejects_dispatch_sha_mismatch(self) -> None:
         on_windows = sys.platform == "win32"
-        gate = "github-windows" if on_windows else "github-linux"
+        on_macos = sys.platform == "darwin"
+        gate = "github-windows" if on_windows else "github-macos" if on_macos else "github-linux"
         workflow = "windows-ci.yml" if on_windows else "ci.yml"
-        runner_label = "windows-latest" if on_windows else "ubuntu-latest"
+        runner_label = "windows-latest" if on_windows else "macos-latest" if on_macos else "ubuntu-latest"
         env = {
             **os.environ,
             "GITHUB_ACTIONS": "true",

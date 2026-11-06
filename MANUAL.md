@@ -2,7 +2,7 @@
 
 > 适用范围：`dsh-gitea-search`（本地全量 bare 裸镜像 + **git grep 代码检索 + SQLite FTS5 全文检索** + DSH MCP 检索工具）。  
 > 本文是**正式部署与运维手册**：详细记录系统架构、多环境部署、高可用降级、安全护栏及故障处置方案。  
-> 快速入门见 [`README.md`](README.md)；日常检索实操见 [`docs/USAGE.md`](docs/USAGE.md)；工具名命名机制见 [`docs/TOOL-NAMING.md`](docs/TOOL-NAMING.md)。
+> 快速入门见 [`README.md`](README.md)；安装后 5 分钟自检见 [`docs/POST-INSTALL.md`](docs/POST-INSTALL.md)；日常检索见 [`docs/USAGE.md`](docs/USAGE.md)；范围边界见 [`docs/BOUNDARIES.md`](docs/BOUNDARIES.md)。
 
 ---
 
@@ -103,13 +103,18 @@ bin/gts -D "关键词"
   - `organization:read`（读取组织下仓库列表，可选）
 - 严禁赋予 `repo:write`、`admin` 或任何写入权限，遵循最小特权安全隔离原则。
 
-#### 步骤 3：全量构建 FTS5 检索库
+#### 步骤 3：首次同步与全量构建 FTS5 检索库
+
+在构建索引前先创建本地 bare 镜像。确认 `GITEA_MIRROR_ROOT`、`GITEA_OWNERS` 与凭据后，显式执行：
 
 ```bash
-# 构建全量倒排索引
-python3 lib/indexer.py --build
+bash scripts/sync.sh -q
+```
 
-# 检查四表一致性与索引统计
+同步脚本成功后会自动触发索引构建；不需要再紧接着重复运行 `--build`。Windows 原生 PowerShell 不执行此 Bash 脚本，使用 Git Bash 或既有 Git mirror 流程。详细验收见 [`docs/POST-INSTALL.md`](docs/POST-INSTALL.md)。
+
+```bash
+# 检查四表一致性与索引统计（需要时再执行）
 python3 lib/indexer.py --stats
 ```
 
@@ -352,8 +357,8 @@ $$\text{file\_blobs} == \text{docs\_fts} == \text{doc\_rowid} == (\text{doc\_row
 
 | 故障现象 | 潜在原因 | 排查与处置方法 |
 |---|---|---|
-| **搜索确定推送到远端的内容无命中** | 尚未执行镜像同步或索引刷新 | 手动执行 `scripts/sync.sh` 并运行 `python3 lib/indexer.py --build`。 |
-| **中文关键词检索 0 命中** | FTS5 分词器未构建，或 `jieba` 未正确载入 | 运行 `bin/gts --fts-stats` 检查词元分布；重新执行 `python3 lib/indexer.py --full`。 |
+| **搜索确定推送到远端的内容无命中** | 尚未执行镜像同步或索引刷新 | 从仓库根目录执行 `bash scripts/sync.sh -q`；同步脚本会自动更新索引。按需查看 `gts --doctor --json` 与 `gts --fts-stats`。 |
+| **中文关键词检索 0 命中** | FTS5 分词器未构建，或 `jieba` 未正确载入 | 先看 `gts --doctor --json`、`gts --fts-stats`；确认镜像配置正确后再显式运行 `gts --reindex`。 |
 | **Node.js 运行报错 `Cannot find module 'node:sqlite'`** | Node 版本在 `20.11 ~ 22.14` 且系统未装 `sqlite3` CLI | 运行 `bash scripts/setup.sh` 安装系统 `sqlite3` 命令行，系统将自动回退。 |
 | **macOS 上运行 `sync.sh` 卡在 timeout 管道** | 系统缺少 GNU `timeout` 且 fallback 逻辑受阻塞 | 更新代码至 `v1.2.0`（[PR #2](https://github.com/offzen/dsh-gitea-search/pull/2) 已修复子进程管道阻塞问题）。 |
 | **Windows 报错 `找不到可执行的 gts CLI`** | Windows `CreateProcess` 无法执行无扩展名 shebang 脚本 | 执行 `pip install .` 生成 `Scripts\gts.exe`；或显式指定环境变量 `$env:GTS_BIN="C:\path\to\gts.exe"`。注意严禁带 `"python ..."` 前缀。 |

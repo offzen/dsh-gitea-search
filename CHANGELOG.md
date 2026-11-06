@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2-rc5] - Unreleased
+
+### Added
+- Read-only post-install and MCP stdio diagnostic entry points, plus a five-minute verification guide and user-facing capability boundaries.
+- A non-blocking mirror freshness notice based on recorded successful syncs and clearer CLI failure attribution.
+
+### Fixed
+- Missing-jieba errors no longer masquerade as empty FTS results; repository-filtered zero hits stay a successful empty result.
+- Profile YAML values reject control characters, escape apostrophes, normalize Windows paths and preserve unrelated profile entries.
+- Corrected sync script discovery/failure reporting, wheel packaging of the sync script dependency and Python/Node timestamp parsing parity.
+- Fixed malformed JSON examples and removed the unsupported macOS `--make-demo` hint.
+
+### Documentation
+- Added explicit first-sync, index verification, host reload, rollback, npm/Python installation and support-boundary guidance.
+
 ## [1.2.2-rc4] - 2026-11-05
 
 Tagged as `v1.2.2-rc4` (annotated tag object `6c4c516`, peeled commit `a78e456`). The tag is immutable; any subsequent correction requires a new `rc5` candidate.

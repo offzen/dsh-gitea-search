@@ -15,11 +15,11 @@ const windowsCi = fs.readFileSync(new URL('../.github/workflows/windows-ci.yml',
 const packageGate = fs.readFileSync(new URL('../scripts/test-python-package.py', import.meta.url), 'utf8');
 const provenance = JSON.parse(fs.readFileSync(new URL('../PROVENANCE.json', import.meta.url), 'utf8'));
 
-test('rc4 version metadata is aligned', () => {
-  assert.equal(pkg.version, '1.2.2-rc4');
-  assert.match(pyproject, /version = "1\.2\.2rc4"/);
-  assert.match(server, /version: '1\.2\.2-rc4'/);
-  assert.match(readme, /Version-v1\.2\.2--rc4/);
+test('rc5 version metadata is aligned', () => {
+  assert.equal(pkg.version, '1.2.2-rc5');
+  assert.match(pyproject, /version = "1.2.2rc5"/);
+  assert.match(server, /version: '1.2.2-rc5'/);
+  assert.match(readme, /Version-v1.2.2--rc5/);
 });
 
 test('candidate provenance is frozen to an exact content commit', () => {

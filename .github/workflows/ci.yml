@@ -46,7 +46,7 @@ jobs:
 
       - name: Install Python & Node Dependencies
         run: |
-          pip install jieba
+          pip install jieba PyYAML
           npm install
 
       - name: Run Unit + E2E Test Suite
@@ -106,7 +106,7 @@ jobs:
 
       - name: Install Python & Node Dependencies
         run: |
-          pip install jieba
+          pip install jieba PyYAML
           npm install
 
       - name: Run Unit + E2E Test Suite

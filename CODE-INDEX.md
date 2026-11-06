@@ -1,6 +1,6 @@
 # CODE-INDEX —— dsh-gitea-search 代码正册
 
-> 规则：本仓所有可执行脚本、源码模块、自动化测试与 CI gate 均登记于此；生成缓存与构建输出不属于源码资产。运行证据截至 2026-11-01，原生 Windows/macOS 未运行的项目明确标记为 unverified。
+> 规则：本仓所有可执行脚本、源码模块、自动化测试与 CI gate 均登记于此；生成缓存与构建输出不属于源码资产。运行证据截至 2026-11-07，原生 Windows/macOS 未运行的项目明确标记为 unverified.
 
 ## 1. CLI 与 MCP 入口
 

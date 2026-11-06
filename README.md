@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/License-Apache--2.0-C21325)](LICENSE)
 [![CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml)
 [![Windows CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/windows-ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions)
-[![Version](https://img.shields.io/badge/Version-v1.2.2--rc4-blue)](RELEASE-NOTES.md)
+[![Version](https://img.shields.io/badge/Version-v1.2.2--rc5-blue)](RELEASE-NOTES.md)
 [![npm](https://img.shields.io/npm/v/dsh-gitea-search?color=red)](https://www.npmjs.com/package/dsh-gitea-search)
 [![Archive](https://img.shields.io/badge/Archive-v0.1.1%20(Pure%20Node)-orange)](https://github.com/offzen/dsh-gitea-search/tree/legacy-0.1.x)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows%20(Native)-brightgreen)](MANUAL.md#3-多场景部署流程)
@@ -55,7 +55,7 @@ git clone https://github.com/offzen/dsh-gitea-search.git && cd dsh-gitea-search
 bash scripts/quickstart-local.sh /path/to/your/git-projects
 ```
 
-脚本运行完毕后会直接输出开箱即用的 DSH 配置片段。
+首次接入 Gitea 请使用下方平台安装流程；安装后可用 [`docs/POST-INSTALL.md`](docs/POST-INSTALL.md) 的 5 分钟验收步骤检查镜像、索引与独立 MCP 进程。`quickstart-local.sh` 是本地 demo 演示，不作为 Gitea 首次同步或宿主接入流程。
 
 想直接在终端测试检索效果？命令行门面工具 `bin/gts` 即开即测：
 
@@ -134,7 +134,9 @@ git clone https://github.com/offzen/dsh-gitea-search.git
 cd dsh-gitea-search
 bash scripts/setup.sh --install-dsh --profile desktop  # 也可选 web/headless；Auto 仅接受唯一候选
 # macOS 使用 scripts/setup-macos.sh 的同名 --install-dsh/--profile 参数
-npm install && pip install jieba
+# npm install 只安装 MCP Node SDK，不生成 gts 命令；FTS 中文检索需要 jieba
+npm install --no-audit --no-fund
+python3 -m pip install '.[fts]'
 
 # Windows（PowerShell，管理员非必需）
 git clone https://github.com/offzen/dsh-gitea-search.git
@@ -164,6 +166,8 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-or
 
 ## 文档导航
 
+- **[docs/POST-INSTALL.md](docs/POST-INSTALL.md)** —— 安装后的 5 分钟自检、首次同步、宿主重载与回滚指引
+- **[docs/BOUNDARIES.md](docs/BOUNDARIES.md)** —— 能力覆盖范围与明确不支持事项
 - **[docs/USAGE.md](docs/USAGE.md)** —— 四个工具参数速查、真实检索场景示范与防爆窗调用范例（**推荐首读**）
 - **[WINDOWS-PORT.md](WINDOWS-PORT.md)** —— Windows 原生跨平台技术架构、安全护栏设计与移植规范
 - **[docs/TOOL-NAMING.md](docs/TOOL-NAMING.md)** —— MCP 裸名、宿主注册名与 GUI 显示名的三层模型及排查顺序

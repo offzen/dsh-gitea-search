@@ -58,6 +58,11 @@ try:
 except ImportError:  # packaged layouts import this module through gts_cli
     resolve_config = None
 
+try:
+    from mirror_state import read_sync_state, sync_summary
+except ImportError:
+    read_sync_state = sync_summary = None
+
 
 def get_configured_owners(explicit_owner=None, config_path=None, project_dir=None):
     """获取 effective owners；缺失/占位配置返回空列表，由入口 fail closed。"""
@@ -137,6 +142,22 @@ def pretokenize(text):
         return ' '.join(jb.cut(text))
     except Exception:
         return text
+
+
+def _has_cjk(text):
+    """判断字符串是否含 CJK 字符（U+3400–U+4DBF、U+4E00–U+9FFF、U+F900–U+FAFF）。
+
+    用于 search_fts 在缺 jieba 时区分中英文查询：索引构建期靠 jieba 预切词写入 FTS5，
+    若检索期缺 jieba，中文查询未经切词直接匹配会静默返回 0 命中（MCP 误判为真实无结果），
+    而纯 ASCII 查询本身按 unicode61 分词、不依赖 jieba，可正常检索。
+    """
+    if not text:
+        return False
+    for ch in str(text):
+        cp = ord(ch)
+        if (0x3400 <= cp <= 0x4DBF) or (0x4E00 <= cp <= 0x9FFF) or (0xF900 <= cp <= 0xFAFF):
+            return True
+    return False
 
 
 def classify_kind(path_str):
@@ -914,6 +935,15 @@ def build_fts_query(raw_query):
 
 
 def build_index(mirror_root, owners=None, repo_filter=None, exts=DEFAULT_EXTS, full=False, verbose=True):
+    # 缺 jieba 时默认 fail-closed：若无分词直接建库，中文会被当作整段连续字符写入 FTS5，
+    # 且 repo_heads 仍会记录最新 commit sha，后续即使补装 jieba 增量索引也会因 sha 未变而跳过，
+    # 造成持久化“伪空索引”。仅当显式设 GITQ_ALLOW_NO_JIEBA=1 时才允许降级建英文索引。
+    if _get_jieba() is None and os.environ.get("GITQ_ALLOW_NO_JIEBA") != "1":
+        raise RuntimeError(
+            "DEPENDENCY_MISSING: 构建文档索引需要 jieba 中文分词库，当前 Python 环境未安装"
+            "（pip install jieba 或 apt install python3-jieba；若确认只需英文索引，设 GITQ_ALLOW_NO_JIEBA=1 降级）"
+        )
+
     db_path = get_db_path(mirror_root)
     
     with IndexLock(mirror_root):
@@ -1039,6 +1069,16 @@ def search_fts(mirror_root, query, repo=None, limit=20, kind=None):
     if not os.path.exists(db_path):
         return {"total": 0, "results": [], "error": "索引尚未建立，请先执行 indexer.py 进行索引。"}
 
+    # 缺 jieba 且 query 含 CJK 时必须显式返回 DEPENDENCY_MISSING 错误：
+    # 索引库里的中文已按 jieba 分词后以空格分隔存储，若检索端缺 jieba，pretokenize() 原样返回整串中文，
+    # FTS5 MATCH 会因分词粒度不一致而恒得 total=0 / results=[]，导致 MCP 把“缺依赖”伪装成“真实 0 命中”。
+    # 纯 ASCII 查询不依赖 jieba 切词，保持原样检索。
+    raw_query = (query or "").strip()
+    if _has_cjk(raw_query) and _get_jieba() is None:
+        return {
+            "error": "DEPENDENCY_MISSING: 文档检索需要 jieba 中文分词库，当前 Python 环境未安装（pip install jieba 或 apt install python3-jieba）"
+        }
+
     conn = sqlite3.connect(db_path)
     # 2026-10-21 加固：默认 busy_timeout=0 会让并发写入（每小时 indexer 重建窗口）时
     # 立即抛 "database is locked"。这里给一个有界等待（2000ms），避免瞬时 BUSY 误判，
@@ -1047,7 +1087,6 @@ def search_fts(mirror_root, query, repo=None, limit=20, kind=None):
     cursor = conn.cursor()
 
     # 清洗/规范化 query 为 FTS5 合法表达式
-    raw_query = (query or "").strip()
     clean_query, qtok = build_fts_query(raw_query)
     #
     # 2026-10-21 批次1（索引质量）：
@@ -1435,6 +1474,7 @@ def run_doctor(mirror_root, dsh_home=None, as_json=False):
             fts_health["reasons"].append(f"索引库检查异常: {e}")
 
     dsh_health = inspect_dsh_sessions_health(dsh_home)
+    sync_health = read_sync_state(mirror_root) if read_sync_state else {"status": "unknown", "last_attempt": None, "last_success": None, "invalid_records": []}
     order = {"OK": 0, "WARN": 1, "CRITICAL": 2}
     overall = "OK"
     for st in (fts_health["status"], dsh_health["status"]):
@@ -1445,6 +1485,7 @@ def run_doctor(mirror_root, dsh_home=None, as_json=False):
         "overall_status": overall,
         "fts_index": fts_health,
         "dsh_sessions": dsh_health,
+        "mirror_sync": sync_health,
     }
     if as_json:
         return json.dumps(report, ensure_ascii=False, indent=2)
@@ -1452,6 +1493,7 @@ def run_doctor(mirror_root, dsh_home=None, as_json=False):
     lines = [
         f"=== dsh-gitea-search 健康与 I/O 诊断报告 (Overall: {overall}) ===",
         f"[1] FTS5 索引库 ({fts_health['status']}): {db_path}",
+        f"[2] 镜像同步状态: {sync_summary(sync_health) if sync_summary else '同步状态未知'}",
     ]
     if fts_health["exists"]:
         pm = fts_health.get("probe_metrics", {})
@@ -1469,7 +1511,7 @@ def run_doctor(mirror_root, dsh_home=None, as_json=False):
     for h in fts_health["hints"]:
         lines.append(f"    -> {h}")
 
-    lines.append(f"[2] 宿主 DSH 会话环境 ({dsh_health['status']}): {dsh_health.get('dsh_home') or '未检测到'}")
+    lines.append(f"[3] 宿主 DSH 会话环境 ({dsh_health['status']}): {dsh_health.get('dsh_home') or '未检测到'}")
     if dsh_health["found"]:
         lines.append(
             f"    会话版本分布: {dsh_health['version_counts']} | 旧版 (<v4): {dsh_health['legacy_sessions']} | "

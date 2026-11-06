@@ -12,6 +12,22 @@ from pathlib import Path
 ENTRY_ID = "mcp-gitea-search"
 
 
+def yaml_scalar(value):
+    value = str(value)
+    if any(
+        ord(char) < 0x20 or ord(char) == 0x7F or 0x80 <= ord(char) <= 0x9F
+        or ord(char) in (0x2028, 0x2029, 0xFEFF)
+        for char in value
+    ):
+        raise ValueError("profile values must not contain control characters")
+    return "'" + value.replace("'", "''") + "'"
+
+
+def yaml_path(value):
+    value = str(value).replace("\\", "/") if os.name == "nt" else str(value)
+    return yaml_scalar(value)
+
+
 def render_entry(node, server, gts, mirror, owners, venv=None):
     lines = [
         "- insert:",
@@ -20,16 +36,16 @@ def render_entry(node, server, gts, mirror, owners, venv=None):
         "      config:",
         "        serverName: gitea-search",
         "        transport: stdio",
-        f"        command: '{node}'",
-        f"        args: ['{server}']",
-        f"        cwd: '{Path(server).parent.parent}'",
+        f"        command: {yaml_path(node)}",
+        f"        args: [{yaml_path(server)}]",
+        f"        cwd: {yaml_path(Path(server).parent.parent)}",
         "        env:",
-        f"          GTS_BIN: '{gts}'",
-        f"          GITEA_MIRROR_ROOT: '{mirror}'",
-        f"          GITEA_OWNERS: '{owners}'",
+        f"          GTS_BIN: {yaml_path(gts)}",
+        f"          GITEA_MIRROR_ROOT: {yaml_path(mirror)}",
+        f"          GITEA_OWNERS: {yaml_scalar(owners)}",
     ]
     if venv:
-        lines.append(f"          GITQ_VENV_PATH: '{venv}'")
+        lines.append(f"          GITQ_VENV_PATH: {yaml_path(venv)}")
     return "\n".join(lines) + "\n"
 
 
@@ -37,14 +53,32 @@ def remove_existing(text):
     lines = text.splitlines(keepends=True)
     out = []
     i = 0
+    target = re.compile(r"^( +)- id:\s*['\"]?" + re.escape(ENTRY_ID) + r"['\"]?\s*$")
     while i < len(lines):
         if lines[i].startswith("- insert:"):
             j = i + 1
             while j < len(lines) and not lines[j].startswith("- "):
                 j += 1
-            if any(re.match(r"\s+- id:\s*" + re.escape(ENTRY_ID) + r"\s*$", line) for line in lines[i:j]):
+            block = lines[i:j]
+            if not any(target.match(line) for line in block):
+                out.extend(block)
                 i = j
                 continue
+            kept = [block[0]]
+            k = 1
+            while k < len(block):
+                match = target.match(block[k])
+                if not match:
+                    kept.append(block[k]); k += 1; continue
+                indent = match.group(1)
+                sibling = re.compile(r"^ {1," + str(len(indent)) + r"}- ")
+                k += 1
+                while k < len(block) and not sibling.match(block[k]):
+                    k += 1
+            if any(re.match(r"^ +- ", line) for line in kept[1:]):
+                out.extend(kept)
+            i = j
+            continue
         out.append(lines[i])
         i += 1
     return "".join(out)

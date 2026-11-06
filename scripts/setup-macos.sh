@@ -117,7 +117,7 @@ if [ -d "$MIRROR_ROOT/$OWNERS" ] && [ -n "$(ls -A "$MIRROR_ROOT/$OWNERS" 2>/dev/
   python3 "$ROOT_DIR/lib/indexer.py" --build 2>&1 | tail -2
   echo "✅ 索引完成"
 else
-  echo "⚠️ 镜像目录为空，跳过（先用 scripts/sync.sh 同步 Gitea，或用 --make-demo 建演示库）"
+  echo "⚠️ 镜像目录为空，跳过（先按 docs/POST-INSTALL.md 显式同步；本安装器不支持 --make-demo）"
 fi
 
 cat <<EOF

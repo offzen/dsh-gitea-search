@@ -42,15 +42,19 @@ def _script_candidates():
         #    （刻意避开 <prefix>/bin，那里是 console_scripts 的启动器，撞名会让
         #      gts 自我递归 —— 见 pyproject.toml 的说明）
         os.path.join(data, "share", "dsh-gitea-search", "bin", "gts"),
+        os.path.join(data, "share", "dsh-gitea-search", "scripts", "sync.sh"),
         # ③ sys.prefix 布局（venv / conda 虚拟环境）
         os.path.join(sys.prefix, "share", "dsh-gitea-search", "bin", "gts"),
+        os.path.join(sys.prefix, "share", "dsh-gitea-search", "scripts", "sync.sh"),
     ]
     # ④ pip install --user 布局：数据文件落在 site.USER_BASE 下
     try:
         import site
         user_base = getattr(site, "USER_BASE", None)
         if user_base:
-            cands.append(os.path.join(user_base, "share", "dsh-gitea-search", "bin", "gts"))
+            data_root = os.path.join(user_base, "share", "dsh-gitea-search")
+            cands.append(os.path.join(data_root, "bin", "gts"))
+            cands.append(os.path.join(data_root, "scripts", "sync.sh"))
     except Exception:
         pass
     seen, out = set(), []

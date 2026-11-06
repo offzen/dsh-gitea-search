@@ -1,5 +1,16 @@
 # Release Notes - DeepSeek Harness (DSH) Gitea Search
 
+## v1.2.2-rc5 — installation checks and operational clarity
+
+- Adds explicit post-install verification scripts for POSIX and PowerShell; checks are read-only and never sync, index, edit profiles, or restart DSH.
+- Adds user documentation for the five-minute install check, product boundaries, host reload and rollback.
+- Fixes YAML profile scalar escaping/control rejection and makes Windows paths use forward slashes; retains sibling profile entries and supports existing indentation widths.
+- Adds mirror sync-state interpretation based on successful-sync metadata, timestamp parity and a non-blocking stale warning; never infers freshness from a failed attempt.
+- Improves MCP CLI failure attribution, sync failure reporting and packaging lookup for the sync script.
+- Fixes missing-jieba reporting and filtered zero-hit behavior; updates the macOS installer hint and malformed JSON examples.
+- GitHub hosted receipts and formal GitHub publication remain deferred; no immutable tag is created by this change.
+
+
 ## v1.2.2-rc4 (2026-11-05) — deterministic isolated release smoke
 
 - Preserves the rc3 product tree while fixing its explicit-config parity test to remove ambient `GITEA_*` / `GITQ_*` variables symmetrically for the Node and Python resolvers.

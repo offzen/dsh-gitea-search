@@ -29,6 +29,11 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+try:
+    from mirror_state import read_sync_state, sync_summary
+except ImportError:
+    read_sync_state = sync_summary = None
+
 # 动态探测引入 indexer 模块（用 realpath 解析 /usr/local/bin/gts 软链，支持同级 bin/、上级 gitea-search/ 或 lib/）
 _CUR_DIR = os.path.dirname(os.path.realpath(__file__))
 _SEARCH_PATHS = [
@@ -474,7 +479,7 @@ def main():
     OWNERS = effective["owners"]
     OWNER = ",".join(OWNERS)
     MIRROR = os.path.join(ROOT, OWNERS[0]) if OWNERS else ROOT
-    SYNC = os.path.join(ROOT, "sync.sh")
+    SYNC = os.path.join(os.path.dirname(_CUR_DIR), "scripts", "sync.sh")
     if a.show_effective_config:
         print(json.dumps(effective, ensure_ascii=False, indent=2))
         return
@@ -486,7 +491,9 @@ def main():
             die(f"同步脚本不存在：{SYNC}")
         bash_bin = "/bin/bash" if os.path.exists("/bin/bash") else (shutil.which("bash") or "bash")
         try:
-            subprocess.run([bash_bin, SYNC, "-q"], check=False)
+            sync_result = subprocess.run([bash_bin, SYNC, "-q"], check=False)
+            if sync_result.returncode != 0:
+                die(f"SYNC_FAILED: 同步脚本退出码 {sync_result.returncode}", code=sync_result.returncode or 1)
         except Exception as e:
             die(f"执行同步失败：{e}（Windows 环境建议通过 PowerShell 执行 scripts\\setup-windows.ps1 或 git 镜像拉取）")
 
@@ -507,6 +514,11 @@ def main():
             die("未找到 indexer 模块，无法查看索引统计")
         print(indexer.get_stats(ROOT))
         return
+
+    if a.repos and read_sync_state and sync_summary:
+        state = read_sync_state(ROOT)
+        if state["status"] in {"unrecorded", "invalid", "failed"}:
+            print("镜像同步状态: " + sync_summary(state), file=sys.stderr)
 
     if a.read_path:
         if not a.repo:
@@ -534,10 +546,30 @@ def main():
             die("未找到 indexer 模块，无法执行文档检索")
         if not a.pattern:
             ap.error("使用 -D/--doc 时需要一个搜索模式")
+        # 当用户显式传入 -r/--repo 但镜像中没有任何仓匹配时，属于“范围过滤后 0 命中”而非系统故障。
+        # 若直接进 SQLite 或 die()，要么丢掉“仓名不在镜像”提示，要么无 JSON 输出导致 MCP 报 UNKNOWN_FAILURE。
+        if a.repo and not pick_repos(a.repo):
+            note_msg = "REPO_NOT_IN_MIRROR: 镜像里没有匹配该 -r 的仓；用 gts --repos 查看可用仓名"
+            if a.json:
+                print(json.dumps({
+                    "total": 0,
+                    "results": [],
+                    "repos_hit": 0,
+                    "repos_scanned": 0,
+                    "repo_unmatched": list(a.repo),
+                    "note": note_msg,
+                }, ensure_ascii=False, indent=1))
+            else:
+                print("REPO_NOT_IN_MIRROR: 镜像里没有匹配该 -r 的仓（--repos 查看镜像里有哪些仓）")
+            sys.exit(0)
         repo_filter = ",".join(a.repo) if a.repo else None
         res = indexer.search_fts(ROOT, a.pattern, repo=repo_filter, limit=a.max, kind=a.kind)
         if a.json:
+            # JSON 模式下仍将含 error 的结构打到 stdout，但以 rc=1 退出：
+            # MCP server.mjs 依赖 stdout JSON 解析 + 非零退出码双信号走 failureResult 归因（如 DEPENDENCY_MISSING）。
             print(json.dumps(res, ensure_ascii=False, indent=1))
+            if "error" in res:
+                sys.exit(1)
         else:
             if "error" in res:
                 die(res["error"])
@@ -564,6 +596,22 @@ def main():
 
     repos = pick_repos(a.repo)
     if not repos:
+        # 显式给了 -r/--repo 但没有任何镜像仓匹配时，遵守“0 命中不是失败”契约返回 rc=0 与结构化提示，
+        # 避免 die() 只写 stderr 无 JSON 导致上层 MCP 解析失败误报 UNKNOWN_FAILURE。
+        if a.repo:
+            note_msg = "REPO_NOT_IN_MIRROR: 镜像里没有匹配该 -r 的仓；用 gts --repos 查看可用仓名"
+            if a.json:
+                print(json.dumps({
+                    "total": 0,
+                    "results": [],
+                    "repos_hit": 0,
+                    "repos_scanned": 0,
+                    "repo_unmatched": list(a.repo),
+                    "note": note_msg,
+                }, ensure_ascii=False, indent=1))
+            else:
+                print("REPO_NOT_IN_MIRROR: 镜像里没有匹配该 -r 的仓（--repos 查看镜像里有哪些仓）")
+            sys.exit(0)
         die("没有匹配的仓（--repos 看看有哪些）", 1)
 
     t0 = time.time()
