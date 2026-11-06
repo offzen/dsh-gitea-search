@@ -499,6 +499,7 @@ assert_ok "Node <22.15 兼容模式回退验证 (DSH_FORCE_ZSTD_CLI=1 DSH_FORCE_
   "DSH_FORCE_ZSTD_CLI=1 DSH_FORCE_SQLITE_CLI=1 DSH_PERSISTENCE_MODULE=/nonexistent node \"$HEALTH_SCRIPT\" --fix --dsh-home \"$MOCK_DSH_FALLBACK\" --json | python3 -c 'import sys,json; d=json.load(sys.stdin); assert d[\"status\"]==\"OK\" and d[\"sessions\"][\"migrated\"]==1 and d[\"sqlite\"].get(\"error\") is None, d[\"sqlite\"].get(\"error\"); assert d[\"sqlite\"].get(\"engine\")==\"sqlite3-cli\" and d[\"sqlite\"][\"long_revisions\"]==0'"
 
 # 回归验证：当 GITEA_MIRROR_ROOT / GITEA_OWNERS 为未初始化占位符（0 镜像仓）时，server.mjs 显式输出空镜像告警而非静默 0 命中
+mkdir -p "$MIRROR_ROOT/empty-placeholder/test-owner"
 EMPTY_MIRROR_TEST=$(GITEA_MIRROR_ROOT="$MIRROR_ROOT/empty-placeholder" GITEA_OWNERS="test-owner" GITQ_MIRROR_ROOT="$MIRROR_ROOT/empty-placeholder" GITQ_OWNER="test-owner" node - "$MCP_BIN" << 'EOF'
 import { spawn } from 'node:child_process';
 import path from 'node:path';

@@ -24,11 +24,14 @@ def yaml_scalar(value):
 
 
 def yaml_path(value):
-    value = str(value).replace("\\", "/") if os.name == "nt" else str(value)
+    value = str(value)
+    if os.name == "nt" or re.match(r"^[A-Za-z]:[\\\\/]", value):
+        value = value.replace("\\", "/")
     return yaml_scalar(value)
 
 
 def render_entry(node, server, gts, mirror, owners, venv=None):
+    server_path = Path(server.replace("\\", "/") if re.match(r"^[A-Za-z]:[\\\\/]", server) else server)
     lines = [
         "- insert:",
         f"    - id: {ENTRY_ID}",
@@ -38,7 +41,7 @@ def render_entry(node, server, gts, mirror, owners, venv=None):
         "        transport: stdio",
         f"        command: {yaml_path(node)}",
         f"        args: [{yaml_path(server)}]",
-        f"        cwd: {yaml_path(Path(server).parent.parent)}",
+        f"        cwd: {yaml_path(server_path.parent.parent)}",
         "        env:",
         f"          GTS_BIN: {yaml_path(gts)}",
         f"          GITEA_MIRROR_ROOT: {yaml_path(mirror)}",
