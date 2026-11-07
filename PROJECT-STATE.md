@@ -17,7 +17,7 @@ The release baseline is a role, not a branch named `main`; private branch names 
 
 - Product identity: npm/MCP `1.2.2`; Python `1.2.2`.
 - Development follows the public `v1.2.1` / `main` first-parent line. The historical rc2 tree entered through a two-parent bridge and is an imported content ancestor, not the current development baseline.
-- The stable content line starts from the reviewed rc7 successor `fe2723d27aff7970683036caeb8bdace4d936c30`, adds the missing Windows full-suite PyYAML dependency, and updates stable-version metadata. Its direct-child provenance commit records the exact content commit in `PROVENANCE.json`.
+- The stable content line starts from the reviewed rc7 successor, adds the missing Windows full-suite PyYAML dependency, and updates stable-version metadata. Its direct-child provenance commit records the exact content commit in `PROVENANCE.json`; private commit coordinates remain in the private release ledger.
 - Evidence from earlier rc candidates is historical only and must not be reused for the stable exact P.
 
 ## Tracked-tree review
