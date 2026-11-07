@@ -6,6 +6,7 @@ import json
 import os
 import pathlib
 import shutil
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -33,15 +34,14 @@ class LinuxGateContextTest(unittest.TestCase):
         self.git("commit", "-qm", "fixture")
         self.sha = self.git("rev-parse", "HEAD").strip()
         self.event = self.temp / "event.json"
-        self.fake_bin = self.temp / "bin"
-        self.fake_bin.mkdir()
-        fake_npm = self.fake_bin / "npm"
-        fake_npm.write_text("#!/bin/sh\nexit 42\n", encoding="utf-8")
-        fake_npm.chmod(0o755)
         self.write_event()
 
     def tearDown(self) -> None:
-        shutil.rmtree(self.temp)
+        def make_writable(function, path, _exc_info):  # noqa: ANN001
+            os.chmod(path, stat.S_IRWXU)
+            function(path)
+
+        shutil.rmtree(self.temp, onerror=make_writable)
 
     def git(self, *args: str) -> str:
         return subprocess.run(
@@ -94,15 +94,17 @@ class LinuxGateContextTest(unittest.TestCase):
     def test_gitea_derivation_passes_context_then_reaches_build(self) -> None:
         # With a valid Gitea context, identity resolution must pass. A stub npm then stops the
         # gate immediately after identity resolution, proving it reached the build phase.
-        env = self.environment(PATH=f"{self.fake_bin}:/usr/bin:/bin")
+        env = self.environment(**{"BASH_FUNC_npm%%": "() {  return 42\n}"})
         result = self.run_gate(env)
         self.assertEqual(result.returncode, 42, result.stderr)
         self.assertNotIn("event payload does not match", result.stderr)
 
     def test_native_workflow_ref_remains_exact(self) -> None:
         expected = "zaoz/dsh-gitea-search/.gitea/workflows/ci.yml@refs/heads/rc/test"
-        env = self.environment(GITHUB_WORKFLOW_REF=expected,
-                               PATH=f"{self.fake_bin}:/usr/bin:/bin")
+        env = self.environment(
+            GITHUB_WORKFLOW_REF=expected,
+            **{"BASH_FUNC_npm%%": "() {  return 42\n}"},
+        )
         result = self.run_gate(env)
         self.assertEqual(result.returncode, 42, result.stderr)
 
