@@ -8,7 +8,8 @@
 - Adds mirror sync-state interpretation based on successful-sync metadata, timestamp parity and a non-blocking stale warning; never infers freshness from a failed attempt.
 - Improves MCP CLI failure attribution, sync failure reporting and packaging lookup for the sync script.
 - Fixes missing-jieba reporting and filtered zero-hit behavior; updates the macOS installer hint and malformed JSON examples.
-- GitHub hosted receipts and formal GitHub publication remain deferred; no immutable tag is created by this change.
+- Fixes a receipt-test assumption that the runner is Linux, which failed the macOS hosted gate; the test now selects the gate matching the current platform.
+- Hosted GitHub receipt collection for Linux, macOS and Windows is part of this candidate's gate set; no immutable tag is created by this change.
 
 
 ## v1.2.2-rc4 (2026-11-05) — deterministic isolated release smoke

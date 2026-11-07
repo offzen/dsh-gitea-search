@@ -16,9 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Profile YAML values reject control characters, escape apostrophes, normalize Windows paths and preserve unrelated profile entries.
 - Corrected sync script discovery/failure reporting, wheel packaging of the sync script dependency and Python/Node timestamp parsing parity.
 - Fixed malformed JSON examples and removed the unsupported macOS `--make-demo` hint.
+- Fixed a hosted-receipt test that assumed a Linux runner, which made the macOS gate fail before reaching its assertion; the test now derives the gate from the running platform.
 
 ### Documentation
 - Added explicit first-sync, index verification, host reload, rollback, npm/Python installation and support-boundary guidance.
+- Documented the four-receipt gate set (gate2 Linux, hosted GitHub Linux/macOS/Windows) for this candidate.
 
 ## [1.2.2-rc4] - 2026-11-05
 

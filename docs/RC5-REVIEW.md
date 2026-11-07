@@ -6,7 +6,7 @@ This review note is a development-branch record; it is deliberately not part of 
 
 ## Scope and sequence
 
-Reviewed the requested code index and complete local diff in `/root/dev-10/dsh-gitea-search-rc5`. Made one minimal correction: removed a stray empty YAML insert block when replacing the sole `mcp-gitea-search` entry; added a regression assertion for the existing-entry-only case. The first broad test run exposed this issue, and the corrected regression suite passes.
+Reviewed the requested code index and complete local diff in the local rc5 worktree. Made one minimal correction: removed a stray empty YAML insert block when replacing the sole `mcp-gitea-search` entry; added a regression assertion for the existing-entry-only case. The first broad test run exposed this issue, and the corrected regression suite passes.
 
 Historical pre-correction D = `ca71c7f31f3a238d2e7eb694051ca8eeda7363cd` (`feat(rc5): add install diagnostics and mirror state`).
 Historical pre-correction P = `4c6b5cba4dec4672f679d0a8172e9737b0b5500a` (`chore(rc5): bind provenance to content D`).

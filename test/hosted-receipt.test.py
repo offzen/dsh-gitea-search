@@ -112,10 +112,14 @@ class HostedReceiptTest(unittest.TestCase):
         self.assertIn("exact_sha does not match", result.stderr)
 
     def test_rejects_wrong_workflow_identity(self) -> None:
+        # The receipt writer checks the platform before the workflow identity, so the
+        # gate under test must match the platform this suite runs on — otherwise the
+        # run fails with "gate/platform mismatch" and never reaches the assertion.
         on_windows = sys.platform == "win32"
-        gate = "github-windows" if on_windows else "github-linux"
+        on_macos = sys.platform == "darwin"
+        gate = "github-windows" if on_windows else "github-macos" if on_macos else "github-linux"
         wrong_workflow = "ci.yml" if on_windows else "windows-ci.yml"
-        runner_label = "windows-latest" if on_windows else "ubuntu-latest"
+        runner_label = "windows-latest" if on_windows else "macos-latest" if on_macos else "ubuntu-latest"
         env = {
             **os.environ,
             "GITHUB_ACTIONS": "true",
