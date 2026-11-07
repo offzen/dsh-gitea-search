@@ -41,16 +41,58 @@ if [[ -n "$(git_safe status --porcelain --ignored)" ]]; then
   exit 66
 fi
 
-# rc7 A3: workflow identity comes from the measured environment, never from constants. On a
-# forge (RUN_ID != local-offline) the expected workflow_ref is recomputed here from
-# repository + workflow path + ref and must equal GITHUB_WORKFLOW_REF exactly.
+# rc7 A3: workflow identity comes from the measured forge context. GitHub supplies
+# GITHUB_WORKFLOW_REF and it must match exactly. Gitea's documented Actions variable contract
+# does not supply that variable, so gate2 derives the same canonical value only after its
+# independent repository/ref/SHA/event payload agrees with the runner environment.
 RUN_ID="${GITHUB_RUN_ID:-local-offline}"
 GATE_WORKFLOW=".gitea/workflows/ci.yml"
 WORKFLOW_REF="${GITHUB_WORKFLOW_REF:-}"
+WORKFLOW_REF_SOURCE="native"
 RUN_ATTEMPT="${GITHUB_RUN_ATTEMPT:-}"
 if [[ "$RUN_ID" != "local-offline" ]]; then
   EXPECTED_WORKFLOW_REF="${GITHUB_REPOSITORY:-}/${GATE_WORKFLOW}@${GITHUB_REF:-}"
-  if [[ -z "${GITHUB_REPOSITORY:-}" || -z "${GITHUB_REF:-}" || "$WORKFLOW_REF" != "$EXPECTED_WORKFLOW_REF" ]]; then
+  if [[ "${GITEA_ACTIONS:-}" != "true" || "${GITHUB_ACTIONS:-}" != "true" ]]; then
+    echo "gate2 requires the Gitea Actions forge markers" >&2
+    exit 69
+  fi
+  if [[ -z "${GITHUB_REPOSITORY:-}" || -z "${GITHUB_REF:-}" || -z "${GITHUB_SHA:-}" || -z "${GITHUB_EVENT_NAME:-}" || "${GITHUB_WORKFLOW:-}" != "gate2 Linux CI" ]]; then
+    echo "forge repository/ref/SHA/event/workflow identity is incomplete" >&2
+    exit 69
+  fi
+  if [[ "$GITHUB_SHA" != "$ACTUAL_SHA" ]]; then
+    echo "GITHUB_SHA does not match checkout HEAD" >&2
+    exit 69
+  fi
+  if ! python3 - "${GITHUB_EVENT_PATH:-}" "$GITHUB_EVENT_NAME" "$GITHUB_REPOSITORY" "$GITHUB_REF" "$ACTUAL_SHA" <<'PY'
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1]) if sys.argv[1] else None
+event_name, repository, ref, actual = sys.argv[2:]
+try:
+    event = json.loads(path.read_text(encoding="utf-8")) if path and path.is_file() and not path.is_symlink() else {}
+except (OSError, json.JSONDecodeError):
+    event = {}
+repo = event.get("repository") if isinstance(event, dict) else None
+repo = repo if isinstance(repo, dict) else {}
+ok = repo.get("full_name") == repository
+if event_name == "push":
+    ok = ok and event.get("ref") == ref and event.get("after") == actual
+elif event_name == "workflow_dispatch":
+    ok = ok and event.get("ref") == ref and event.get("after") in (None, "", actual)
+elif event_name == "pull_request":
+    ok = ok and isinstance(event.get("pull_request"), dict)
+else:
+    ok = False
+raise SystemExit(0 if ok else 1)
+PY
+  then
+    echo "Gitea event payload does not match repository/ref/checkout identity" >&2
+    exit 69
+  fi
+  if [[ -z "$WORKFLOW_REF" ]]; then
+    WORKFLOW_REF="$EXPECTED_WORKFLOW_REF"
+    WORKFLOW_REF_SOURCE="gitea-derived"
+  elif [[ "$WORKFLOW_REF" != "$EXPECTED_WORKFLOW_REF" ]]; then
     echo "GITHUB_WORKFLOW_REF '$WORKFLOW_REF' does not equal the computed '$EXPECTED_WORKFLOW_REF'" >&2
     exit 69
   fi
@@ -62,6 +104,7 @@ else
   # Offline run: there is no forge identity to measure. Such a receipt is rejected by the
   # verifier (provider=local-offline); the placeholders only keep the JSON well-formed.
   WORKFLOW_REF="offline"
+  WORKFLOW_REF_SOURCE="offline"
   RUN_ATTEMPT=0
 fi
 
@@ -148,7 +191,7 @@ export GATE_ACTUAL_SHA="$ACTUAL_SHA" GATE_TREE_SHA="$TREE_SHA"
 export GATE_STARTED_AT="$STARTED_AT" GATE_ENDED_AT="$ENDED_AT"
 export GATE_NODE_VERSION="$NODE_VERSION" GATE_NPM_VERSION="$NPM_VERSION"
 export GATE_PYTHON_VERSION="$PYTHON_VERSION" GATE_GIT_VERSION="$GIT_VERSION"
-export GATE_RUN_ID="$RUN_ID" GATE_WORKFLOW_REF="$WORKFLOW_REF" GATE_RUN_ATTEMPT="$RUN_ATTEMPT"
+export GATE_RUN_ID="$RUN_ID" GATE_WORKFLOW_REF="$WORKFLOW_REF" GATE_WORKFLOW_REF_SOURCE="$WORKFLOW_REF_SOURCE" GATE_RUN_ATTEMPT="$RUN_ATTEMPT"
 export GATE_ROOT_DIR="$ROOT_DIR" GATE_WORKFLOW="$GATE_WORKFLOW"
 export GATE_TEST_COUNTS="$TEST_COUNTS"
 export GATE_EVENT="${GITHUB_EVENT_NAME:-workflow_dispatch}"
@@ -211,6 +254,7 @@ receipt = {
     "run_id": os.environ["GATE_RUN_ID"],
     "workflow": os.environ["GATE_WORKFLOW"],
     "workflow_ref": os.environ["GATE_WORKFLOW_REF"],
+    "workflow_ref_source": os.environ["GATE_WORKFLOW_REF_SOURCE"],
     "run_attempt": int(os.environ["GATE_RUN_ATTEMPT"]),
     "event": os.environ["GATE_EVENT"],
     "ref": os.environ["GATE_REF"],
@@ -234,7 +278,7 @@ receipt = {
         "git-diff-check",
         "test-counts-floors",
         "clean-checkout-incl-ignored-at-start",
-        "workflow-ref-recomputed",
+        "workflow-ref-native-or-gitea-event-derived",
     ],
 }
 path = pathlib.Path(sys.argv[1])

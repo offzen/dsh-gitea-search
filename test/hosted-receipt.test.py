@@ -17,11 +17,11 @@ GOOD_COUNTS = {
     "schema": 2,
     "reporter": "tap",
     "node": {"total": 74, "pass": 70, "fail": 0, "cancelled": 0, "skipped": 4, "todo": 0},
-    "python": [{"suite": f"suite-{i}", "ran": True, "ok": True, "tests": 1} for i in range(9)],
+    "python": [{"suite": f"suite-{i}", "ran": True, "ok": True, "tests": 1} for i in range(10)],
     "e2e": {"pass": 31, "fail": 0},
     "node_total": 74, "node_pass": 70, "node_fail": 0,
     "node_cancelled": 0, "node_skipped": 4, "node_todo": 0,
-    "python_suites": 9, "node_ok": True, "python_ok": True, "e2e_ok": True,
+    "python_suites": 10, "node_ok": True, "python_ok": True, "e2e_ok": True,
 }
 
 

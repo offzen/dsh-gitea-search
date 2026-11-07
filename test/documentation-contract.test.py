@@ -39,12 +39,13 @@ class DocumentationContractTest(unittest.TestCase):
         guide = self.read("CODE-INDEX.md")
         counter = self.read("scripts/collect-test-counts.py")
         gate2 = self.read(".gitea/workflows/ci.yml")
-        for suite in ("dependency-missing", "profile-yaml", "repo-zero-hit", "documentation-contract"):
+        for suite in ("linux-gate-context", "dependency-missing", "profile-yaml", "repo-zero-hit", "documentation-contract"):
             with self.subTest(suite=suite):
                 self.assertIn(f"test/{suite}.test.py", package)
                 self.assertIn(f"test/{suite}.test.py", counter)
         self.assertIn("依赖 PyYAML，缺失时门禁失败", guide)
         self.assertIn("--upgrade build jieba PyYAML", gate2)
+        self.assertIn("Gitea does not provide that GitHub-only variable", self.read("docs/DEVELOPMENT-AND-RELEASE.md"))
 
 
 if __name__ == "__main__":

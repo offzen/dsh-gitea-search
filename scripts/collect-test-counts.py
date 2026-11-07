@@ -68,6 +68,7 @@ PYTHON_SUITES = (
     "test/collect-test-counts.test.py",
     "test/fetch-remote-evidence.test.py",
     "test/workflow-contract.test.py",
+    "test/linux-gate-context.test.py",
     "test/dependency-missing.test.py",
     "test/profile-yaml.test.py",
     "test/repo-zero-hit.test.py",

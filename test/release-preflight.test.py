@@ -96,7 +96,7 @@ class ReleasePreflightTest(unittest.TestCase):
     def counts(self, gate: str) -> dict:
         return {
             "node_total": 74, "node_pass": 70, "node_fail": 0, "node_cancelled": 0,
-            "node_skipped": 4, "node_todo": 0, "python_suites": 9,
+            "node_skipped": 4, "node_todo": 0, "python_suites": 10,
             "e2e": 0 if gate == "github-windows" else 31,
         }
 
@@ -140,6 +140,7 @@ class ReleasePreflightTest(unittest.TestCase):
             })
         else:
             result["trust"] = "same-party"
+            result["workflow_ref_source"] = "gitea-derived"
         return result
 
     def evidence(self, gate: str, artifact_digest: str | None) -> dict:
@@ -222,6 +223,7 @@ class ReleasePreflightTest(unittest.TestCase):
             ("github-linux.json", lambda d: d.update(commit="0" * 40), "exact P mismatch"),
             ("github-macos.json", lambda d: d.update(workflow_ref="offzen/dsh-gitea-search/.github/workflows/ci.yml@refs/heads/evil"), "workflow_ref ref"),
             ("gate2-linux.json", lambda d: d.update(repository="offzen/dsh-gitea-search"), "repository mismatch"),
+            ("gate2-linux.json", lambda d: d.update(workflow_ref_source="untrusted-fallback"), "workflow_ref_source"),
         ]
         for name, mutation, message in cases:
             with self.subTest(name=name):

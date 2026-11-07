@@ -34,6 +34,10 @@ test('Linux gate strips ambient aliases and fails closed on reused receipt paths
   assert.match(gate, /receipt path already exists; use a new path/);
   assert.match(gate, /\[\[ -e "\$RECEIPT_PATH" \|\| -L "\$RECEIPT_PATH" \]\]/);
   assert.match(gate, /"gate": "gate2-linux"/);
+  assert.match(gate, /GITEA_ACTIONS:-.*!= "true"/);
+  assert.match(gate, /GITHUB_WORKFLOW:-.*gate2 Linux CI/);
+  assert.match(gate, /Gitea event payload does not match repository\/ref\/checkout identity/);
+  assert.match(gate, /"workflow_ref_source": os\.environ\["GATE_WORKFLOW_REF_SOURCE"\]/);
 });
 
 test('release preflight accepts only hosted clean Windows evidence', () => {

@@ -18,7 +18,7 @@ The release baseline is a ref role, not the branch name `main`: gitorca/gitpub `
 - Product identity: npm `1.2.2-rc7`; Python `1.2.2rc7`.
 - Previous private baseline: rc6 P `7fd7a8b33c3cc625ba91cb764c1e5b388db5c59c`; annotated private tag `v1.2.2-rc6` peels to that commit.
 - The original local rc7 pair (`D=7c1376a…`, `P=e20b37c…`) completed its 2026-11-07 local test set, but this tree review found documentation drift and three Python tests outside the default gate. The hygiene tree tested locally with Node 125 (121 pass, 4 Windows-only skips), nine Python suites (49 tests) and E2E 31/31 before the new freeze; exact-P retesting remains required.
-- The hygiene change requires a **new D/P pair** before private prerelease. Old rc7 receipts or local exact-P evidence must not be reused for the new P.
+- The first private rc7 P (`8183902…`) is preserved with its red gitorca/gitpub runs: both runners omitted the GitHub-only `GITHUB_WORKFLOW_REF`. The dual-forge gate compatibility fix requires another **new D/P pair** and a suffix candidate; old rc7 receipts or local exact-P evidence must not be reused.
 
 ## Tracked-tree review
 

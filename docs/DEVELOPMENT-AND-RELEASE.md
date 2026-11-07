@@ -45,7 +45,7 @@ A fully checked candidate needs four **receipt schema 3** documents:
 - `github-macos`;
 - `github-windows`.
 
-Each receipt binds exact P/tree, repository, workflow, event/ref/run attempt, measured runner/toolchain fields, `needs` outcomes, schema-2 test counts and SHA-256 of the counter plus the actual receipt writer.
+Each receipt binds exact P/tree, repository, workflow, event/ref/run attempt, measured runner/toolchain fields, `needs` outcomes, schema-2 test counts and SHA-256 of the counter plus the actual receipt writer. GitHub receipt writers require the native `GITHUB_WORKFLOW_REF` exactly. Gitea does not provide that GitHub-only variable; gate2 derives the identical canonical value only under `GITEA_ACTIONS=true` after the Gitea event payload independently agrees with repository, ref and exact checkout SHA, and records `workflow_ref_source` in the receipt.
 
 It also needs four **remote evidence schema 2** documents produced by `scripts/fetch-remote-evidence.py`. Evidence deep-checks the forge's complete job listing, required job names and conclusions, run/ref/workflow identity, freshness and hosted-runner signals. For GitHub gates, the downloaded artifact zip must match the forge-recorded digest and contain the byte-identical receipt and test-count data. Gate2 is explicitly recorded as having no forge artifact digest.
 

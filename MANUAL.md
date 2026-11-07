@@ -421,7 +421,7 @@ npm run test:all  # 两者都跑（CI 使用的完整组合）
 
 ### 9.4 候选维护与发布前核对
 
-默认 `npm run test:all` 由三层组成：Node 自动发现、九个显式 Python 合约/回归文件、31 项 E2E。`scripts/collect-test-counts.py` 在 receipt job 内重新执行同一测试面并生成 schema-2 计数；不要用“外层 job 绿”代替实测计数。`test/profile-yaml.test.py` 需要 PyYAML；若缺少该依赖，默认测试及 receipt counter 必须失败而不是跳过；gate2/hosted receipt jobs 显式安装 PyYAML 后执行完整断言。
+默认 `npm run test:all` 由三层组成：Node 自动发现、十个显式 Python 合约/回归文件（含双 forge gate-context 负向合同）、31 项 E2E。`scripts/collect-test-counts.py` 在 receipt job 内重新执行同一测试面并生成 schema-2 计数；不要用“外层 job 绿”代替实测计数。`test/profile-yaml.test.py` 需要 PyYAML；若缺少该依赖，默认测试及 receipt counter 必须失败而不是跳过；gate2/hosted receipt jobs 显式安装 PyYAML 后执行完整断言。
 
 候选采用 D/P 双提交：
 

@@ -16,8 +16,9 @@
   restore mirror-state diagnostics, and correctly classify process timeouts.
 - Trust statement: this raises the cost of false-green evidence but remains
   `trust_ceiling: same-party`; it is not an independent or unforgeable attestation.
-- The rc7 hygiene pass connects all nine Python contract/regression files to the
-  default test/receipt chain, provisions PyYAML on gate2, rejects skipped suites in
+- The rc7 chain now connects all ten Python contract/regression files, including the
+  dual-forge gate-context negative suite, to the default test/receipt chain, provisions
+  PyYAML on gate2, rejects skipped suites in
   the receipt counter, refreshes release/Windows docs, and removes
   a superseded dirty-development review from the published tree (retained privately).
 

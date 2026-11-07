@@ -76,6 +76,7 @@
 | `test/collect-test-counts.test.py` | 机器可读计数、算术和零套件拒绝 |
 | `test/fetch-remote-evidence.test.py` | evidence 分页、深字段、run id 与 token scrub |
 | `test/workflow-contract.test.py` | workflow needs/jobs/artifact/writer 静态对齐 |
+| `test/linux-gate-context.test.py` | Gitea/GitHub workflow identity 正向与缺标记、冲突 ref、event payload 漂移负向合同 |
 | `test/dependency-missing.test.py` | jieba 缺失时的 CJK fail-closed 与显式 override |
 | `test/profile-yaml.test.py` | YAML round-trip、控制字符和缩进回归；依赖 PyYAML，缺失时门禁失败，gate2/hosted receipt jobs 显式安装该依赖 |
 | `test/repo-zero-hit.test.py` | 显式未知 repo 的结构化零命中 |
@@ -106,5 +107,5 @@
 ## 7. 当前证据边界
 
 - rc7 原始 P（`e20b37c…`）曾在 2026-11-07 本地跑过 Node 125、Python 合约 35、E2E 31/31；该证据只绑定旧 exact P。本次 hygiene 修改在未冻结新 D/P 前测得 Node 125（121 pass/4 Windows-only skip）、Python 9 套件（49 tests）、E2E 31/31；冻结后还须在 exact P 重验。
-- 本次 tree hygiene 修订会产生新的 D/P。新 P 的本地测试、gitorca gate2、gitpub Actions 与任何 hosted evidence 必须分别记录，不得复用旧 P 的 receipt。
+- 首个私有 rc7 P `8183902…` 的 gitorca/gitpub gate2 因 Gitea runner 不提供 `GITHUB_WORKFLOW_REF` 而红；兼容修订产生新的 D/P 与后缀候选。新 P 的本地测试、两端 gate2 与任何 hosted evidence 必须分别记录，不得复用旧 P 的 receipt。
 - 没有 fresh GitHub-hosted Linux/macOS/Windows schema-3 证据时，release preflight 只能是 `configured-unverified`；信任上限始终是 `same-party`。
