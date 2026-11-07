@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/License-Apache--2.0-C21325)](LICENSE)
 [![CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml)
 [![Windows CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/windows-ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions)
-[![Version](https://img.shields.io/badge/Version-v1.2.2--rc5-blue)](RELEASE-NOTES.md)
+[![Version](https://img.shields.io/badge/Version-v1.2.2--rc6-blue)](RELEASE-NOTES.md)
 [![npm](https://img.shields.io/npm/v/dsh-gitea-search?color=red)](https://www.npmjs.com/package/dsh-gitea-search)
 [![Archive](https://img.shields.io/badge/Archive-v0.1.1%20(Pure%20Node)-orange)](https://github.com/offzen/dsh-gitea-search/tree/legacy-0.1.x)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows%20(Native)-brightgreen)](MANUAL.md#3-多场景部署流程)

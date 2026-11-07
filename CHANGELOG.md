@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2-rc6] - Unreleased
+
+Hardens the release evidence chain. Every item below closes a finding from the
+2026-11-07 external audit of the rc5 candidate; none of them changes product
+behaviour.
+
+### Added
+- `scripts/fetch-remote-evidence.py` captures the forge's own record of a gate run
+  (head_sha, run conclusion, every job's conclusion) so a receipt can be checked
+  against something other than itself.
+- `scripts/collect-test-counts.py` runs the suites and records real counts, so a
+  receipt states how many tests ran instead of asserting success.
+- `release-preflight.py --remote-evidence` / `--require-remote-evidence` cross-check
+  receipts against that forge record; `--trust-anchor` requires the in-tree verifier
+  to be byte-identical to an externally pinned copy.
+
+### Changed
+- Receipts are schema 2. `status` is derived from the upstream `needs` results rather
+  than hardcoded, `started_at`/`gate_started_at` come from the real gate start (no
+  `now()` fallback) with a computed `duration_seconds`, and `test_counts` is required.
+- `workflow_ref` must name the gate's own workflow *and* the same ref the receipt
+  claims, so a run on a side branch cannot mint a receipt for a released ref.
+- Runner label and `toolchain.os` platform family are validated for Linux and macOS
+  too, not only Windows.
+- Run identity is deduplicated on `workflow_run_id`; gates that legitimately share a
+  run (`github-linux` + `github-macos`) are allowed, different workflows sharing one
+  run are rejected.
+- The gate2 receipt declares `trust: same-party` and carries repository/workflow/
+  event/ref, so its scope (regression coverage, not independent trust) is explicit.
+- Untracked files in the checkout are rejected; `git diff --quiet` cannot see them.
+
+### Fixed
+- Release preflight no longer treats a receipt's internal consistency as proof that a
+  run happened. Floors on test counts stop a silently weakened suite from verifying.
+
 ## [1.2.2-rc5] - Unreleased
 
 ### Added

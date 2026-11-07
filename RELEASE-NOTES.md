@@ -1,5 +1,16 @@
 # Release Notes - DeepSeek Harness (DSH) Gitea Search
 
+## v1.2.2-rc6 — release evidence you can check against the forge
+
+- Receipts now carry real test counts and a real gate start time, and derive success
+  from the upstream job results instead of asserting it.
+- Each receipt can be cross-checked against the forge's own record of the run
+  (`scripts/fetch-remote-evidence.py` + `release-preflight.py --remote-evidence`), so
+  "verified" no longer means only "the JSON is internally consistent".
+- Receipt provenance is bound to the released ref, and the verifier can be pinned to
+  an externally held copy so the trust root is not the tree being verified.
+- No product behaviour changes: this candidate hardens the release gate only.
+
 ## v1.2.2-rc5 — installation checks and operational clarity
 
 - Adds explicit post-install verification scripts for POSIX and PowerShell; checks are read-only and never sync, index, edit profiles, or restart DSH.

@@ -132,6 +132,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Mark gate start
+        # rc6 F3: the receipt records when the gate actually started, instead of
+        # falling back to now() and reporting a zero-length window.
+        run: echo "GTS_GATE_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+      - name: Install Python & Node Dependencies
+        run: |
+          pip install jieba PyYAML
+          npm install
+      - name: Run the suite this receipt attests to
+        # rc6 F8: the receipt job executes the suite itself, so the recorded counts
+        # describe tests that really ran on this runner for this exact SHA.
+        run: python3 scripts/collect-test-counts.py --output "${{ runner.temp }}/test-counts.json"
       - name: Write exact-SHA hosted receipt
         env:
           GTS_DISPATCH_EXACT_SHA: ${{ github.event.inputs.exact_sha || github.sha }}
@@ -141,11 +153,16 @@ jobs:
           --commit "${{ github.sha }}"
           --runner-label ubuntu-latest
           --output "${{ runner.temp }}/github-linux.json"
+          --test-counts "${{ runner.temp }}/test-counts.json"
+          --needs-results '{"test":"${{ needs.test.result }}","package":"${{ needs.package.result }}"}'
+          --gate-started-at "$GTS_GATE_STARTED_AT"
       - name: Upload hosted receipt
         uses: actions/upload-artifact@v4
         with:
           name: github-linux-${{ github.sha }}
-          path: ${{ runner.temp }}/github-linux.json
+          path: |
+            ${{ runner.temp }}/github-linux.json
+            ${{ runner.temp }}/test-counts.json
           if-no-files-found: error
           retention-days: 30
 
@@ -166,6 +183,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Mark gate start
+        run: echo "GTS_GATE_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+      - name: Install System Dependencies
+        run: |
+          command -v sqlite3 || brew install sqlite
+          command -v zstd || brew install zstd
+      - name: Install Python & Node Dependencies
+        run: |
+          pip install jieba PyYAML
+          npm install
+      - name: Run the suite this receipt attests to
+        run: python3 scripts/collect-test-counts.py --output "${{ runner.temp }}/test-counts.json"
       - name: Write exact-SHA hosted receipt
         env:
           GTS_DISPATCH_EXACT_SHA: ${{ github.event.inputs.exact_sha || github.sha }}
@@ -175,10 +204,15 @@ jobs:
           --commit "${{ github.sha }}"
           --runner-label macos-latest
           --output "${{ runner.temp }}/github-macos.json"
+          --test-counts "${{ runner.temp }}/test-counts.json"
+          --needs-results '{"test-macos":"${{ needs.test-macos.result }}"}'
+          --gate-started-at "$GTS_GATE_STARTED_AT"
       - name: Upload hosted receipt
         uses: actions/upload-artifact@v4
         with:
           name: github-macos-${{ github.sha }}
-          path: ${{ runner.temp }}/github-macos.json
+          path: |
+            ${{ runner.temp }}/github-macos.json
+            ${{ runner.temp }}/test-counts.json
           if-no-files-found: error
           retention-days: 30

@@ -51,7 +51,11 @@ mkdir -p "$HOME" "$XDG_CACHE_HOME" "$npm_config_cache" "$PIP_CACHE_DIR"
 
 cd "$ROOT_DIR"
 npm ci --ignore-scripts --no-audit --no-fund
-npm run test:all
+# rc6 F8: run the suites through the counter so the receipt can carry real numbers
+# instead of an asserted `status: success`. Covers the same four suites as
+# `npm run test:all` (node --test, the two python suites, and the e2e runner).
+TEST_COUNTS="$SCRATCH/test-counts.json"
+python3 scripts/collect-test-counts.py --output "$TEST_COUNTS"
 python3 -c 'import jieba' >/dev/null
 BUILD_ROOT="$SCRATCH/python-build"
 if python3 -c 'import build' >/dev/null 2>&1; then
@@ -105,20 +109,45 @@ export GATE_STARTED_AT="$STARTED_AT" GATE_ENDED_AT="$ENDED_AT"
 export GATE_NODE_VERSION="$NODE_VERSION" GATE_NPM_VERSION="$NPM_VERSION"
 export GATE_PYTHON_VERSION="$PYTHON_VERSION" GATE_GIT_VERSION="$GIT_VERSION"
 export GATE_RUN_ID="$RUN_ID" GATE_WORKFLOW_REF="$WORKFLOW_REF"
+export GATE_TEST_COUNTS="$TEST_COUNTS"
+export GATE_EVENT="${GITHUB_EVENT_NAME:-workflow_dispatch}"
+export GATE_REF="${GITHUB_REF:-refs/heads/local-offline}"
+export GATE_REPOSITORY="${GITHUB_REPOSITORY:-offzen/dsh-gitea-search}"
 python3 - "$RECEIPT_TMP" <<'PY'
-import json, os, pathlib, platform, sys
+import datetime as dt, json, os, pathlib, platform, sys
+
+started = dt.datetime.fromisoformat(os.environ["GATE_STARTED_AT"].replace("Z", "+00:00"))
+ended = dt.datetime.fromisoformat(os.environ["GATE_ENDED_AT"].replace("Z", "+00:00"))
+counts_path = pathlib.Path(os.environ["GATE_TEST_COUNTS"])
+counts = json.loads(counts_path.read_text(encoding="utf-8")) if counts_path.exists() else {}
+for key in ("node_total", "node_pass", "node_fail", "python_suites", "e2e"):
+    if not isinstance(counts.get(key), int):
+        raise SystemExit(f"test_counts.{key} missing from {counts_path}")
+if counts["node_fail"] != 0:
+    raise SystemExit(f"test_counts reports {counts['node_fail']} node failures")
+
 receipt = {
-    "schema": 1,
+    "schema": 2,
     "gate": "gate2-linux",
     "provider": "gitea-actions" if os.environ["GATE_RUN_ID"] != "local-offline" else "local-offline",
+    # rc6 F6: the gate runs on our own runner, so it is regression coverage rather
+    # than independent trust. Say so instead of letting the receipt imply otherwise.
+    "trust": "same-party",
     "runner_environment": "clean-linux-runner",
+    "repository": os.environ["GATE_REPOSITORY"],
     "commit": os.environ["GATE_ACTUAL_SHA"],
     "tree": os.environ["GATE_TREE_SHA"],
     "status": "success",
     "started_at": os.environ["GATE_STARTED_AT"],
+    "gate_started_at": os.environ["GATE_STARTED_AT"],
     "ended_at": os.environ["GATE_ENDED_AT"],
+    "duration_seconds": int((ended - started).total_seconds()),
     "run_id": os.environ["GATE_RUN_ID"],
+    "workflow": ".gitea/workflows/ci.yml",
     "workflow_ref": os.environ["GATE_WORKFLOW_REF"],
+    "event": os.environ["GATE_EVENT"],
+    "ref": os.environ["GATE_REF"],
+    "test_counts": {key: counts[key] for key in ("node_total", "node_pass", "node_fail", "python_suites", "e2e")},
     "toolchain": {
         "os": platform.platform(),
         "python": os.environ["GATE_PYTHON_VERSION"],
@@ -132,6 +161,7 @@ receipt = {
         "python-wheel-and-sdist",
         "provenance",
         "git-diff-check",
+        "test-counts-floors",
     ],
 }
 path = pathlib.Path(sys.argv[1])

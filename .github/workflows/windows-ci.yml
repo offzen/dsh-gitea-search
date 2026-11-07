@@ -335,6 +335,24 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Mark gate start
+        shell: pwsh
+        # rc6 F3: record the real gate start instead of letting the writer default to now().
+        run: |
+          $started = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+          "GTS_GATE_STARTED_AT=$started" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Install Python & Node Dependencies
+        shell: bash
+        run: |
+          pip install jieba PyYAML
+          npm install
+
+      - name: Run the suite this receipt attests to
+        shell: bash
+        # rc6 F8: the receipt job runs the suite itself so the counts are real.
+        run: python scripts/collect-test-counts.py --output "$RUNNER_TEMP/test-counts.json"
+
       - name: Write hosted clean-runner receipt
         shell: pwsh
         env:
@@ -345,11 +363,16 @@ jobs:
           --commit "${{ github.sha }}"
           --runner-label windows-latest
           --output "${{ runner.temp }}/github-windows.json"
+          --test-counts "${{ runner.temp }}/test-counts.json"
+          --needs-results '{"windows-pe":"${{ needs.windows-pe.result }}","windows-ps":"${{ needs.windows-ps.result }}","windows-tests":"${{ needs.windows-tests.result }}","windows-git-bash":"${{ needs.windows-git-bash.result }}","windows-grep-crlf":"${{ needs.windows-grep-crlf.result }}"}'
+          --gate-started-at "$env:GTS_GATE_STARTED_AT"
 
       - name: Upload hosted Windows receipt
         uses: actions/upload-artifact@v4
         with:
           name: github-windows-${{ github.sha }}
-          path: ${{ runner.temp }}/github-windows.json
+          path: |
+            ${{ runner.temp }}/github-windows.json
+            ${{ runner.temp }}/test-counts.json
           if-no-files-found: error
           retention-days: 30
