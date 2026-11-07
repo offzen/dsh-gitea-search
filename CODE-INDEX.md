@@ -41,7 +41,7 @@
 | `scripts/run-e2e-test.sh` | 31 项隔离全链路验收 | 临时 bare repos/SQLite |
 | `scripts/run-realdata-test.sh` | 真实镜像验收 | 可能增量写索引；高负载 |
 | `scripts/sync.sh` | Gitea bare mirror 同步与索引刷新 | 网络与磁盘写入 |
-| `scripts/quickstart-local.sh` | 本地仓快速镜像/建索引 | 写目标目录 |
+| `scripts/quickstart-local.sh` | 创建合成 Zero-Gitea demo 仓并建索引；不导入已有本地仓 | 写目标目录及项目根 `config.json` |
 | `scripts/respawn-mcp.sh` | 重启单个 MCP 子进程 | 影响运行进程 |
 | `scripts/dsh-session-health.mjs` | 会话健康检查/迁移 | `--fix` 可写会话/SQLite |
 | `scripts/session-export-incremental.py` | 增量导出会话 Markdown | 写导出目录 |
@@ -80,7 +80,7 @@
 | `test/dependency-missing.test.py` | jieba 缺失时的 CJK fail-closed 与显式 override |
 | `test/profile-yaml.test.py` | YAML round-trip、控制字符和缩进回归；依赖 PyYAML，缺失时门禁失败，gate2/hosted receipt jobs 显式安装该依赖 |
 | `test/repo-zero-hit.test.py` | 显式未知 repo 的结构化零命中 |
-| `test/documentation-contract.test.py` | release guide、formal state、retired review 与 Windows 安全文档静态契约 |
+| `test/documentation-contract.test.py` | release guide、formal state、用户 onboarding/quickstart、内容分区、贡献指南与 Windows 安全文档静态契约 |
 
 ## 5. CI 与 receipt writer
 
@@ -100,7 +100,7 @@
 | `PROVENANCE.json` | D 的 tracked 文件哈希；只允许在 P 中单独变更 |
 | `extras/dsh-skill/gitea-search/SKILL.md` | 可选 Agent 检索指导；installer 不自动安装 |
 | `docs/DEVELOPMENT-AND-RELEASE.md` | D/P、schema-3 receipt、schema-2 evidence 与发布状态机正本 |
-| `docs/POST-INSTALL.md` | 五分钟安装后验收；正式接入 onboarding/doctor helper |
+| `docs/POST-INSTALL.md` | 安装后闭环验收：首次同步、索引、独立 MCP、宿主工具表、真实调用、可选 skill 与回滚 |
 | `PROJECT-STATE.md` | 当前版本、ref、树清理和候选判定的简明快照 |
 | `WIKI.md` | 有证据、带范围和失效条件的耐久陷阱 |
 

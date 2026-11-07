@@ -191,7 +191,7 @@ Tagged as `v1.2.2-rc4` (annotated tag object `6c4c516`, peeled commit `a78e456`)
 ### Added
 - **Windows 原生平台架构支持**:
   - **原生 PE Launcher 与打包支持 (`pyproject.toml`, `gts_cli.py`)**：通过 setuptools 的 `[project.scripts]` 生成 Windows 原生 PE 启动器 `Scripts\gts.exe`，解决 Windows `CreateProcess` 无法直接运行 shebang 脚本的底层限制；数据文件采用 `share/dsh-gitea-search/{bin,lib}` 独立隔离路径，消除与 console_scripts 同名启动器的覆盖冲突。
-  - **Windows 一键自动化配置脚本 (`scripts/setup-windows.ps1`)**：支持一键镜像仓库拉取、依赖安装、FTS5 索引构建与 DSH `cordis.patch.yml` 自动注册。
+  - **Windows 一键自动化配置脚本 (`scripts/setup-windows.ps1`)**：支持依赖安装、镜像目录准备、对已有镜像构建 FTS5 索引，以及 DSH `cordis.patch.yml` 自动注册；仓库获取仍需 Git Bash 或既有镜像流程。
   - **Windows CI 全矩阵工作流 (`.github/workflows/windows-ci.yml`)**：新增覆盖 W5（PE 结构与执行）、W6（PowerShell AST 语法）、W7（文件区间排他锁）、W8（命令行防注入与边界转义）、W9（CRLF 检索与换行）的 7 个专项测试任务，覆盖 Python 3.11/3.12 与 Node 20/22 组合矩阵。
   - **跨平台测试套件 (`test/windows-adapt.test.mjs`, `windows-lock.test.mjs`, `windows-quote.test.mjs`)**：提供 21 项跨平台与 Windows 行为回归断言，`npm test` 自动采用原生 `node --test` 执行。
 
@@ -252,15 +252,15 @@ Tagged as `v1.2.2-rc4` (annotated tag object `6c4c516`, peeled commit `a78e456`)
 ## [1.2.0] - 2026-10-26
 
 ### Added
-- **Zero-Gitea Local Quickstart**: Added `scripts/quickstart-local.sh` enabling developers to spin up a local MCP search engine directly from local Git repositories with zero external Gitea/network dependencies.
+- **Zero-Gitea Local Demo**: Added `scripts/quickstart-local.sh`, which creates a synthetic `demo-project.git` in a dedicated output directory and builds a local index without an external Gitea service. It does not import existing local repositories.
 - **macOS & BSD Native Compatibility ([PR #2](https://github.com/offzen/dsh-gitea-search/pull/2)):**
   - Added `scripts/setup-macos.sh` supporting macOS default Bash 3.2 and Homebrew dependency installation.
   - Implemented non-blocking subshell timeout mechanism for platforms without GNU `timeout`.
   - Added compatibility wrappers for BSD `stat` and `awk`.
 - **Automatic `config.json` Resolution**: `lib/server.mjs` now automatically resolves and loads `config.json` hierarchically from current or parent directories, removing the need for verbose environment variable exports.
 - **Node.js `< 22.15` CLI Fallback**: Added seamless fallback to system `sqlite3` and `zstd` CLI when native `node:sqlite` or `zlib.zstdCompressSync` are unavailable in Node.js `20.11 ~ 22.14`.
-- **Extended E2E Test Suite**: Expanded `scripts/run-e2e-test.sh` to 32 assertions across 5 phases, including new assertions for `config.json` resolution and Zero-Gitea local mode.
-- **Multi-Environment CI Matrix**: Expanded GitHub Actions and Gitea Actions workflows to validate Node 20 / 22 and Python 3.11-3.13 combinations.
+- **Extended E2E Test Suite**: Expanded `scripts/run-e2e-test.sh` to 31 assertion calls across 5 phases, including assertions for `config.json` resolution and the Zero-Gitea demo.
+- **Multi-Environment CI Matrix**: Expanded the historical workflows to validate Node 20 / 22 and Python 3.11/3.12 combinations.
 - **Open Source Governance**: Added `CONTRIBUTING.md` documenting contribution workflow, testing requirements, and upstream synchronization disciplines.
 
 ### Fixed

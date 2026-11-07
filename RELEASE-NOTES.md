@@ -114,7 +114,7 @@ v1.2.2-rc2 修复 v1.2.2 早期候选在 Linux / macOS 上引入的回归。**Wi
 #### 1. 原生 Windows 平台支持 (dsh-gitea-search)
 - **原生 PE Launcher**：新增 `pyproject.toml` 与 `gts_cli.py`，通过 setuptools `[project.scripts]` 在 Windows 上编译生成原生 PE 启动器 `Scripts\gts.exe`，避开 Windows `CreateProcess` 对无扩展名 shebang 脚本的执行限制。
 - **独立数据隔离**：将 `bin/gts` 与 `lib/indexer.py` 安装至 `share/dsh-gitea-search/` 数据子目录，消除与同名启动器的文件覆盖与无限递归风险。
-- **一键自动化部署 (`scripts/setup-windows.ps1`)**：提供专为 Windows 打造的 PowerShell 部署脚本，支持 Git 裸镜像拉取、依赖安装、FTS5 倒排索引构建及 DSH `cordis.patch.yml` 自动注册。
+- **一键自动化部署 (`scripts/setup-windows.ps1`)**：提供 Windows PowerShell 部署脚本，支持依赖安装、镜像目录准备、对已有镜像构建 FTS5 索引及 DSH `cordis.patch.yml` 自动注册；仓库获取仍需 Git Bash 或既有镜像流程。
 - **跨平台测试支持**：测试架构迁移至 Node 原生 `node --test`，新增 21 项跨平台行为与防注入断言。
 
 #### 2. 核心跨平台稳健性设计与安全防护机制
@@ -202,7 +202,7 @@ v1.2.2-rc2 修复 v1.2.2 早期候选在 Linux / macOS 上引入的回归。**Wi
 
 ### 版本概述 / Overview
 
-`dsh-gitea-search` v1.2.0 是一个重要的生态扩展与健壮性升级版本。本版本合入了首个外部社区 PR，带来了原生的 macOS 与 BSD 跨平台兼容支持；引入了零服务依赖的 Zero-Gitea 本地极速启动模式；实现了 `config.json` 自动解析机制与 Node.js 跨版本优雅降级，并在自动化测试中扩充至 32 项端到端断言，覆盖多系统、多版本的 CI 测试矩阵。
+`dsh-gitea-search` v1.2.0 是一个重要的生态扩展与健壮性升级版本。本版本合入了首个外部社区 PR，带来了原生的 macOS 与 BSD 跨平台兼容支持；引入了零服务依赖的 Zero-Gitea 合成 demo；实现了 `config.json` 自动解析机制与 Node.js 跨版本优雅降级，并将自动化 E2E 扩充至 31 个断言调用。
 
 ---
 
@@ -212,8 +212,8 @@ v1.2.2-rc2 修复 v1.2.2 早期候选在 Linux / macOS 上引入的回归。**Wi
 - **环境一键配置**：新增 `scripts/setup-macos.sh`，原生支持 macOS 默认的 Bash 3.2 环境，自动通过 Homebrew 补齐环境依赖。
 - **管道防死锁与 BSD 工具链兼容**：针对缺乏 GNU `timeout` 命令的 macOS/BSD 系统，重构了非阻塞的子进程超时控制，彻底消除管道缓冲造成的死锁假死；同时兼容 BSD 版 `stat` 与 `awk` 命令行语法。
 
-#### 2. Zero-Gitea 本地免服务快速启动 (`quickstart-local.sh`)
-- **零服务端依赖**：无需安装或连接 Gitea 服务，只要本地存在任意普通 Git 仓库，运行 `bash scripts/quickstart-local.sh <path>` 即可一键生成 bare 镜像并完成 FTS5 索引构建。
+#### 2. Zero-Gitea 本地免服务演示 (`quickstart-local.sh`)
+- **零服务端依赖**：无需安装或连接 Gitea 服务。运行 `bash scripts/quickstart-local.sh <output-dir>` 会在专用输出目录生成合成的 `demo-project.git` bare 仓并完成 FTS5 索引构建；它不会扫描或导入已有本地 Git 仓库。
 - **极速体验**：为本地开发调试、非 Gitea 托管的单一代码库提供即开即用的 MCP 全文与代码检索能力。
 
 #### 3. 配置文件自动寻径解析 (`config.json`)
@@ -225,8 +225,8 @@ v1.2.2-rc2 修复 v1.2.2 早期候选在 Linux / macOS 上引入的回归。**Wi
 - **空配置预警**：MCP 启动时若检测到未配置有效镜像目录，输出友好的引导预警日志，取代无提示的异常退出。
 
 #### 5. 质量保证与 CI 矩阵扩展
-- **32 项全链路断言**：E2E 测试套件扩充至 32 项测试，新增 Phase 5 专项校验 `config.json` 与本地快速启动模式。
-- **跨版本双矩阵验证**：CI 流水线全面覆盖 Node.js 20 LTS / 22 LTS 与 Python 3.11-3.13 组合。
+- **31 项全链路断言**：E2E 测试套件包含 31 个断言调用，Phase 5 校验 `config.json` 与 Zero-Gitea demo。
+- **跨版本双矩阵验证**：历史 CI 矩阵覆盖 Node.js 20 LTS / 22 LTS 与 Python 3.11/3.12 组合。
 
 ---
 

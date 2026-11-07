@@ -78,7 +78,7 @@ Git for Windows 默认启用 `core.autocrlf=true`，检出代码与文档通常�
 POSIX 环境使用 `fcntl.flock` 实现进程间排他写入锁，而 Windows 基于 `msvcrt.locking` 提供字节区间加锁能力。  
 为了保证加锁与解锁操作在 Windows 底层作用于完全一致的文件偏移区间：
 - 在加锁（`_acquire()`）与解锁（`_release()`）前均执行显式 `self.fd.seek(0)` 原子复位；
-- 确保锁范围始终严格锁定首字节（`length=1`），在多进程并发写入场景下达到 100% 互斥，进程退出时由操作系统内核安全释放。
+- 确保锁范围始终锁定首字节（`length=1`）；仓内并发回归测试验证受测进程间的互斥与释放行为，但这不构成对所有异常退出、文件系统或安全软件组合的绝对保证。
 
 ### 5. 宿主 PATH 与虚拟环境智能穿透 (PATH Environment Discovery)
 Windows 开发者的环境拓扑极其多样（全局 Python、venv、Conda、Scoop、Poetry 等）。  

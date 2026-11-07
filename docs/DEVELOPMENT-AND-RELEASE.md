@@ -49,6 +49,8 @@ Each receipt binds exact P/tree, repository, workflow, event/ref/run attempt, me
 
 It also needs four **remote evidence schema 2** documents produced by `scripts/fetch-remote-evidence.py`. Evidence deep-checks the forge's complete job listing, required job names and conclusions, run/ref/workflow identity, freshness and hosted-runner signals. For GitHub gates, the downloaded artifact zip must match the forge-recorded digest and contain the byte-identical receipt and test-count data. Gate2 is explicitly recorded as having no forge artifact digest.
 
+Run identifiers are forge-local coordinates, not interchangeable numbers. A durable evidence note must record the forge base/repository role, workflow path, event/ref, head SHA, run id (or task id), run attempt and every job id/name/conclusion. Gitea's web/API task/run number and its job ids may use different number spaces; preserve both labels exactly as returned instead of converting one into the other. GitHub's `run_id`, `run_number`, `run_attempt` and job ids are likewise separate fields. Always bind these identifiers back to the exact P/tree; a green run number without repository/ref/SHA identity is insufficient.
+
 The trust anchor is an **out-of-tree directory** containing byte-identical pinned copies of:
 
 - `release-preflight.py`;

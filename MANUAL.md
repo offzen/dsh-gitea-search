@@ -2,7 +2,7 @@
 
 > 适用范围：`dsh-gitea-search`（本地全量 bare 裸镜像 + **git grep 代码检索 + SQLite FTS5 全文检索** + DSH MCP 检索工具）。  
 > 本文是**正式部署与运维手册**：详细记录系统架构、多环境部署、高可用降级、安全护栏及故障处置方案。  
-> 快速入门见 [`README.md`](README.md)；安装后 5 分钟自检见 [`docs/POST-INSTALL.md`](docs/POST-INSTALL.md)；日常检索见 [`docs/USAGE.md`](docs/USAGE.md)；范围边界见 [`docs/BOUNDARIES.md`](docs/BOUNDARIES.md)。
+> 快速入门见 [`README.md`](README.md)；安装后闭环验收见 [`docs/POST-INSTALL.md`](docs/POST-INSTALL.md)；日常检索见 [`docs/USAGE.md`](docs/USAGE.md)；范围边界见 [`docs/BOUNDARIES.md`](docs/BOUNDARIES.md)。
 
 ---
 
@@ -12,7 +12,7 @@
 
 1. **代码检索引擎（git grep）**：跨全量仓库、全部分支、文件路径及提交记录的毫秒级检索；支持多词短语连写 0 命中时自动回退为「同行多词 AND（`--and`）」模式。
 2. **文档与会话全文检索（SQLite FTS5 + jieba 中文分词）**：索引每仓默认分支；SQLite warm query 可毫秒级响应，MCP 端到端延迟还包含 Python/jieba 冷启动。支持 BM25 与内容类型分区。
-3. **零服务本地快速体验模式 (Zero-Gitea Mode)**：支持将本地任意普通 Git 仓库目录一键裸镜像化并构建倒排索引，无需远端 Gitea 服务即可作为 MCP 检索端点。
+3. **零服务本地演示模式 (Zero-Gitea Demo)**：无需远端 Gitea，脚本在专用输出目录生成一个合成的 `demo-project.git` bare 仓并构建索引，用来验证 CLI/MCP 基本链路；当前脚本不扫描或导入已有本地 Git 仓库。
 
 ### 为什么必须自建本地检索引擎（实测经验）：
 - **Gitea 网页搜索局限**：单仓内置搜索无需索引器但无法跨仓；全站搜索 `/explore/code` 需要管理员启用 `REPO_INDEXER_ENABLED`（通常未开），且 **Gitea API 无代码搜索端点**（官方 Swagger 规范中不存在该路径）。
@@ -33,7 +33,7 @@
 | **索引核心** | `lib/indexer.py` | FTS5 倒排索引构建、jieba 分词、`BlobReader` 与 I/O 遥测 |
 | **MCP 服务** | `lib/server.mjs` | 标准 MCP stdio 服务端，集成四层有界护栏与配置寻径 |
 | **MCP 启动器** | `bin/mcp-server` | 标准入口（自动解析环境并拉起 Node MCP 服务） |
-| **本地快速启动器** | `scripts/quickstart-local.sh` | Zero-Gitea 纯本地单机免服务快速体验脚本 |
+| **本地演示启动器** | `scripts/quickstart-local.sh` | Zero-Gitea 合成 demo 仓 + 本地索引；不导入已有仓库 |
 | **macOS 安装器** | `scripts/setup-macos.sh` | macOS / BSD 平台一键环境配置与兼容支持 |
 | **会话维护工具** | `scripts/dsh-session-health.mjs` | DSH 会话代数健康诊断与 WAL 在线截断工具 |
 
@@ -55,23 +55,22 @@
 
 ## 3. 多场景部署流程
 
-### 3.1 场景 A：Zero-Gitea 本地免服务快速启动（单机开发与演示）
+### 3.1 场景 A：Zero-Gitea 本地演示（单机链路验证）
 
-无需搭建任何 Gitea 远端服务、无需配置 Token 或 SSH 密钥，仅需本地 Git 仓库：
+无需搭建 Gitea、Token 或 SSH 密钥。当前脚本只创建一个合成 demo 仓；参数是**专用输出目录**，不是待扫描的源码目录：
 
 ```bash
-# 自动扫描并建立本地检索镜像
-bash scripts/quickstart-local.sh /path/to/your/projects
-
-# 验证命令行检索效果
-bin/gts -D "关键词"
+bash scripts/quickstart-local.sh /tmp/dsh-gitea-search-demo
+bin/gts -D "Architecture"
 ```
 
-该脚本将会在指定目录下自动完成：
-1. 递归探测目录下的所有 Git 仓库；
-2. 在本地缓存区创建 bare 镜像；
-3. 初始化并构建 SQLite FTS5 索引库；
-4. 输出可以直接复制到 DSH `cordis.patch.yml` 的配置片段。
+该脚本会：
+1. 在输出目录的 `local/demo-project.git` 创建合成 bare 仓；
+2. 在输出目录构建 SQLite FTS5 索引；
+3. 在当前源码 checkout 根目录写入 `config.json`，使本 checkout 默认指向 demo 镜像；
+4. 打印通用 MCP 客户端使用的 `mcpServers` JSON 示例。
+
+它不会递归探测或导入已有本地 Git 仓库，打印的 JSON 也不是 DSH `cordis.patch.yml`。DSH 接入请使用 §4 的 YAML 模板。不要把已有项目目录当输出目录；若演示结束后不再使用该配置，删除脚本生成的项目根 `config.json`。
 
 ---
 
@@ -126,7 +125,17 @@ python3 lib/indexer.py --stats
 17 * * * * /usr/bin/flock -n /var/lock/gitea-mirror.lock /path/to/dsh-gitea-search/scripts/sync.sh -q >> /var/log/gitea-mirror.log 2>&1
 ```
 
-> **说明**：`sync.sh` 增量同步完成后会自动调用 `python3 lib/indexer.py --build`；未变更的仓库将在毫秒级跳过，整体同步轻量高效。
+> **说明**：`sync.sh` 增量同步完成后会自动调用 `python3 lib/indexer.py --build`；无需紧接着重复建索引。同步耗时取决于仓库数量、网络和变更量，应以本次日志为准。
+
+#### 步骤 5：完成安装后闭环
+
+安装器不会替你决定何时同步或重载宿主。按 [`docs/POST-INSTALL.md`](docs/POST-INSTALL.md) 依次完成：
+
+1. `onboarding` 只读预检配置、镜像与索引；
+2. 镜像为空时由用户显式执行首次 `sync.sh -q`；
+3. `doctor-mcp` 验证独立 MCP server 的 initialize、工具表与一次搜索；
+4. 重载选定的 DSH profile，在宿主实际工具表中确认注册名；
+5. 调用 `list_gitea_repos` 和一次搜索，确认端到端可用。
 
 ---
 
@@ -231,7 +240,7 @@ $env:GITEA_OWNERS = "my-org"
 
 ### 极简配置（利用 `config.json` 自动解析）
 
-若在插件根目录下维护了 `config.json`，则 `cordis.patch.yml` 中无需注入环境变量：
+如果只把 `mirror_root` 与 `owners` 放入共享配置文件，`cordis.patch.yml` 可不重复注入这两个值。推荐使用 `~/.config/dsh-gitea-search/config.json` 或 `GITEA_SEARCH_CONFIG` 指向的文件；项目根 `config.json` 只适合 checkout 专用于该部署的场景：
 
 ```yaml
 - insert:
@@ -272,7 +281,7 @@ $env:GITEA_OWNERS = "my-org"
 }
 ```
 
-运行时 resolver 当前消费 `storage.mirror_root` 与 `gitea.owners`（也兼容顶层 `mirror_root` / `owners`）；同步脚本消费 URL、token 与枚举/传输变量。缺少 owner 或 owner 为 `myorg` 等占位值时，正式 CLI/MCP 操作会 fail closed。
+运行时 resolver 当前只消费 `storage.mirror_root` 与 `gitea.owners`（也兼容顶层 `mirror_root` / `owners`）；`gitea.url`、`gitea.token`、`storage.db_path` 与 `search.*` 示例键当前不会被 resolver 或 `sync.sh` 读取。同步 URL、token、枚举/传输策略与输出护栏须使用 §5.2 的环境变量。缺少 owner 或 owner 为 `myorg` 等占位值时，正式 CLI/MCP 操作会 fail closed。环境变量优先级高于配置文件；若项目根遗留了 demo 或旧部署的 `config.json`，未设置相应 env 的 CLI、cron 或宿主进程可能解析到它。可用 `gts --show-effective-config` 核对实际来源。
 
 ### 5.2 环境变量对照表
 

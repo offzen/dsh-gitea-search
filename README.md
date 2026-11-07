@@ -20,7 +20,7 @@
 
 1. **代码检索引擎（git grep）**：跨全量仓库、全部分支、文件路径及提交记录的毫秒级检索；支持多词短语连写 0 命中时自动回退为「同行多词 AND（`--and`）」模式。
 2. **文档与会话全文检索（SQLite FTS5 + jieba 中文分词）**：索引每仓默认分支，SQLite warm query 可毫秒级响应，支持 BM25 与内容类型分区；当前 MCP 端到端延迟还包含 Python/jieba 冷启动。非默认分支请用代码搜索后按 `ref` 精读。
-3. **零服务本地快速体验模式 (Zero-Gitea Mode)**：支持将本地任意普通 Git 仓库目录一键裸镜像化并构建倒排索引，无需远端 Gitea 服务即可作为 MCP 检索端点。
+3. **零服务本地演示模式 (Zero-Gitea Demo)**：无需远端 Gitea，由脚本在指定输出目录生成一个合成的 `demo-project.git` bare 仓并构建索引，用来验证 CLI/MCP 基本链路。它**不会扫描或导入已有本地 Git 仓库**。
 
 ## 不仅省上下文预算，更防模型注意力稀释与失忆
 
@@ -44,18 +44,20 @@ Agent 查一次资料，真正的代价从来不是“查没查到”，而是**
 
 ---
 
-## 30 秒上手（Zero-Gitea 本地免服务模式）
+## Zero-Gitea 本地演示（不导入现有仓库）
 
-无需搭建 Gitea 远端服务，无需 API Token 或 SSH 密钥，只要本地有 Git 仓库即可一键体验：
+无需搭建 Gitea、API Token 或 SSH 密钥。下面的命令会把参数当作**演示镜像输出目录**，在其中生成合成的 `local/demo-project.git` 并构建 FTS5 索引；它不会扫描或导入该目录中已有的 Git 仓库。
 
 ```bash
 git clone https://github.com/offzen/dsh-gitea-search.git && cd dsh-gitea-search
 
-# 扫描本地任意 Git 项目目录，自动创建镜像 + 构建 FTS5 索引 + 打印 DSH 配置片段
-bash scripts/quickstart-local.sh /path/to/your/git-projects
+# 参数是专用输出目录；不要传已有项目目录
+bash scripts/quickstart-local.sh /tmp/dsh-gitea-search-demo
 ```
 
-首次接入 Gitea 请使用下方平台安装流程；安装后可按 [`docs/POST-INSTALL.md`](docs/POST-INSTALL.md) 运行只读 `onboarding` 汇总与 `doctor-mcp` 探针，检查镜像、索引和独立 MCP 进程。`quickstart-local.sh` 是本地 demo 演示，不作为 Gitea 首次同步或宿主接入流程。
+该脚本还会在当前源码 checkout 根目录写入 `config.json`，并打印通用 MCP 客户端的 `mcpServers` JSON 示例。DSH 使用 `cordis.patch.yml`，请改用下方 DSH 配置模板；演示结束后若不再使用该配置，请删除生成的 `config.json`。
+
+首次接入真实 Gitea 请使用下方平台安装流程；安装后按 [`docs/POST-INSTALL.md`](docs/POST-INSTALL.md) 完成首次同步、索引检查、独立 MCP 探针、宿主重载和实际工具调用。
 
 想直接在终端测试检索效果？命令行门面工具 `bin/gts` 即开即测：
 
@@ -88,7 +90,7 @@ bin/gts -D --kind doc,script "caddy"  # 按分区过滤：只检索文档与脚�
           GITEA_OWNERS: "my-org,my-team"
 ```
 
-> **提示**：如果不想在配置中书写 `env`，可以在插件根目录下放置 `config.json`（参考 `config.example.json`），`server.mjs` 会自动向上寻找并解析配置，两种方式完全等价。
+> **配置边界**：运行时 CLI/MCP/indexer 只从 `config.json` 读取 `mirror_root` 与 `owners`；同步 URL、token、枚举/传输策略及输出护栏仍由环境变量控制，因此它与 profile `env` **不完全等价**。推荐把共享运行时配置放在 `~/.config/dsh-gitea-search/config.json`，或用 `GITEA_SEARCH_CONFIG` 显式指定；仅在确认 checkout 专用于该部署时才使用项目根 `config.json`。详见 [MANUAL §5](MANUAL.md#5-配置参数全表参考)。
 
 ### 💡 核心接入避坑指南
 
@@ -125,6 +127,8 @@ MCP server 声明的 4 个裸工具名如下；宿主侧实际注册名需在安
 - **平台支持**：原生跨平台兼容 Linux、macOS 与 Windows（10+ / Server 2019+）。
 
 > 📖 **安装与部署指引**：各平台（Linux / macOS / Windows）的一键初始化脚本、生产环境配置与详细依赖安装流程，请参见部署与运维手册 **[MANUAL.md §3（多场景部署流程）](MANUAL.md#3-多场景部署流程)**。
+>
+> **安装完成不等于已经能搜到内容。** 连接真实 Gitea 后还要完成首次同步、索引检查、独立 MCP 探针、宿主 profile 重载，并在实际会话中调用一次工具。统一清单见 **[docs/POST-INSTALL.md](docs/POST-INSTALL.md)**。
 
 ### 三平台上手命令
 
@@ -167,7 +171,7 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-or
 ## 文档导航
 
 - **[PROJECT-STATE.md](PROJECT-STATE.md)** —— 当前候选、仓库角色、tracked-tree 处置与 tag 判定
-- **[docs/POST-INSTALL.md](docs/POST-INSTALL.md)** —— 安装后的 5 分钟自检、首次同步、宿主重载与回滚指引
+- **[docs/POST-INSTALL.md](docs/POST-INSTALL.md)** —— 安装后的完整闭环：只读预检、首次同步、索引、独立 MCP、宿主工具表、实际搜索、回滚与可选 Agent skill
 - **[docs/BOUNDARIES.md](docs/BOUNDARIES.md)** —— 能力覆盖范围与明确不支持事项
 - **[docs/USAGE.md](docs/USAGE.md)** —— 四个工具参数速查、真实检索场景示范与防爆窗调用范例（**推荐首读**）
 - **[WINDOWS-PORT.md](WINDOWS-PORT.md)** —— Windows 原生跨平台技术架构、安全护栏设计与移植规范

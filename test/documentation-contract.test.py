@@ -59,6 +59,23 @@ class DocumentationContractTest(unittest.TestCase):
         self.assertIn("--upgrade build jieba PyYAML", gate2)
         self.assertIn("Gitea does not provide that GitHub-only variable", self.read("docs/DEVELOPMENT-AND-RELEASE.md"))
 
+    def test_user_docs_match_quickstart_and_kind_contracts(self) -> None:
+        readme = self.read("README.md")
+        manual = self.read("MANUAL.md")
+        usage = self.read("docs/USAGE.md")
+        post_install = self.read("docs/POST-INSTALL.md")
+        contributing = self.read("CONTRIBUTING.md")
+        self.assertIn("不会扫描或导入", readme)
+        self.assertIn("不会递归探测或导入已有本地 Git 仓库", manual)
+        self.assertNotIn("扫描本地任意 Git 项目目录", readme)
+        self.assertNotIn("递归探测目录下的所有 Git 仓库", manual)
+        self.assertIn("当前默认分类器把 `*.py` 归入 `code`", usage)
+        self.assertNotIn("`*.service`、`*.py`", usage)
+        self.assertIn("做一次真实端到端调用", post_install)
+        self.assertIn("安装器有意不自动复制", post_install)
+        self.assertIn("npm run test:all", contributing)
+        self.assertIn("PyYAML", contributing)
+
 
 if __name__ == "__main__":
     unittest.main()
