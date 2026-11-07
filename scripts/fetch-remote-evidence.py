@@ -77,16 +77,27 @@ def gitea_evidence(gate: str, run_id: str) -> dict:
     token = os.environ.get("GITEA_TOKEN") or ""
     headers = {"Authorization": f"token {token}"} if token else {}
     status, run = get(f"{GITEA_BASE}/repos/{GITEA_REPO}/actions/runs/{run_id}", headers)
-    if status != 200 or not isinstance(run, dict):
-        raise SystemExit(f"FETCH_EVIDENCE_BLOCKED: run {run_id} -> HTTP {status} {run.get('error', '')[:160]}")
-    status, jobs = get(f"{GITEA_BASE}/repos/{GITEA_REPO}/actions/runs/{run_id}/jobs", headers)
-    items = jobs if isinstance(jobs, list) else (jobs.get("jobs", []) if isinstance(jobs, dict) else [])
+    # On the 2026-11 Gitea build, GET /actions/runs/{index} answers 403 ("Only signed
+    # in user is allowed to call APIs") for a read token while /jobs works, so the run
+    # metadata is reconstructed from the jobs response and the tasks listing instead.
+    run_ok = status == 200 and isinstance(run, dict) and run.get("head_sha")
+    if not run_ok:
+        status, jobs = get(f"{GITEA_BASE}/repos/{GITEA_REPO}/actions/runs/{run_id}/jobs", headers)
+        items = jobs if isinstance(jobs, list) else (jobs.get("jobs", []) if isinstance(jobs, dict) else [])
+        if status != 200 or not items:
+            raise SystemExit(f"FETCH_EVIDENCE_BLOCKED: run {run_id} -> HTTP {status} (run and jobs both unusable)")
+        run = {"id": run_id, "head_sha": items[0].get("head_sha"), "event": None,
+               "name": items[0].get("name"), "conclusion": None}
+    else:
+        status, jobs = get(f"{GITEA_BASE}/repos/{GITEA_REPO}/actions/runs/{run_id}/jobs", headers)
+        items = jobs if isinstance(jobs, list) else (jobs.get("jobs", []) if isinstance(jobs, dict) else [])
+    conclusions = [j.get("conclusion") for j in items if isinstance(j, dict)]
     return {
         "gate": gate,
         "provider": "gitea-actions",
         "run_id": str(run.get("id") or run_id),
-        "head_sha": run.get("head_sha") or run.get("commit_sha"),
-        "conclusion": run.get("conclusion") or run.get("status"),
+        "head_sha": run.get("head_sha") or (items[0].get("head_sha") if items else None),
+        "conclusion": run.get("conclusion") or ("success" if conclusions and all(c == "success" for c in conclusions) else "failure"),
         "event": run.get("event"),
         "workflow_name": run.get("name") or run.get("title"),
         "jobs": [

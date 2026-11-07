@@ -68,6 +68,12 @@ TEST_COUNT_FLOORS = {"node_total": 60, "python_suites": 2, "e2e": 25}
 # we did not measure would be exactly the self-attestation rc6 set out to remove.
 E2E_COUNTED_GATES = {"gate2-linux", "github-linux", "github-macos"}
 WINDOWS_E2E_NEEDS_JOB = "windows-git-bash"
+# The two forges are different repositories on purpose: gitorca is the private
+# canonical primary, GitHub is the external mirror. Each gate runs where it runs, so
+# each receipt must name the repository it actually ran in. Demanding one name for
+# both made a truthful gate2 receipt fail verification (measured 2026-11-07).
+GITEA_REPOSITORY = "zaoz/dsh-gitea-search"
+GITHUB_REPOSITORY = "offzen/dsh-gitea-search"
 
 
 class Blocked(RuntimeError):
@@ -167,14 +173,16 @@ def check_receipt(path: pathlib.Path, expected_gate: str, provenance: str, tree:
         require(data.get("runner_environment") == "clean-linux-runner", "gate2-linux: runner environment mismatch")
         # F6: same-party gate must say so, and must carry repository/event/ref/workflow.
         require(data.get("trust") == "same-party", "gate2-linux: trust must be declared as same-party")
-        require(data.get("repository") == "offzen/dsh-gitea-search", "gate2-linux: repository mismatch")
+        require(data.get("repository") == GITEA_REPOSITORY,
+                f"gate2-linux: repository mismatch (want {GITEA_REPOSITORY})")
         require(bool(data.get("workflow")), "gate2-linux: workflow missing")
         require(data.get("event") in {"push", "workflow_dispatch"}, "gate2-linux: unsupported event")
         require(bool(data.get("ref")), "gate2-linux: ref missing")
 
     if expected_gate.startswith("github-"):
         require(data.get("provider") == "github-actions-hosted", f"{expected_gate}: provider is not GitHub hosted")
-        require(data.get("repository") == "offzen/dsh-gitea-search", f"{expected_gate}: repository mismatch")
+        require(data.get("repository") == GITHUB_REPOSITORY,
+                f"{expected_gate}: repository mismatch (want {GITHUB_REPOSITORY})")
         require(data.get("workflow") == EXPECTED_GITHUB_WORKFLOWS[expected_gate], f"{expected_gate}: workflow mismatch")
         require(bool(data.get("workflow_run_id")), f"{expected_gate}: workflow run identity missing")
         require(data.get("event") in {"push", "workflow_dispatch"}, f"{expected_gate}: unsupported event")

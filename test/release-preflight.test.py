@@ -63,7 +63,7 @@ class ReleasePreflightTest(unittest.TestCase):
                 else "clean-linux-runner" if gate == "gate2-linux"
                 else "github-hosted-clean-runner"
             ),
-            "repository": "offzen/dsh-gitea-search",
+            "repository": ("offzen/dsh-gitea-search" if hosted else "zaoz/dsh-gitea-search"),
             "commit": self.provenance,
             "tree": self.tree,
             "status": "success",
@@ -368,6 +368,22 @@ class ReleasePreflightTest(unittest.TestCase):
         result = self.run_preflight()
         self.assertEqual(result.returncode, 2)
         self.assertIn("does not run e2e itself", result.stderr)
+
+    def test_gate2_names_the_gitea_repository(self) -> None:
+        """gate2 runs on gitorca (private primary), so its receipt must name that
+        repository — not the GitHub mirror. Requiring one name for both made a
+        truthful gate2 receipt fail (2026-11-07)."""
+        self.patch_receipt("gate2-linux", repository="offzen/dsh-gitea-search")
+        result = self.run_preflight()
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("repository mismatch (want zaoz/dsh-gitea-search)", result.stderr)
+
+    def test_github_gate_rejects_the_gitea_repository(self) -> None:
+        """The mirror identity must not be interchangeable either."""
+        self.patch_receipt("github-linux", repository="zaoz/dsh-gitea-search")
+        result = self.run_preflight()
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("repository mismatch (want offzen/dsh-gitea-search)", result.stderr)
 
 
 if __name__ == "__main__":
