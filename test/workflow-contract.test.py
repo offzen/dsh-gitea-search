@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static no-PyYAML workflow/preflight contract alignment checks (rc7 A7)."""
+"""Static workflow/preflight contract alignment checks."""
 from __future__ import annotations
 
 import importlib.util
@@ -53,6 +53,11 @@ class WorkflowContractTest(unittest.TestCase):
     def test_windows_receipt_depends_on_git_bash(self) -> None:
         block = job_block(ROOT / ".github/workflows/windows-ci.yml", "hosted-windows-receipt")
         self.assertIn("windows-git-bash", inline_needs(block))
+
+    def test_windows_full_suite_provisions_pyyaml(self) -> None:
+        block = job_block(ROOT / ".github/workflows/windows-ci.yml", "windows-git-bash")
+        self.assertRegex(block, r'python -m pip install [^\n]*PyYAML')
+        self.assertIn("npm run test:all", block)
 
     def test_gitea_gate_exists_and_invokes_linux_gate(self) -> None:
         path = ROOT / ".gitea/workflows/ci.yml"

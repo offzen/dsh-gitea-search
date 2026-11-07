@@ -238,8 +238,8 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
-      - name: Install Python launcher and FTS dependency
-        run: python -m pip install ".[fts]"
+      - name: Install Python launcher and test dependencies
+        run: python -m pip install ".[fts]" PyYAML
 
       - name: Install Windows CLI dependencies used by fallback gates
         shell: pwsh

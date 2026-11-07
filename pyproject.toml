@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dsh-gitea-search"
-version = "1.2.2rc7"
+version = "1.2.2"
 description = "Windows-capable gts launcher for dsh-gitea-search (Gitea/Git mirror hybrid search CLI)"
 readme = "README.md"
 requires-python = ">=3.8"

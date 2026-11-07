@@ -12,7 +12,7 @@
 
 在 `v1.2.1` 及早期版本中，项目主要面向 POSIX 环境（Linux / macOS）设计与部署。在原生 Windows（非 WSL）环境下，由于底层进程模型、文件系统语义与标准库实现的巨大差异，MCP 服务的 4 个核心工具中有 3 个完全无法运行（`read_gitea_file` 因直接调用 `git` 侥幸可用，而 `search_gitea`、`search_gitea_docs`、`list_gitea_repos` 全部中断）。
 
-`v1.2.2` 候选引入了原生 Windows 跨平台架构；功能与历史平台测试不等同于当前 rc7 候选的发布认证。最终 exact-P 的 GitHub-hosted clean-runner 证据必须单独取得。
+`v1.2.2` 引入了原生 Windows 跨平台架构；功能与历史平台测试不等同于稳定版候选的发布认证。最终 exact-P 的 GitHub-hosted clean-runner 证据必须单独取得。
 
 ---
 
@@ -106,7 +106,7 @@ Windows 中文控制台默认代码页为 CP936 (GBK)，英文控制台常为 CP
 
 ## 四、Windows CI 验证矩阵
 
-下表区分**历史平台证据**与**当前候选要求**。任何历史 rc3/rc4、vtWSL 或 self-hosted 结果都不能替代 rc7 exact-P 的 GitHub-hosted schema-3 receipt；没有 fresh exact-P evidence 时，当前候选状态必须写成 `configured-unverified`：
+下表区分**历史平台证据**与**当前候选要求**。任何历史 rc3/rc4、vtWSL 或 self-hosted 结果都不能替代稳定版 1.2.2 exact-P 的 GitHub-hosted schema-3 receipt；没有 fresh exact-P evidence 时，当前候选状态必须写成 `configured-unverified`：
 
 | 判据任务 | 验证目标 | 运行环境 | 验证结果 |
 |---|---|---|---|

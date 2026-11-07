@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.2-rc7] - Unreleased
+## [1.2.2] - Unreleased
 
 Closes the remaining rc6 audit findings. The default verifier is fail-closed and
 can only report `verified` when all four schema-3 receipts, deep forge evidence,
@@ -48,7 +48,7 @@ not an independent attestation.
 - The default release test/receipt chain now executes all ten Python contract/
   regression files, including gate-context, dependency-missing, profile-YAML, unknown-repository and
   documentation guards. All receipt jobs provision PyYAML; missing optional test
-  dependencies fail the measured suite instead of silently skipping coverage. Release/manual/Windows/index documentation now matches rc7 contracts,
+  dependencies fail the measured suite instead of silently skipping coverage. Release/manual/Windows/index documentation now matches 1.2.2 contracts,
   and the superseded dirty-tree `RC5-REVIEW` record moved to the private audit archive.
 
 ## [1.2.2-rc6] - Unreleased

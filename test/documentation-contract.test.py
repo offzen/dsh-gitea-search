@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static contracts keeping the rc7 release documentation aligned with code."""
+"""Static contracts keeping release documentation aligned with code."""
 from __future__ import annotations
 
 import pathlib
@@ -23,7 +23,7 @@ class DocumentationContractTest(unittest.TestCase):
     def test_formal_state_and_retired_review_boundary(self) -> None:
         state = self.read("PROJECT-STATE.md")
         self.assertIn("private prerelease", state)
-        self.assertIn("stable/tag promotion remains **deferred**", state)
+        self.assertIn("remote/tag promotion remains **deferred**", state)
         self.assertFalse((ROOT / "docs/RC5-REVIEW.md").exists())
 
     def test_private_coordinates_are_runtime_only(self) -> None:

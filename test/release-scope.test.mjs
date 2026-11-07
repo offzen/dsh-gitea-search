@@ -7,6 +7,7 @@ const server = fs.readFileSync(new URL('../lib/server.mjs', import.meta.url), 'u
 const readme = fs.readFileSync(new URL('../README.md', import.meta.url), 'utf8');
 const naming = fs.readFileSync(new URL('../docs/TOOL-NAMING.md', import.meta.url), 'utf8');
 const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+const lock = JSON.parse(fs.readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
 const pyproject = fs.readFileSync(new URL('../pyproject.toml', import.meta.url), 'utf8');
 const setupLinux = fs.readFileSync(new URL('../scripts/setup.sh', import.meta.url), 'utf8');
 const setupMac = fs.readFileSync(new URL('../scripts/setup-macos.sh', import.meta.url), 'utf8');
@@ -15,11 +16,13 @@ const windowsCi = fs.readFileSync(new URL('../.github/workflows/windows-ci.yml',
 const packageGate = fs.readFileSync(new URL('../scripts/test-python-package.py', import.meta.url), 'utf8');
 const provenance = JSON.parse(fs.readFileSync(new URL('../PROVENANCE.json', import.meta.url), 'utf8'));
 
-test('rc7 version metadata is aligned', () => {
-  assert.equal(pkg.version, '1.2.2-rc7');
-  assert.match(pyproject, /version = "1.2.2rc7"/);
-  assert.match(server, /version: '1.2.2-rc7'/);
-  assert.match(readme, /Version-v1.2.2--rc7/);
+test('stable 1.2.2 version metadata is aligned', () => {
+  assert.equal(pkg.version, '1.2.2');
+  assert.equal(lock.version, '1.2.2');
+  assert.equal(lock.packages[''].version, '1.2.2');
+  assert.match(pyproject, /version = "1.2.2"/);
+  assert.match(server, /version: '1.2.2'/);
+  assert.match(readme, /Version-v1.2.2-blue/);
 });
 
 test('candidate provenance is frozen to an exact content commit', () => {

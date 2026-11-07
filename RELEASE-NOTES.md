@@ -1,6 +1,6 @@
 # Release Notes - DeepSeek Harness (DSH) Gitea Search
 
-## v1.2.2-rc7 — fail-closed, forge-bound same-party release evidence
+## v1.2.2 — cross-platform search and fail-closed release evidence
 
 - `verified` now requires four schema-3 receipts, deep forge evidence, exact
   workflow/ref/run identity, fresh complete job listings, GitHub-hosted runner
@@ -16,9 +16,9 @@
   restore mirror-state diagnostics, and correctly classify process timeouts.
 - Trust statement: this raises the cost of false-green evidence but remains
   `trust_ceiling: same-party`; it is not an independent or unforgeable attestation.
-- The rc7 chain now connects all ten Python contract/regression files, including the
+- The 1.2.2 chain connects all ten Python contract/regression files, including the
   dual-forge gate-context negative suite, to the default test/receipt chain, provisions
-  PyYAML on gate2, rejects skipped suites in
+  PyYAML in gate2 and hosted full-suite jobs (including Windows W10), rejects skipped suites in
   the receipt counter, refreshes release/Windows docs, and removes
   a superseded dirty-development review from the published tree (retained privately).
 
@@ -101,11 +101,11 @@ v1.2.2-rc2 修复 v1.2.2 早期候选在 Linux / macOS 上引入的回归。**Wi
 
 ---
 
-## v1.2.2 (2026-10-28)
+## v1.2.2-rc (2026-10-28)
 
 ### 版本概述 / Overview
 
-`dsh-gitea-search` v1.2.2 是一个重大的跨平台生态扩展与生产级加固版本。在承接 v1.2.1 架构与规范的基础上，本版本正式推出了**原生 Windows 平台支持**，彻底打破以往 Windows 环境下因缺失 PE 入口、文件锁不兼容及 shebang 无法执行导致 3 个检索工具不可用的底层限制；全面建立了覆盖路径归一化、参数防注入、并发锁对齐与环境探测的生产级防护体系，并在 GitHub Actions 真实 Windows Runner 上通过了全套自动化工作流验证（7/7 Jobs，21/21 测试用例 100% 通过）。
+`dsh-gitea-search` v1.2.2-rc 是一个重大的跨平台生态扩展与生产级加固候选。在承接 v1.2.1 架构与规范的基础上，本版本正式推出了**原生 Windows 平台支持**，彻底打破以往 Windows 环境下因缺失 PE 入口、文件锁不兼容及 shebang 无法执行导致 3 个检索工具不可用的底层限制；全面建立了覆盖路径归一化、参数防注入、并发锁对齐与环境探测的生产级防护体系，并在 GitHub Actions 真实 Windows Runner 上通过了全套自动化工作流验证（7/7 Jobs，21/21 测试用例 100% 通过）。
 
 ---
 

@@ -405,9 +405,9 @@ npm run test:e2e  # 端到端：31 项合成回归断言（Linux / macOS）
 npm run test:all  # 两者都跑（CI 使用的完整组合）
 ```
 
-> ⚠️ **两个测试集此前是割裂的**：v1.2.2 的 `npm test` 只跑 3 个 Windows 用例文件，
+> ⚠️ **两个测试集此前是割裂的**：v1.2.2 早期候选的 `npm test` 只跑 3 个 Windows 用例文件，
 > 而 e2e（31 项）单独跑；Linux CI 不跑单测、Windows CI 不跑 e2e。
-> v1.2.2 的 POSIX 回归正是从这道缝里漏过去的。v1.2.2-rc2 起统一为 `npm run test:all`；rc7 又把 release/evidence 合约及三个此前孤立的 Python 回归套件接入 `test:preflight` 与 receipt counter。
+> 早期候选的 POSIX 回归正是从这道缝里漏过去的。v1.2.2-rc2 起统一为 `npm run test:all`；rc7 又把 release/evidence 合约及三个此前孤立的 Python 回归套件接入 `test:preflight` 与 receipt counter。
 
 | 测试文件 | 覆盖范围 |
 |---|---|
@@ -416,7 +416,7 @@ npm run test:all  # 两者都跑（CI 使用的完整组合）
 | `test/windows-quote.test.mjs` | W8 命令行注入防护：双引号翻倍、尾部反斜杠转义、`& | < > ^` 元字符隔离 |
 | `test/posix-path.test.mjs` | **POSIX 路径语义回归**（v1.2.2-rc2 新增）：反斜杠文件名的读取不被张冠李戴、`classify_kind` 扩展名判定、行尾 CR 不被吞掉、归一化按平台分流。Windows 上自动跳过 |
 
-`test/posix-path.test.mjs` 的 5 项用例在 v1.2.2 上**全部失败**、在 v1.2.2-rc2 上全部通过，
+`test/posix-path.test.mjs` 的 5 项用例在 v1.2.2 早期候选上**全部失败**、在 v1.2.2-rc2 上全部通过，
 可直接用于验证某个构建是否带该回归。
 
 ### 9.4 候选维护与发布前核对

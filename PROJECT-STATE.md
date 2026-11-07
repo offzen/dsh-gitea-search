@@ -1,4 +1,4 @@
-# Project state — v1.2.2-rc7 prerelease review
+# Project state — v1.2.2 stable candidate review
 
 Snapshot date: 2026-11-09. This file is a publication-safe review surface. Private forge coordinates, host-local evidence, detailed handoffs and operational ledgers remain outside the public release tree.
 
@@ -15,10 +15,10 @@ The release baseline is a role, not a branch named `main`; private branch names 
 
 ## Version and candidate
 
-- Product identity: npm `1.2.2-rc7`; Python `1.2.2rc7`.
-- A previous private baseline exists, but its exact commit, tag and repository coordinates belong in the private release ledger.
-- An earlier local rc7 pair completed its local test set, but the tree review found documentation drift and three Python tests outside the default gate. The hygiene tree then passed Node 125 (121 pass, 4 Windows-only skips), nine Python suites (49 tests) and E2E 31/31 before the new freeze; exact-P retesting remains required.
-- A prior private candidate failed its workflow-identity check. The compatibility fix requires a new D/P pair and new evidence; old receipts and local exact-P evidence must not be reused.
+- Product identity: npm/MCP `1.2.2`; Python `1.2.2`.
+- Development follows the public `v1.2.1` / `main` first-parent line. The historical rc2 tree entered through a two-parent bridge and is an imported content ancestor, not the current development baseline.
+- The stable content line starts from the reviewed rc7 successor `fe2723d27aff7970683036caeb8bdace4d936c30`, adds the missing Windows full-suite PyYAML dependency, and updates stable-version metadata. Its direct-child provenance commit records the exact content commit in `PROVENANCE.json`.
+- Evidence from earlier rc candidates is historical only and must not be reused for the stable exact P.
 
 ## Tracked-tree review
 
@@ -29,7 +29,7 @@ Disposition:
 | Class | Decision |
 |---|---|
 | Runtime, CLI/MCP, package metadata, workflows and test body | Keep |
-| `CODE-INDEX.md`, release guide, manual, Windows guide, WIKI | Update to rc7 contracts |
+| `CODE-INDEX.md`, release guide, manual, Windows guide, WIKI | Keep aligned with the 1.2.2 contracts and historical RC record |
 | Three Python regressions absent from default gates | Add all to `test:preflight`/receipt counter plus a documentation guard; gate2/hosted jobs provision PyYAML, and missing dependencies fail closed |
 | `scripts/onboarding.{sh,ps1}` | Keep and formally connect from README/POST-INSTALL as read-only helpers |
 | Superseded private review notes | Keep only in the private audit archive |
@@ -39,13 +39,13 @@ Disposition:
 
 A fully `verified` release preflight requires four schema-3 receipts, four schema-2 forge evidence documents, an exact expected ref, an external four-script trust anchor and digest-bound hosted artifacts. The fixed trust ceiling remains `same-party`.
 
-The private prerelease path can verify ref identity, privacy, clean D/P topology, provenance and available forge Actions. Until fresh exact-P hosted platform evidence exists, stable/tag promotion remains **deferred**.
+The private prerelease path can verify ref identity, privacy, clean D/P topology, provenance and available forge Actions. Until fresh stable exact-P hosted platform evidence exists, remote/tag promotion remains **deferred**.
 
 ## Freeze and tag recommendation
 
-- **Product code**: feature-frozen for rc7; this hygiene pass changes tests/docs/release bookkeeping, not the search runtime contract.
-- **Candidate**: private prerelease may proceed only after new exact-P local tests, provenance and clean-tree checks pass; the private Linux gate is then recorded as a separate required release-evidence gate. If pending or red, label the candidate `configured-unverified`, not release-ready.
-- **Tag**: do not create a new candidate or stable tag in this scope. Reconsider only after fresh exact-P hosted receipts/evidence/artifacts make preflight `verified`, followed by an explicit release decision.
+- **Product code**: feature-frozen for 1.2.2; stable-version work changes workflow test provisioning, version identity and candidate documentation, not the search runtime contract.
+- **Local candidate**: a valid stable candidate is an exact D/P pair whose focused tests, full suite, package smoke, provenance and clean-tree checks pass. Any tracked edit requires a new pair.
+- **Remote/tag boundary**: no remote candidate, tag or promotion is created in this scope. Those actions require fresh exact-P platform evidence and a separate explicit release decision.
 
 ## Review links
 

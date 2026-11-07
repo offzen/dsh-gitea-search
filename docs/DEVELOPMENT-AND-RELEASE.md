@@ -64,7 +64,7 @@ The verifier rejects an in-tree anchor, symlinks, same-inode self-comparison, mi
 python3 /absolute/external-anchor/release-preflight.py \
   --content "$D" \
   --provenance "$P" \
-  --expected-ref refs/heads/rc/v1.2.2-rc7 \
+  --expected-ref refs/tags/v1.2.2 \
   --expected-gate2-repository "$PRIVATE_SOURCE_REPOSITORY" \
   --trust-anchor /absolute/external-anchor \
   --receipt gate2-linux=/absolute/receipts/gate2-linux.json \
