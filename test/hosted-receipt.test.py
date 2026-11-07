@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Offline contract tests for the GitHub hosted receipt writer."""
+"""Offline contract tests for the GitHub-hosted schema-3 receipt writer."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pathlib
@@ -12,22 +13,34 @@ import tempfile
 import unittest
 
 SOURCE = pathlib.Path(__file__).resolve().parent.parent
-GOOD_COUNTS = {"node_total": 74, "node_pass": 70, "node_fail": 0, "python_suites": 2, "e2e": 31}
+GOOD_COUNTS = {
+    "schema": 2,
+    "reporter": "tap",
+    "node": {"total": 74, "pass": 70, "fail": 0, "cancelled": 0, "skipped": 4, "todo": 0},
+    "python": [{"suite": f"suite-{i}", "ran": True, "ok": True, "tests": 1} for i in range(4)],
+    "e2e": {"pass": 31, "fail": 0},
+    "node_total": 74, "node_pass": 70, "node_fail": 0,
+    "node_cancelled": 0, "node_skipped": 4, "node_todo": 0,
+    "python_suites": 4, "node_ok": True, "python_ok": True, "e2e_ok": True,
+}
 
 
-def remove_test_tree(path: pathlib.Path) -> None:
-    def clear_readonly_and_retry(function, target, _exc_info):
+def remove_tree(path: pathlib.Path) -> None:
+    def retry(function, target, _exc_info):
         os.chmod(target, 0o700)
         function(target)
-
-    shutil.rmtree(path, onerror=clear_readonly_and_retry)
+    shutil.rmtree(path, onerror=retry)
 
 
 class HostedReceiptTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = pathlib.Path(tempfile.mkdtemp(prefix="hosted-receipt-test-"))
         self.repo = self.temp / "repo"
-        shutil.copytree(SOURCE, self.repo, ignore=shutil.ignore_patterns(".git", "node_modules", "__pycache__", "build", "dist", "*.egg-info"))
+        shutil.copytree(
+            SOURCE, self.repo,
+            ignore=shutil.ignore_patterns(".git", "node_modules", "__pycache__", "build", "dist", "*.egg-info",
+                                          "gitq", "dsh-search", "mcp-server-gitea-search"),
+        )
         self.git("init", "-q")
         self.git("config", "user.name", "Receipt Test")
         self.git("config", "user.email", "receipt@example.invalid")
@@ -35,27 +48,29 @@ class HostedReceiptTest(unittest.TestCase):
         self.git("commit", "-qm", "fixture")
         self.sha = self.git("rev-parse", "HEAD").strip()
         self.counts = self.temp / "test-counts.json"
-        self.counts.write_text(json.dumps(GOOD_COUNTS) + "\n", encoding="utf-8")
+        self.write_counts(GOOD_COUNTS)
 
     def tearDown(self) -> None:
-        remove_test_tree(self.temp)
+        remove_tree(self.temp)
 
     def git(self, *args: str) -> str:
         return subprocess.run(["git", *args], cwd=self.repo, check=True, text=True, capture_output=True).stdout
 
+    def write_counts(self, counts: dict) -> None:
+        self.counts.write_text(json.dumps(counts, sort_keys=True) + "\n", encoding="utf-8")
+
     @staticmethod
     def platform_gate() -> tuple[str, str, str]:
-        on_windows = sys.platform == "win32"
-        on_macos = sys.platform == "darwin"
-        gate = "github-windows" if on_windows else "github-macos" if on_macos else "github-linux"
-        workflow = "windows-ci.yml" if on_windows else "ci.yml"
-        runner_label = "windows-latest" if on_windows else "macos-latest" if on_macos else "ubuntu-latest"
-        return gate, workflow, runner_label
+        if sys.platform == "win32":
+            return "github-windows", "windows-ci.yml", "windows-latest"
+        if sys.platform == "darwin":
+            return "github-macos", "ci.yml", "macos-latest"
+        return "github-linux", "ci.yml", "ubuntu-latest"
 
-    def writer_env(self, *, repository: str = "offzen/dsh-gitea-search",
-                   workflow: str | None = None, git_ref: str = "refs/heads/release/test",
-                   workflow_ref_ref: str | None = None,
-                   dispatch_sha: str | None = None) -> dict[str, str]:
+    def writer_env(self, *, repository: str = "offzen/dsh-gitea-search", workflow: str | None = None,
+                   git_ref: str = "refs/heads/release/test", workflow_ref_ref: str | None = None,
+                   dispatch_sha: str | None = None, run_attempt: str = "1",
+                   runner_environment: str = "github-hosted") -> dict[str, str]:
         _, default_workflow, _ = self.platform_gate()
         workflow = workflow or default_workflow
         ref_for_workflow = git_ref if workflow_ref_ref is None else workflow_ref_ref
@@ -64,53 +79,50 @@ class HostedReceiptTest(unittest.TestCase):
             "GITHUB_ACTIONS": "true",
             "GITHUB_REPOSITORY": repository,
             "GITHUB_RUN_ID": "12345",
+            "GITHUB_RUN_ATTEMPT": run_attempt,
             "GITHUB_WORKFLOW_REF": f"offzen/dsh-gitea-search/.github/workflows/{workflow}@{ref_for_workflow}",
             "GITHUB_EVENT_NAME": "workflow_dispatch",
             "GITHUB_REF": git_ref,
             "GTS_DISPATCH_EXACT_SHA": dispatch_sha if dispatch_sha is not None else self.sha,
+            "RUNNER_ENVIRONMENT": runner_environment,
+            "RUNNER_NAME": "GitHub Actions 1000000001",
+            "RUNNER_OS": "Windows" if sys.platform == "win32" else "macOS" if sys.platform == "darwin" else "Linux",
+            "RUNNER_ARCH": "X64",
             "PYTHONDONTWRITEBYTECODE": "1",
         }
 
     def run_writer(self, *, repository: str = "offzen/dsh-gitea-search", sha: str | None = None,
                    needs: dict[str, str] | None = None, counts: dict | None = None,
-                   gate_started_at: str = "2026-11-07T00:00:00Z",
-                   env: dict[str, str] | None = None,
+                   gate_started_at: str = "2026-11-07T00:00:00Z", env: dict[str, str] | None = None,
                    extra: list[str] | None = None) -> subprocess.CompletedProcess[str]:
         gate, _, runner_label = self.platform_gate()
-        needs = needs if needs is not None else {"test": "success"}
-        if counts is not None:
-            self.counts.write_text(json.dumps(counts) + "\n", encoding="utf-8")
-        else:
-            self.counts.write_text(json.dumps(GOOD_COUNTS) + "\n", encoding="utf-8")
+        self.write_counts(GOOD_COUNTS if counts is None else counts)
         args = [
             sys.executable, ".github/scripts/write-gate-receipt.py",
             "--gate", gate, "--commit", sha or self.sha,
             "--runner-label", runner_label, "--output", str(self.temp / "receipt.json"),
             "--test-counts", str(self.counts),
-            "--needs-results", json.dumps(needs),
+            "--needs-results", json.dumps(needs if needs is not None else {"test": "success"}),
             "--gate-started-at", gate_started_at,
-        ]
-        args += extra or []
+        ] + (extra or [])
         return subprocess.run(args, cwd=self.repo, env=env or self.writer_env(repository=repository),
                               text=True, capture_output=True)
 
-    def test_writes_bounded_exact_sha_receipt(self) -> None:
+    def test_writes_schema3_measured_receipt(self) -> None:
         result = self.run_writer()
         self.assertEqual(result.returncode, 0, result.stderr)
         data = json.loads((self.temp / "receipt.json").read_text(encoding="utf-8"))
+        self.assertEqual(data["schema"], 3)
         self.assertEqual(data["commit"], self.sha)
-        self.assertEqual(data["provider"], "github-actions-hosted")
-        expected_gate, _, _ = self.platform_gate()
-        self.assertEqual(data["gate"], expected_gate)
-        self.assertEqual(data["repository"], "offzen/dsh-gitea-search")
-        # rc6: schema 2, derived status, real timestamps, recorded counts.
-        self.assertEqual(data["schema"], 2)
-        self.assertEqual(data["status"], "success")
-        self.assertEqual(data["needs"], {"test": "success"})
-        self.assertEqual(data["test_counts"]["node_total"], GOOD_COUNTS["node_total"])
-        self.assertGreaterEqual(data["duration_seconds"], 1)
-        self.assertEqual(data["gate_started_at"], "2026-11-07T00:00:00+00:00")
-        self.assertNotEqual(data["started_at"], data["ended_at"])
+        self.assertEqual(data["run_attempt"], 1)
+        self.assertEqual(data["runner_hosted_environment"], "github-hosted")
+        self.assertEqual(data["test_counts"]["node_skipped"], 4)
+        self.assertEqual(data["inputs_sha256"]["test-counts.json"], hashlib.sha256(self.counts.read_bytes()).hexdigest())
+        self.assertEqual(data["inputs_sha256"]["collect-test-counts.py"],
+                         hashlib.sha256((self.repo / "scripts/collect-test-counts.py").read_bytes()).hexdigest())
+        self.assertEqual(data["inputs_sha256"]["write-gate-receipt.py"],
+                         hashlib.sha256((self.repo / ".github/scripts/write-gate-receipt.py").read_bytes()).hexdigest())
+        self.assertNotIn("linux-gate.sh", data["inputs_sha256"])
 
     def test_rejects_wrong_repository(self) -> None:
         result = self.run_writer(repository="offzen/orca-mcp")
@@ -127,59 +139,64 @@ class HostedReceiptTest(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("exact_sha does not match", result.stderr)
 
-    def test_rejects_wrong_workflow_identity(self) -> None:
-        # The receipt writer checks the platform before the workflow identity, so the
-        # gate under test must match the platform this suite runs on — otherwise the
-        # run fails with "gate/platform mismatch" and never reaches the assertion.
-        on_windows = sys.platform == "win32"
-        wrong_workflow = "ci.yml" if on_windows else "windows-ci.yml"
-        result = self.run_writer(env=self.writer_env(workflow=wrong_workflow))
+    def test_rejects_workflow_identity_or_ref_mismatch(self) -> None:
+        result = self.run_writer(env=self.writer_env(workflow_ref_ref="refs/heads/evil"))
         self.assertEqual(result.returncode, 2)
-        self.assertIn("workflow identity mismatch", result.stderr)
+        self.assertIn("workflow identity/ref mismatch", result.stderr)
 
-    # ---- rc6 hardening -----------------------------------------------------------
-
-    def test_rejects_workflow_ref_pointing_at_another_ref(self) -> None:
-        """F2: the workflow that minted the receipt must be running at the claimed ref."""
-        result = self.run_writer(env=self.writer_env(workflow_ref_ref="refs/heads/evil-side-branch"))
+    def test_rejects_non_hosted_runner(self) -> None:
+        result = self.run_writer(env=self.writer_env(runner_environment="self-hosted"))
         self.assertEqual(result.returncode, 2)
-        self.assertIn("workflow_ref ref does not match the running ref", result.stderr)
+        self.assertIn("not github-hosted", result.stderr)
+
+    def test_rejects_bad_run_attempt(self) -> None:
+        for value in ("", "0", "true", "1.5"):
+            with self.subTest(value=value):
+                result = self.run_writer(env=self.writer_env(run_attempt=value))
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("run id/attempt", result.stderr)
 
     def test_rejects_failed_upstream_job(self) -> None:
-        """F3: status is derived from the needs graph, so a red need blocks the receipt."""
         result = self.run_writer(needs={"test": "success", "package": "failure"})
         self.assertEqual(result.returncode, 2)
-        self.assertIn("upstream jobs did not all succeed", result.stderr)
+        self.assertIn("did not all succeed", result.stderr)
 
     def test_rejects_missing_needs_results(self) -> None:
-        """F3: an empty needs map would make status unverifiable."""
         result = self.run_writer(needs={})
         self.assertEqual(result.returncode, 2)
         self.assertIn("non-empty object", result.stderr)
 
-    def test_rejects_failing_test_counts(self) -> None:
-        """F8: a suite with failures must not produce a receipt."""
-        result = self.run_writer(counts={**GOOD_COUNTS, "node_fail": 3})
+    def test_rejects_schema1_counts(self) -> None:
+        result = self.run_writer(counts={"node_total": 74})
         self.assertEqual(result.returncode, 2)
-        self.assertIn("node failures", result.stderr)
+        self.assertIn("schema-2", result.stderr)
 
-    def test_rejects_incomplete_test_counts(self) -> None:
-        """F8: every floor key must be present."""
-        result = self.run_writer(counts={"node_total": 74, "node_pass": 70})
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("must be an integer", result.stderr)
+    def test_rejects_bool_negative_and_arithmetic_counts(self) -> None:
+        cases = [
+            {**GOOD_COUNTS, "node_pass": True},
+            {**GOOD_COUNTS, "node_skipped": -1},
+            {**GOOD_COUNTS, "node_total": 73},
+        ]
+        for counts in cases:
+            with self.subTest(counts=counts):
+                result = self.run_writer(counts=counts)
+                self.assertEqual(result.returncode, 2)
 
-    def test_rejects_missing_gate_start(self) -> None:
-        """F3: gate start is mandatory — there is no now() fallback any more."""
-        result = self.run_writer(extra=[], gate_started_at="")
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("--gate-started-at", result.stderr)
+    def test_rejects_node_or_e2e_failures(self) -> None:
+        node_bad = {**GOOD_COUNTS, "node": {**GOOD_COUNTS["node"], "fail": 1}, "node_fail": 1,
+                    "node_pass": 69}
+        e2e_bad = {**GOOD_COUNTS, "e2e": {"pass": 30, "fail": 1}}
+        for counts in (node_bad, e2e_bad):
+            with self.subTest(counts=counts):
+                result = self.run_writer(counts=counts)
+                self.assertEqual(result.returncode, 2)
 
-    def test_rejects_future_gate_start(self) -> None:
-        """F3: a start time in the future cannot yield a meaningful duration."""
-        result = self.run_writer(gate_started_at="2099-01-01T00:00:00Z")
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("not in the past", result.stderr)
+    def test_rejects_missing_or_future_gate_start(self) -> None:
+        for started in ("", "2099-01-01T00:00:00Z"):
+            with self.subTest(started=started):
+                result = self.run_writer(gate_started_at=started)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("--gate-started-at", result.stderr)
 
 
 if __name__ == "__main__":

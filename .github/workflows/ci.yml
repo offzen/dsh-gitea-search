@@ -132,6 +132,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Verify workflow identity (measured env, exact match)
+        # rc7 A3: workflow_ref / run_attempt are read from the runner's own environment and the
+        # expected workflow_ref is recomputed here; any difference fails the job before a
+        # receipt can be written (exit 69). Same-party check: it stops accidents, not a forger.
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${GITHUB_REPOSITORY}/.github/workflows/ci.yml@${GITHUB_REF}"
+          if [ "${GITHUB_WORKFLOW_REF:-}" != "$expected" ]; then
+            echo "::error::GITHUB_WORKFLOW_REF '${GITHUB_WORKFLOW_REF:-}' != computed '$expected'"
+            exit 69
+          fi
+          case "${GITHUB_RUN_ATTEMPT:-}" in
+            ''|*[!0-9]*|0*) echo "::error::GITHUB_RUN_ATTEMPT is not a positive integer"; exit 69 ;;
+          esac
       - name: Mark gate start
         # rc6 F3: the receipt records when the gate actually started, instead of
         # falling back to now() and reporting a zero-length window.
@@ -183,6 +198,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Verify workflow identity (measured env, exact match)
+        # rc7 A3: workflow_ref / run_attempt are read from the runner's own environment and the
+        # expected workflow_ref is recomputed here; any difference fails the job before a
+        # receipt can be written (exit 69). Same-party check: it stops accidents, not a forger.
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${GITHUB_REPOSITORY}/.github/workflows/ci.yml@${GITHUB_REF}"
+          if [ "${GITHUB_WORKFLOW_REF:-}" != "$expected" ]; then
+            echo "::error::GITHUB_WORKFLOW_REF '${GITHUB_WORKFLOW_REF:-}' != computed '$expected'"
+            exit 69
+          fi
+          case "${GITHUB_RUN_ATTEMPT:-}" in
+            ''|*[!0-9]*|0*) echo "::error::GITHUB_RUN_ATTEMPT is not a positive integer"; exit 69 ;;
+          esac
       - name: Mark gate start
         run: echo "GTS_GATE_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
       - name: Install System Dependencies

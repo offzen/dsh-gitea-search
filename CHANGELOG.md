@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2-rc7] - Unreleased
+
+Closes the remaining rc6 audit findings. The default verifier is fail-closed and
+can only report `verified` when all four schema-3 receipts, deep forge evidence,
+GitHub artifact digests, an exact expected ref, and an externally held four-file
+trust anchor agree. The result remains explicitly capped at `same-party`; it is
+not an independent attestation.
+
+### Added
+- Deep schema-2 forge evidence: repository, workflow path, event, branch,
+  run-attempt, complete paginated job lists, hosted-runner signals, artifacts,
+  fetch time, and artifact digests.
+- Negative tests for `collect-test-counts.py` and `fetch-remote-evidence.py`, plus
+  a static no-PyYAML workflow/needs/artifact-name contract test.
+- Schema-3 receipts bind the exact test-counts bytes, counter script, and actual
+  receipt writer; GitHub artifact zips must carry byte-identical receipts and
+  their sha256 must match the forge record.
+
+### Changed
+- `release-preflight.py` now defaults to `configured-unverified` unless evidence,
+  external anchor, expected ref, and GitHub artifacts are complete. Relaxation
+  switches can never produce `verified`.
+- The trust anchor is an out-of-tree directory containing pinned copies of the
+  preflight, provenance checker, evidence fetcher, and count collector; symlink,
+  hardlink/self-compare, in-tree, missing, and mismatched anchors are rejected.
+- Workflow/ref/repository/run-attempt comparisons are exact; required `needs`
+  and load-bearing jobs are fixed sets rather than optional checks.
+- Test counts record pass/fail/cancelled/skipped/todo, per-suite Python counts,
+  and e2e failures; bool, negative, inconsistent, zero, or below-floor counts fail.
+- All git subprocesses strip ambient `GIT_*`. Ignored inputs are allowlisted, and
+  the three legacy entrypoints are accepted only as exact compatibility symlinks.
+
+### Fixed
+- CLI configuration, MCP configuration, empty-owner semantics, malformed config
+  handling, explicit `GTS_BIN`, safe PATH resolution, Windows cmd/batch argument
+  rejection, timeout attribution, and the early `mirror_state` import.
+
 ## [1.2.2-rc6] - Unreleased
 
 Hardens the release evidence chain. Every item below closes a finding from the

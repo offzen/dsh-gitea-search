@@ -221,3 +221,102 @@ test('W8-5 命令注入实证：若不加引号，& 会被 shell 解释（反向
   // 该用例依赖 cmd.exe，仅在 Windows 上跑；此处保留以便 CI windows-latest 覆盖。
   assert.ok(IS_WIN);
 });
+
+// ── rc7 B5：winQuoteArg / cmdLine 的前置拒绝（POSIX 上全部真跑，不需要 cmd.exe）──────────────
+//
+// 为什么能在 POSIX 上断言：拒绝发生在「构造命令行」阶段（纯字符串逻辑），根本不碰 cmd.exe；
+// 需要真实 cmd.exe 才能证明的往返用例（W8-6/7/8）仍保持 skip。
+function rejection(fn) {
+  try { fn(); } catch (error) { return error; }
+  return null;
+}
+
+for (const [label, ch] of [['LF', '\n'], ['CR', '\r'], ['NUL', '\0']]) {
+  test(`B5 winQuoteArg 拒绝含 ${label} 的参数（明确报错，不截断不清洗）`, () => {
+    const err = rejection(() => winQuoteArg(`foo${ch}bar`));
+    assert.ok(err, '必须抛错');
+    assert.equal(err.code, 'ARG_REJECTED');
+    assert.match(err.message, /ARG_REJECTED/);
+    assert.match(err.message, /换行|NUL/);
+    assert.match(err.message, /已拒绝/);
+    assert.ok(err.message.includes('foo'), '错误里应带出参数前缀以便定位');
+  });
+}
+
+test('B5 winQuoteArg 对不含控制字符的参数行为不变', () => {
+  assert.equal(winQuoteArg('plain'), '"plain"');
+  assert.equal(winQuoteArg('a&b|c<d>e^f%PATH%!x'), '"a&b|c<d>e^f%PATH%!x"');
+});
+
+test('B5 cmdLine：任何参数（含 binPath）含换行/NUL 一律拒绝，无论目标类型', () => {
+  for (const bin of ['C:\\tools\\gts.exe', 'C:\\tools\\gts.cmd']) {
+    for (const bad of ['a\nb', 'a\rb', 'a\0b']) {
+      const err = rejection(() => buildCmdLine(bin, ['--json', bad]));
+      assert.ok(err, `${bin} / ${JSON.stringify(bad)} 必须被拒绝`);
+      assert.equal(err.code, 'ARG_REJECTED');
+    }
+  }
+  assert.ok(rejection(() => buildCmdLine('C:\\tools\\gts\n.exe', ['x'])), 'binPath 含换行也必须拒绝');
+});
+
+test('B5 cmdLine：目标是 .cmd/.bat 时，含 % ! ^ & | < > 的参数被拒绝并指明参数序号与字符', () => {
+  for (const bin of ['C:\\tools\\gts.cmd', 'C:\\tools\\gts.bat', 'C:\\tools\\GTS.CMD']) {
+    for (const meta of ['%', '!', '^', '&', '|', '<', '>']) {
+      const err = rejection(() => buildCmdLine(bin, ['--json', `pat${meta}tern`]));
+      assert.ok(err, `${bin} 下含 ${meta} 必须拒绝`);
+      assert.equal(err.code, 'ARG_REJECTED');
+      assert.match(err.message, /参数 #2/, '应指明是第几个参数');
+      assert.ok(err.message.includes(meta), `错误应点名字符 ${meta}`);
+      assert.match(err.message, /BatBadBut|二次解析/);
+      assert.match(err.message, /gts\.exe/, '应给出可行的替代方案');
+    }
+  }
+});
+
+test('B5 cmdLine：.cmd/.bat 目标下不含元字符的参数照常拼装（含空格/引号/中文）', () => {
+  const line = buildCmdLine('C:\\tools\\gts.cmd', ['--json', '中文 pattern', 'say "hi"']);
+  assert.equal(line, '"\\"C:\\tools\\gts.cmd\\" \\"--json\\" \\"中文 pattern\\" \\"say \\"\\"hi\\"\\"\\""'.replace(/\\"/g, '"'));
+});
+
+test('B5 cmdLine：.exe 目标不受 BatBadBut 拒绝影响（直执行不经 cmd，元字符仍可原样往返）', () => {
+  assert.doesNotThrow(() => buildCmdLine('C:\\tools\\gts.exe', ['a&b', '%PATH%', 'x^y', '!z', '<|>']));
+});
+
+// 用真实 run() 源码 + 桩 spawn 证明「拒绝发生在构造命令行与 spawn 之前」。
+function loadRun({ isWin }) {
+  const spawnCalls = [];
+  const spawn = (...a) => { spawnCalls.push(a); return { stub: true }; };
+  const carry = (p, timeoutMs, resolve) => resolve({ code: 0, out: 'spawned', err: '', timedOut: false });
+  const body = `${quoteSrc}; ${cmdLineSrc}; ${sliceFunction(SERVER_SRC, 'run')}; return run;`;
+  // eslint-disable-next-line no-new-func
+  const run = new Function('IS_WIN', 'spawn', 'carry', 'MIRROR_ROOT', 'OWNERS', body)(isWin, spawn, carry, '/m', ['o']);
+  return { run, spawnCalls };
+}
+
+test('B5 run()：.cmd 目标 + 元字符参数 ⇒ 结构化拒绝结果，spawn 一次都没调用', async () => {
+  const { run, spawnCalls } = loadRun({ isWin: true });
+  for (const bad of ['a&b', '100%', 'a\nb']) {
+    const r = await run({ bin: 'C:\\tools\\gts.cmd', kind: 'shell' }, ['--json', bad]);
+    assert.equal(r.code, -1);
+    assert.equal(r.timedOut, false);
+    assert.match(r.err, /^ARG_REJECTED/);
+  }
+  assert.equal(spawnCalls.length, 0, '命令行构造失败时绝不能 spawn');
+});
+
+test('B5 run()：合法参数照常 spawn cmd /d /s /c；.exe 直执行带元字符也不拒绝', async () => {
+  const { run, spawnCalls } = loadRun({ isWin: true });
+  await run({ bin: 'C:\\tools\\gts.cmd', kind: 'shell' }, ['--json', 'plain']);
+  assert.equal(spawnCalls.length, 1);
+  assert.deepEqual(spawnCalls[0][1].slice(0, 3), ['/d', '/s', '/c']);
+  await run({ bin: 'C:\\tools\\gts.exe', kind: 'direct' }, ['--json', 'a&b%']);
+  assert.equal(spawnCalls.length, 2);
+  assert.deepEqual(spawnCalls[1][1], ['--json', 'a&b%']);
+});
+
+test('B5 注释修正：不再声称 /s 解决 %VAR% 展开，并明确 /s 不阻止展开', () => {
+  const normalized = SERVER_SRC.replace(/\r\n/g, '\n');
+  assert.doesNotMatch(normalized, /%PATH%` 仍被展开（实测泄漏整串 PATH）/, '旧注释把 %PATH% 泄漏归因于没加 /s，不成立');
+  assert.match(normalized, /\*\*\/s 并不阻止 %VAR% 展开\*\*/);
+  assert.match(normalized, /\/s \*\*不\*\*解决 %VAR% 展开/);
+});

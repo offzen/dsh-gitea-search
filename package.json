@@ -1,7 +1,7 @@
 {
   "name": "dsh-gitea-search",
   "type": "module",
-  "version": "1.2.2-rc6",
+  "version": "1.2.2-rc7",
   "description": "DeepSeek Harness (DSH) 高性能 Gitea/Git 镜像混合检索引擎（git grep + SQLite FTS5 + Jieba + MCP Server）",
   "license": "Apache-2.0",
   "repository": {
@@ -22,9 +22,9 @@
   ],
   "scripts": {
     "test": "node --test",
-    "test:preflight": "python3 test/release-preflight.test.py && python3 test/hosted-receipt.test.py",
+    "test:preflight": "python3 test/release-preflight.test.py && python3 test/hosted-receipt.test.py && python3 test/collect-test-counts.test.py && python3 test/fetch-remote-evidence.test.py && python3 test/workflow-contract.test.py",
     "test:e2e": "bash scripts/run-e2e-test.sh",
-    "test:all": "node --test && python3 test/release-preflight.test.py && python3 test/hosted-receipt.test.py && bash scripts/run-e2e-test.sh"
+    "test:all": "node --test && npm run test:preflight && bash scripts/run-e2e-test.sh"
   },
   "engines": {
     "node": ">=20.11.0"

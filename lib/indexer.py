@@ -68,11 +68,13 @@ def get_configured_owners(explicit_owner=None, config_path=None, project_dir=Non
     """获取 effective owners；缺失/占位配置返回空列表，由入口 fail closed。"""
     if resolve_config is None:
         return []
-    return resolve_config(
+    effective = resolve_config(
         cli_owners=explicit_owner,
         config_path=config_path,
         project_dir=project_dir,
-    )["owners"]
+    )
+    # 配置无效（显式配置文件缺失/畸形/占位 owners）一律视为未配置，不带着半截结果继续。
+    return effective["owners"] if effective["valid"] else []
 
 # 2026-10-21 阶段三方案C：文档 + 高价值配置/脚本（源码仍走 git-grep）
 DOC_EXTS = {".md", ".markdown", ".txt", ".rst"}

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Offline negative/positive fixtures for scripts/release-preflight.py."""
+"""Offline positive and negative contracts for the rc7 release preflight."""
 from __future__ import annotations
 
+import datetime as dt
+import hashlib
 import json
 import os
 import pathlib
@@ -10,380 +12,303 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 
 SOURCE = pathlib.Path(__file__).resolve().parent.parent
+GATES = ("gate2-linux", "github-linux", "github-macos", "github-windows")
+REF = "refs/heads/release/test"
+WORKFLOWS = {
+    "gate2-linux": ".gitea/workflows/ci.yml",
+    "github-linux": ".github/workflows/ci.yml",
+    "github-macos": ".github/workflows/ci.yml",
+    "github-windows": ".github/workflows/windows-ci.yml",
+}
+REQUIRED_NEEDS = {
+    "github-linux": {"test": "success", "package": "success"},
+    "github-macos": {"test-macos": "success"},
+    "github-windows": {
+        "windows-pe": "success", "windows-ps": "success", "windows-tests": "success",
+        "windows-git-bash": "success", "windows-grep-crlf": "success",
+    },
+}
+JOB_NAMES = {
+    "gate2-linux": ["Exact-SHA Linux gate"],
+    "github-linux": [
+        *(f"Unit + E2E (Ubuntu, py{py}, node{node})" for py in ("3.11", "3.12") for node in ("20", "22")),
+        "Python wheel + sdist (Ubuntu, py3.12)", "Hosted Linux exact-SHA receipt",
+    ],
+    "github-macos": ["Unit + E2E (macOS, py3.12, node22)", "Hosted macOS exact-SHA receipt"],
+    "github-windows": [
+        "W5 gts.exe 是真实 PE 文件", "W6 setup-windows.ps1 PS5.1 + PS7 WhatIf",
+        *(f"W7/W8 运行时行为（py{py} / node{node}）" for py in ("3.11", "3.12") for node in ("20", "22")),
+        "W10 Git Bash full E2E", "W9 git grep 的 CRLF 与路径分隔符行为",
+        "Final exact-SHA hosted Windows receipt",
+    ],
+}
 
 
-def remove_test_tree(path: pathlib.Path) -> None:
-    def clear_readonly_and_retry(function, target, _exc_info):
+def remove_tree(path: pathlib.Path) -> None:
+    def retry(function, target, _exc_info):
         os.chmod(target, 0o700)
         function(target)
+    shutil.rmtree(path, onerror=retry)
 
-    shutil.rmtree(path, onerror=clear_readonly_and_retry)
+
+def sha(path: pathlib.Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 class ReleasePreflightTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = pathlib.Path(tempfile.mkdtemp(prefix="release-preflight-test-"))
         self.repo = self.temp / "repo"
-        shutil.copytree(SOURCE, self.repo, ignore=shutil.ignore_patterns(".git", "node_modules", "__pycache__", "build", "dist", "*.egg-info"))
+        shutil.copytree(
+            SOURCE, self.repo,
+            ignore=shutil.ignore_patterns(".git", "node_modules", "__pycache__", "build", "dist", "*.egg-info",
+                                          "gitq", "dsh-search", "mcp-server-gitea-search"),
+        )
         self.git("init", "-q")
         self.git("config", "user.name", "Preflight Test")
         self.git("config", "user.email", "preflight@example.invalid")
         self.git("add", ".")
         self.git("commit", "-qm", "content D")
         self.content = self.git("rev-parse", "HEAD").strip()
-        subprocess.run(
-            [sys.executable, "scripts/generate-provenance.py", "--source-commit", self.content],
-            cwd=self.repo, check=True, text=True, capture_output=True,
-        )
+        subprocess.run([sys.executable, "scripts/generate-provenance.py", "--source-commit", self.content],
+                       cwd=self.repo, check=True, capture_output=True, text=True)
         self.git("add", "PROVENANCE.json")
         self.git("commit", "-qm", "provenance P")
         self.provenance = self.git("rev-parse", "HEAD").strip()
         self.tree = self.git("rev-parse", "HEAD^{tree}").strip()
-        self.receipts = self.temp / "receipts"
-        self.receipts.mkdir()
-        self.write_all_receipts()
+        self.data = self.temp / "data"
+        self.data.mkdir()
+        self.anchor = self.temp / "anchor"
+        self.anchor.mkdir()
+        for name in ("release-preflight.py", "check-provenance.py", "fetch-remote-evidence.py", "collect-test-counts.py"):
+            shutil.copy2(self.repo / "scripts" / name, self.anchor / name)
+        self.write_contract_inputs()
 
     def tearDown(self) -> None:
-        remove_test_tree(self.temp)
+        remove_tree(self.temp)
 
     def git(self, *args: str) -> str:
-        result = subprocess.run(["git", *args], cwd=self.repo, check=True, text=True, capture_output=True)
-        return result.stdout
+        return subprocess.run(["git", *args], cwd=self.repo, check=True, capture_output=True, text=True).stdout
 
-    def receipt(self, gate: str) -> dict:
+    def counts(self, gate: str) -> dict:
+        return {
+            "node_total": 74, "node_pass": 70, "node_fail": 0, "node_cancelled": 0,
+            "node_skipped": 4, "node_todo": 0, "python_suites": 4,
+            "e2e": 0 if gate == "github-windows" else 31,
+        }
+
+    def receipt(self, gate: str, counts_raw: bytes) -> dict:
         hosted = gate.startswith("github-")
-        data = {
-            "schema": 2,
-            "gate": gate,
+        repo = "offzen/dsh-gitea-search" if hosted else "zaoz/dsh-gitea-search"
+        workflow = WORKFLOWS[gate]
+        result = {
+            "schema": 3, "gate": gate,
             "provider": "github-actions-hosted" if hosted else "gitea-actions",
-            "runner_environment": (
-                "github-hosted-clean-windows" if gate == "github-windows"
-                else "clean-linux-runner" if gate == "gate2-linux"
-                else "github-hosted-clean-runner"
-            ),
-            "repository": ("offzen/dsh-gitea-search" if hosted else "zaoz/dsh-gitea-search"),
-            "commit": self.provenance,
-            "tree": self.tree,
-            "status": "success",
-            "started_at": "2026-11-01T00:00:00Z",
-            "gate_started_at": "2026-11-01T00:00:00Z",
-            "ended_at": "2026-11-01T00:01:00Z",
-            "duration_seconds": 60,
-            "run_id": "run-" + gate,
-            "test_counts": {
-                "node_total": 74, "node_pass": 70, "node_fail": 0,
-                "python_suites": 2,
-                # Windows measures e2e in the separate windows-git-bash job, so the
-                # receipt job records 0 and the verifier requires that job via `needs`.
-                "e2e": 0 if gate == "github-windows" else 31,
+            "runner_environment": ("github-hosted-clean-windows" if gate == "github-windows"
+                                   else "github-hosted-clean-runner" if hosted else "clean-linux-runner"),
+            "repository": repo, "commit": self.provenance, "tree": self.tree, "status": "success",
+            "started_at": "2026-11-07T00:00:00Z", "gate_started_at": "2026-11-07T00:00:00Z",
+            "ended_at": "2026-11-07T00:01:00Z", "duration_seconds": 60,
+            "run_id": str(900 if not hosted else 1000 + GATES.index(gate)) + (":" + gate if hosted else ""),
+            "run_attempt": 1, "workflow": workflow,
+            "workflow_ref": f"{repo}/{workflow}@{REF}", "event": "push", "ref": REF,
+            "inputs_sha256": {
+                "test-counts.json": hashlib.sha256(counts_raw).hexdigest(),
+                "collect-test-counts.py": sha(self.repo / "scripts/collect-test-counts.py"),
+                **({"write-gate-receipt.py": sha(self.repo / ".github/scripts/write-gate-receipt.py")} if hosted
+                   else {"linux-gate.sh": sha(self.repo / "scripts/ci/linux-gate.sh")}),
             },
-            "checks": ["checkout-exact-sha", "test-counts-floors"],
+            "test_counts": self.counts(gate),
+            "checks": ["schema-3-contract"],
             "toolchain": {
-                "os": ("Windows-2025Server" if gate == "github-windows"
-                       else "macOS-26.7.2" if gate == "github-macos"
-                       else "Linux-7.0.0"),
-                "python": "3.12", "node": "v22.23.4", "git": "2.43.0",
+                "os": "Windows-2025" if gate == "github-windows" else "macOS-15" if gate == "github-macos" else "Linux-6",
+                "python": "3.12", "node": "v22", "git": "2.43",
             },
         }
         if hosted:
-            data.update({
-                "workflow": ".github/workflows/windows-ci.yml" if gate == "github-windows" else ".github/workflows/ci.yml",
-                "workflow_run_id": "workflow-" + gate,
-                "event": "workflow_dispatch",
-                "ref": "refs/heads/release/test",
-                "runner_label": (
-                    "windows-latest" if gate == "github-windows"
-                    else "macos-latest" if gate == "github-macos"
-                    else "ubuntu-latest"
-                ),
-                "needs": (
-                    {"windows-git-bash": "success", "windows-pe": "success", "windows-ps": "success",
-                     "windows-tests": "success", "windows-grep-crlf": "success"}
-                    if gate == "github-windows" else {"test": "success"}
-                ),
+            result.update({
+                "workflow_run_id": str(1000 + GATES.index(gate)),
+                "runner_label": "windows-latest" if gate == "github-windows" else "macos-latest" if gate == "github-macos" else "ubuntu-latest",
+                "needs": REQUIRED_NEEDS[gate],
+                "runner_hosted_environment": "github-hosted",
+                "runner_name": "GitHub Actions 1000000001",
+                "runner_os": "Windows" if gate == "github-windows" else "macOS" if gate == "github-macos" else "Linux",
+                "runner_arch": "X64",
             })
-            data["workflow_ref"] = (
-                f"offzen/dsh-gitea-search/{data['workflow']}@{data['ref']}"
-            )
         else:
-            data.update({
-                "trust": "same-party",
-                "workflow": ".gitea/workflows/ci.yml",
-                "event": "workflow_dispatch",
-                "ref": "refs/heads/release/test",
-            })
-        return data
+            result["trust"] = "same-party"
+        return result
 
-    def write_all_receipts(self) -> None:
-        for gate in ("gate2-linux", "github-linux", "github-macos", "github-windows"):
-            (self.receipts / f"{gate}.json").write_text(json.dumps(self.receipt(gate)) + "\n", encoding="utf-8")
-
-    def remote_evidence(self, gate: str) -> dict:
-        receipt = self.receipt(gate)
+    def evidence(self, gate: str, artifact_digest: str | None) -> dict:
+        hosted = gate.startswith("github-")
+        label = "windows-latest" if gate == "github-windows" else "macos-latest" if gate == "github-macos" else "ubuntu-latest"
+        jobs = [{
+            "name": name, "conclusion": "success", "status": "completed",
+            "labels": [label] if hosted else [], "runner_name": "GitHub Actions 1000000001" if hosted else "gitea-runner",
+            "runner_group_name": "GitHub Actions" if hosted else None,
+        } for name in JOB_NAMES[gate]]
+        artifacts = [] if artifact_digest is None else [{
+            "name": f"{gate}-{self.provenance}", "digest": "sha256:" + artifact_digest,
+            "size_in_bytes": (self.data / f"{gate}.zip").stat().st_size, "expired": False,
+        }]
         return {
-            "gate": gate,
-            "run_id": receipt.get("workflow_run_id") or receipt["run_id"],
-            "head_sha": self.provenance,
-            "conclusion": "success",
-            "jobs": [{"name": "unit", "conclusion": "success"}],
+            "schema": 2, "forge": "github" if hosted else "gitea", "gate": gate,
+            "provider": "github-actions-hosted" if hosted else "gitea-actions",
+            "repository": "offzen/dsh-gitea-search" if hosted else "zaoz/dsh-gitea-search",
+            "workflow_path": WORKFLOWS[gate], "workflow_name": "CI", "event": "push",
+            "head_branch": "release/test", "run_attempt": 1 if hosted else None,
+            "head_sha": self.provenance, "conclusion": "success", "status": "completed",
+            "run_id": str(1000 + GATES.index(gate)) if hosted else "900",
+            "jobs": jobs, "jobs_total_count": len(jobs), "artifacts": artifacts,
+            "artifacts_total_count": len(artifacts), "artifacts_available": hosted,
+            "fetched_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         }
 
-    def write_remote_evidence(self) -> None:
-        for gate in ("gate2-linux", "github-linux", "github-macos", "github-windows"):
-            (self.receipts / f"remote-{gate}.json").write_text(
-                json.dumps(self.remote_evidence(gate)) + "\n", encoding="utf-8")
+    def write_contract_inputs(self) -> None:
+        for gate in GATES:
+            counts_raw = (json.dumps(self.counts(gate), sort_keys=True) + "\n").encode()
+            (self.data / f"counts-{gate}.json").write_bytes(counts_raw)
+            receipt = self.receipt(gate, counts_raw)
+            receipt_raw = (json.dumps(receipt, sort_keys=True) + "\n").encode()
+            (self.data / f"{gate}.json").write_bytes(receipt_raw)
+            digest = None
+            if gate.startswith("github-"):
+                with zipfile.ZipFile(self.data / f"{gate}.zip", "w") as archive:
+                    archive.writestr(f"{gate}.json", receipt_raw)
+                    archive.writestr("test-counts.json", counts_raw)
+                digest = sha(self.data / f"{gate}.zip")
+            (self.data / f"evidence-{gate}.json").write_text(
+                json.dumps(self.evidence(gate, digest), sort_keys=True) + "\n", encoding="utf-8")
 
-    def patch_receipt(self, gate: str, **changes: object) -> None:
-        path = self.receipts / f"{gate}.json"
-        data = json.loads(path.read_text(encoding="utf-8"))
-        data.update(changes)
-        path.write_text(json.dumps(data) + "\n", encoding="utf-8")
+    def patch_json(self, name: str, mutate) -> None:
+        path = self.data / name
+        value = json.loads(path.read_text(encoding="utf-8"))
+        mutate(value)
+        path.write_text(json.dumps(value, sort_keys=True) + "\n", encoding="utf-8")
 
-    def run_preflight(self, *extra: str) -> subprocess.CompletedProcess[str]:
-        args = [
-            sys.executable, "scripts/release-preflight.py",
-            "--content", self.content,
-            "--provenance", self.provenance,
-        ]
-        for gate in ("gate2-linux", "github-linux", "github-macos", "github-windows"):
-            args += ["--receipt", f"{gate}={self.receipts / f'{gate}.json'}"]
-        args += list(extra)
-        return subprocess.run(args, cwd=self.repo, text=True, capture_output=True, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+    def run_preflight(self, *, full: bool = False, extra: list[str] | None = None,
+                      env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+        args = [sys.executable, "scripts/release-preflight.py", "--content", self.content, "--provenance", self.provenance]
+        for gate in GATES:
+            args += ["--receipt", f"{gate}={self.data / f'{gate}.json'}"]
+        if full:
+            args += ["--expected-ref", REF, "--trust-anchor", str(self.anchor)]
+            for gate in GATES:
+                args += ["--remote-evidence", f"{gate}={self.data / f'evidence-{gate}.json'}"]
+                if gate.startswith("github-"):
+                    args += ["--artifact", f"{gate}={self.data / f'{gate}.zip'}"]
+        args += extra or []
+        return subprocess.run(args, cwd=self.repo, capture_output=True, text=True,
+                              env=env or {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
 
-    def run_preflight_with_evidence(self, *extra: str) -> subprocess.CompletedProcess[str]:
-        self.write_remote_evidence()
-        args = ["--require-remote-evidence"]
-        for gate in ("gate2-linux", "github-linux", "github-macos", "github-windows"):
-            args += ["--remote-evidence", f"{gate}={self.receipts / f'remote-{gate}.json'}"]
-        return self.run_preflight(*(args + list(extra)))
-
-    def test_accepts_exact_dp_and_hosted_receipts(self) -> None:
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["status"], "verified")
-
-    def test_rejects_local_gate2_receipt(self) -> None:
-        path = self.receipts / "gate2-linux.json"
-        data = json.loads(path.read_text(encoding="utf-8"))
-        data["provider"] = "local-offline"
-        path.write_text(json.dumps(data) + "\n", encoding="utf-8")
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("provider is not Gitea Actions", result.stderr)
-
-    def test_rejects_wrong_exact_sha(self) -> None:
-        path = self.receipts / "github-windows.json"
-        data = json.loads(path.read_text(encoding="utf-8"))
-        data["commit"] = "0" * 40
-        path.write_text(json.dumps(data) + "\n", encoding="utf-8")
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("exact P mismatch", result.stderr)
-
-    def test_rejects_local_windows_receipt(self) -> None:
-        path = self.receipts / "github-windows.json"
-        data = json.loads(path.read_text(encoding="utf-8"))
-        data["provider"] = "vtwsl-local-gate"
-        data["runner_environment"] = "local-windows"
-        path.write_text(json.dumps(data) + "\n", encoding="utf-8")
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("provider is not GitHub hosted", result.stderr)
-
-    def test_rejects_missing_receipt(self) -> None:
-        (self.receipts / "github-macos.json").unlink()
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("invalid receipt", result.stderr)
-
-    def test_rejects_non_provenance_only_tip(self) -> None:
-        (self.repo / "README.md").write_text("not provenance-only\n", encoding="utf-8")
-        self.git("add", "README.md")
-        self.git("commit", "-qm", "bad P")
-        bad_p = self.git("rev-parse", "HEAD").strip()
-        args = [sys.executable, "scripts/release-preflight.py", "--content", self.provenance, "--provenance", bad_p, "--allow-partial"]
-        result = subprocess.run(args, cwd=self.repo, text=True, capture_output=True)
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("only PROVENANCE.json", result.stderr)
-
-    # ---- rc6 hardening: one test per audit finding -------------------------------
-
-    def test_accepts_with_complete_remote_evidence(self) -> None:
-        """F1: forge-side evidence must be accepted when it agrees with the receipts."""
-        result = self.run_preflight_with_evidence()
+    def test_full_contract_verifies_and_default_fails_closed(self) -> None:
+        result = self.run_preflight(full=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
         self.assertEqual(payload["status"], "verified")
-        self.assertTrue(payload["remote_evidence_complete"])
+        self.assertEqual(payload["trust_ceiling"], "same-party")
+        self.assertTrue(all(payload["artifact_digest_bound"].get(g, False) for g in GATES[1:]))
+        partial = self.run_preflight()
+        self.assertEqual(partial.returncode, 0, partial.stderr)
+        payload = json.loads(partial.stdout)
+        self.assertEqual(payload["status"], "configured-unverified")
+        self.assertTrue(payload["blocked_reasons"])
 
-    def test_rejects_remote_evidence_with_wrong_sha(self) -> None:
-        """F1: evidence about a different commit must not verify this candidate."""
-        self.write_remote_evidence()
-        path = self.receipts / "remote-github-macos.json"
-        data = json.loads(path.read_text(encoding="utf-8"))
-        data["head_sha"] = "0" * 40
-        path.write_text(json.dumps(data) + "\n", encoding="utf-8")
-        args = ["--require-remote-evidence"]
-        for gate in ("gate2-linux", "github-linux", "github-macos", "github-windows"):
-            args += ["--remote-evidence", f"{gate}={self.receipts / f'remote-{gate}.json'}"]
-        result = self.run_preflight(*args)
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("remote evidence head_sha is not exact P", result.stderr)
+    def test_rejects_receipt_identity_and_expected_ref_mismatches(self) -> None:
+        cases = [
+            ("github-linux.json", lambda d: d.update(commit="0" * 40), "exact P mismatch"),
+            ("github-macos.json", lambda d: d.update(workflow_ref="offzen/dsh-gitea-search/.github/workflows/ci.yml@refs/heads/evil"), "workflow_ref ref"),
+            ("gate2-linux.json", lambda d: d.update(repository="offzen/dsh-gitea-search"), "repository mismatch"),
+        ]
+        for name, mutation, message in cases:
+            with self.subTest(name=name):
+                self.write_contract_inputs(); self.patch_json(name, mutation)
+                result = self.run_preflight(full=True)
+                self.assertEqual(result.returncode, 2); self.assertIn(message, result.stderr)
 
-    def test_rejects_remote_evidence_with_failed_job(self) -> None:
-        """F1: one red job in the forge record must block, even if the receipt says success."""
-        self.write_remote_evidence()
-        path = self.receipts / "remote-github-linux.json"
-        data = json.loads(path.read_text(encoding="utf-8"))
-        data["jobs"].append({"name": "e2e", "conclusion": "failure"})
-        path.write_text(json.dumps(data) + "\n", encoding="utf-8")
-        args = ["--require-remote-evidence"]
-        for gate in ("gate2-linux", "github-linux", "github-macos", "github-windows"):
-            args += ["--remote-evidence", f"{gate}={self.receipts / f'remote-{gate}.json'}"]
-        result = self.run_preflight(*args)
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("concluded 'failure'", result.stderr)
+    def test_rejects_bad_counts(self) -> None:
+        cases = [
+            (lambda c: c.update(node_pass=True), "not bool"),
+            (lambda c: c.update(node_skipped=-1), "non-negative"),
+            (lambda c: c.update(node_total=73), "arithmetic inconsistent"),
+            (lambda c: c.update(node_pass=63, node_skipped=11), "below floor"),
+        ]
+        for mutation, message in cases:
+            with self.subTest(message=message):
+                self.write_contract_inputs()
+                self.patch_json("gate2-linux.json", lambda d: mutation(d["test_counts"]))
+                result = self.run_preflight(full=True)
+                self.assertEqual(result.returncode, 2); self.assertIn(message, result.stderr)
 
-    def test_requires_remote_evidence_for_every_gate(self) -> None:
-        """F1: --require-remote-evidence must not pass with a partial evidence set."""
-        self.write_remote_evidence()
-        result = self.run_preflight("--require-remote-evidence",
-                                    "--remote-evidence", f"github-linux={self.receipts / 'remote-github-linux.json'}")
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("missing remote evidence", result.stderr)
+    def test_rejects_deep_evidence_mismatches(self) -> None:
+        cases = [
+            (lambda d: d.update(repository="other/repo"), "repository"),
+            (lambda d: d.update(workflow_path=".github/workflows/other.yml"), "workflow_path"),
+            (lambda d: d.update(event="pull_request"), "event"),
+            (lambda d: d.update(run_attempt=2), "run_attempt"),
+            (lambda d: d.update(jobs_total_count=len(d["jobs"]) + 1), "jobs_total_count"),
+            (lambda d: d["jobs"][0]["labels"].append("self-hosted"), "self-hosted"),
+        ]
+        for mutation, message in cases:
+            with self.subTest(message=message):
+                self.write_contract_inputs(); self.patch_json("evidence-github-linux.json", mutation)
+                result = self.run_preflight(full=True)
+                self.assertEqual(result.returncode, 2); self.assertIn(message, result.stderr)
 
-    def test_rejects_unallowlisted_runner_label(self) -> None:
-        """F4: linux/macos runner labels are now checked, not only windows."""
-        self.patch_receipt("github-macos", runner_label="ubuntu-latest")
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("runner_label not allowlisted", result.stderr)
+    def test_rejects_artifact_digest_and_receipt_byte_mismatches(self) -> None:
+        self.patch_json("evidence-github-linux.json", lambda d: d["artifacts"][0].update(digest="sha256:" + "0" * 64))
+        result = self.run_preflight(full=True)
+        self.assertEqual(result.returncode, 2); self.assertIn("artifact digest mismatch", result.stderr)
+        self.write_contract_inputs()
+        self.patch_json("github-linux.json", lambda d: d["checks"].append("post-zip-change"))
+        result = self.run_preflight(full=True)
+        self.assertEqual(result.returncode, 2); self.assertIn("receipt bytes differ", result.stderr)
 
-    def test_rejects_wrong_platform_family(self) -> None:
-        """F7: a macOS receipt claiming a Linux toolchain must be rejected."""
-        self.patch_receipt("github-macos", toolchain={
-            "os": "Linux-7.0.0", "python": "3.12", "node": "v22.23.4", "git": "2.43.0"})
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("platform family", result.stderr)
+    def test_anchor_rejects_symlink_inside_and_tamper(self) -> None:
+        link = self.temp / "anchor-link"; link.symlink_to(self.anchor, target_is_directory=True)
+        result = self.run_preflight(extra=["--trust-anchor", str(link), "--allow-missing-evidence"])
+        self.assertEqual(result.returncode, 2); self.assertIn("must not be a symlink", result.stderr)
+        inside = self.repo / "anchor"; shutil.copytree(self.anchor, inside)
+        result = self.run_preflight(extra=["--trust-anchor", str(inside), "--allow-missing-evidence"])
+        self.assertEqual(result.returncode, 2); self.assertIn("inside the checkout", result.stderr)
+        shutil.rmtree(inside)
+        (self.anchor / "release-preflight.py").write_text("tampered\n", encoding="utf-8")
+        result = self.run_preflight(extra=["--trust-anchor", str(self.anchor), "--allow-missing-evidence"])
+        self.assertEqual(result.returncode, 2); self.assertIn("differs from trust anchor", result.stderr)
 
-    def test_rejects_weakened_suite(self) -> None:
-        """F8: a suite that shrank below the floors must not verify."""
-        self.patch_receipt("gate2-linux", test_counts={
-            "node_total": 3, "node_pass": 3, "node_fail": 0, "python_suites": 2, "e2e": 31})
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("below floor", result.stderr)
-
-    def test_rejects_missing_test_counts(self) -> None:
-        """F8: a receipt without counts carries no evidence that anything ran."""
-        path = self.receipts / "github-windows.json"
-        data = json.loads(path.read_text(encoding="utf-8"))
-        data.pop("test_counts")
-        path.write_text(json.dumps(data) + "\n", encoding="utf-8")
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("test_counts missing", result.stderr)
-
-    def test_rejects_failed_need(self) -> None:
-        """F3: status must follow the needs graph, so a failed upstream job blocks."""
-        self.patch_receipt("github-linux", needs={"test": "success", "package": "failure"})
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("upstream jobs not all successful", result.stderr)
-
-    def test_rejects_workflow_ref_on_other_ref(self) -> None:
-        """F2: a run from a side branch must not mint a receipt for the released ref."""
-        self.patch_receipt(
-            "github-macos",
-            workflow_ref="offzen/dsh-gitea-search/.github/workflows/ci.yml@refs/heads/evil-side-branch",
-        )
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("workflow_ref ref does not match receipt ref", result.stderr)
-
-    def test_rejects_run_shared_across_workflows(self) -> None:
-        """F5: two different workflows must not report the same run identity."""
-        self.patch_receipt("github-windows", workflow_run_id="workflow-github-linux")
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("shared across different workflows", result.stderr)
-
-    def test_allows_run_shared_within_one_workflow(self) -> None:
-        """F5: linux and macos legitimately come from the same ci.yml run."""
-        self.patch_receipt("github-macos", workflow_run_id="workflow-github-linux")
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_rejects_zero_duration_gate(self) -> None:
-        """F3: a gate_started_at that equals ended_at is the old now() fallback."""
-        self.patch_receipt("github-linux", duration_seconds=0)
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("duration_seconds < 1s", result.stderr)
-
-    def test_rejects_untracked_files(self) -> None:
-        """F10: git diff cannot see untracked files, so they are rejected explicitly."""
-        (self.repo / "leftover.txt").write_text("untracked\n", encoding="utf-8")
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("untracked files", result.stderr)
-
-    def test_trust_anchor_must_match(self) -> None:
-        """F9: the in-tree verifier must equal an externally pinned copy."""
-        anchor = self.temp / "pinned-verifier.py"
-        shutil.copy2(self.repo / "scripts" / "release-preflight.py", anchor)
-        ok = self.run_preflight("--trust-anchor", str(anchor))
+    def test_ignored_compat_symlinks_are_exactly_bounded(self) -> None:
+        targets = {"gitq": "gts", "dsh-search": "gts", "mcp-server-gitea-search": "mcp-server"}
+        for name, target in targets.items():
+            (self.repo / "bin" / name).symlink_to(target)
+        ok = self.run_preflight()
         self.assertEqual(ok.returncode, 0, ok.stderr)
-        self.assertEqual(json.loads(ok.stdout)["trust_anchor_sha256"],
-                         __import__("hashlib").sha256(anchor.read_bytes()).hexdigest())
+        (self.repo / "bin" / "gitq").unlink(); (self.repo / "bin" / "gitq").write_text("hidden\n")
+        bad = self.run_preflight()
+        self.assertEqual(bad.returncode, 2); self.assertIn("non-whitelisted ignored", bad.stderr)
 
-        anchor.write_text(anchor.read_text(encoding="utf-8") + "\n# tampered\n", encoding="utf-8")
-        bad = self.run_preflight("--trust-anchor", str(anchor))
-        self.assertEqual(bad.returncode, 2)
-        self.assertIn("differs from trust anchor", bad.stderr)
+    def test_rejects_untracked_and_cleans_ambient_git_env(self) -> None:
+        env = {**os.environ, "GIT_DIR": "/definitely/not/a/repository", "PYTHONDONTWRITEBYTECODE": "1"}
+        clean = self.run_preflight(env=env)
+        self.assertEqual(clean.returncode, 0, clean.stderr)
+        (self.repo / "leftover.txt").write_text("untracked\n")
+        dirty = self.run_preflight()
+        self.assertEqual(dirty.returncode, 2); self.assertIn("untracked files", dirty.stderr)
 
-    def test_rejects_undeclared_same_party_gate(self) -> None:
-        """F6: gate2 must declare that it is same-party regression coverage."""
-        self.patch_receipt("gate2-linux", trust="independent")
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("trust must be declared as same-party", result.stderr)
-
-    def test_rejects_windows_receipt_without_e2e_attestation(self) -> None:
-        """F8 on Windows: e2e coverage comes from the windows-git-bash job, so the
-        receipt must name it as a successful need."""
-        self.patch_receipt("github-windows", needs={"windows-pe": "success", "windows-ps": "success"})
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("needs must include windows-git-bash=success", result.stderr)
-
-    def test_rejects_windows_receipt_claiming_e2e_counts(self) -> None:
-        """F8 on Windows: the receipt job does not run e2e, so claiming a count is
-        an unmeasured assertion."""
-        self.patch_receipt("github-windows", test_counts={
-            "node_total": 74, "node_pass": 70, "node_fail": 0, "python_suites": 2, "e2e": 31})
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("does not run e2e itself", result.stderr)
-
-    def test_gate2_names_the_gitea_repository(self) -> None:
-        """gate2 runs on gitorca (private primary), so its receipt must name that
-        repository — not the GitHub mirror. Requiring one name for both made a
-        truthful gate2 receipt fail (2026-11-07)."""
-        self.patch_receipt("gate2-linux", repository="offzen/dsh-gitea-search")
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("repository mismatch (want zaoz/dsh-gitea-search)", result.stderr)
-
-    def test_github_gate_rejects_the_gitea_repository(self) -> None:
-        """The mirror identity must not be interchangeable either."""
-        self.patch_receipt("github-linux", repository="zaoz/dsh-gitea-search")
-        result = self.run_preflight()
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("repository mismatch (want offzen/dsh-gitea-search)", result.stderr)
+    def test_rejects_failed_needs_wrong_platform_and_zero_duration(self) -> None:
+        cases = [
+            ("github-linux.json", lambda d: d["needs"].update(package="failure"), "upstream jobs"),
+            ("github-macos.json", lambda d: d["toolchain"].update(os="Linux-6"), "platform family"),
+            ("github-linux.json", lambda d: d.update(duration_seconds=0), "duration_seconds < 1s"),
+            ("github-windows.json", lambda d: d["needs"].pop("windows-git-bash"), "windows-git-bash"),
+        ]
+        for name, mutation, message in cases:
+            with self.subTest(name=name):
+                self.write_contract_inputs(); self.patch_json(name, mutation)
+                result = self.run_preflight(full=True)
+                self.assertEqual(result.returncode, 2); self.assertIn(message, result.stderr)
 
 
 if __name__ == "__main__":

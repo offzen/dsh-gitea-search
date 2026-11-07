@@ -1,5 +1,22 @@
 # Release Notes - DeepSeek Harness (DSH) Gitea Search
 
+## v1.2.2-rc7 — fail-closed, forge-bound same-party release evidence
+
+- `verified` now requires four schema-3 receipts, deep forge evidence, exact
+  workflow/ref/run identity, fresh complete job listings, GitHub-hosted runner
+  signals, matching artifact digests, and an out-of-tree four-script trust anchor.
+- GitHub artifact zips bind the exact receipt and test-count bytes to the digest
+  returned by the forge. Gate2 remains explicitly same-party and has no forged
+  artifact-digest claim when Gitea cannot supply one.
+- Test counts record skipped/cancelled/todo and reject bool, negative, inconsistent,
+  zero, or weakened suites. Dedicated negative tests cover both evidence collection
+  and count collection, and a static test pins workflow needs/jobs/artifact names.
+- Product fixes make config decisions identical across CLI/MCP, reject missing
+  explicit config and `GTS_BIN`, harden PATH and Windows cmd/batch argument handling,
+  restore mirror-state diagnostics, and correctly classify process timeouts.
+- Trust statement: this raises the cost of false-green evidence but remains
+  `trust_ceiling: same-party`; it is not an independent or unforgeable attestation.
+
 ## v1.2.2-rc6 — release evidence you can check against the forge
 
 - Receipts now carry real test counts and a real gate start time, and derive success

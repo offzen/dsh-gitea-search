@@ -1,20 +1,14 @@
 #!/usr/bin/env python3
-"""Write a bounded exact-SHA GitHub hosted gate receipt atomically.
+"""Write a bounded exact-SHA GitHub-hosted gate receipt atomically.
 
-rc6 hardening (2026-11-07 audit):
-  F2  workflow_ref must name this gate's workflow AND the same ref the receipt claims,
-      so a run on a side branch cannot mint a receipt for the released ref.
-  F3  `status` is derived from the upstream `needs` results instead of being a
-      hardcoded constant, and the whole needs map is recorded in the receipt.
-  F7  toolchain.os is recorded so the verifier can assert the platform family
-      independently of this script's own platform guard.
-  F8  test_counts are required and recorded, so the verifier can enforce floors.
-  --gate-started-at is mandatory: no now() fallback, so started_at carries meaning.
+The receipt is same-party evidence.  rc7 binds it to measured runner/workflow
+identity, complete test counts, and the exact input bytes consumed by the writer.
 """
 from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import pathlib
@@ -34,14 +28,32 @@ ALLOWED_WORKFLOWS = {
     "github-macos": ".github/workflows/ci.yml",
     "github-windows": ".github/workflows/windows-ci.yml",
 }
-TEST_COUNT_KEYS = ("node_total", "node_pass", "node_fail", "python_suites", "e2e")
+COUNT_KEYS = (
+    "node_total", "node_pass", "node_fail", "node_cancelled", "node_skipped", "node_todo",
+    "python_suites",
+)
+
+
+def clean_git_env() -> dict[str, str]:
+    return {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
 
 
 def command(*args: str) -> str:
-    result = subprocess.run(args, text=True, encoding="utf-8", errors="replace", capture_output=True, check=False)
+    result = subprocess.run(
+        args, text=True, encoding="utf-8", errors="replace", capture_output=True,
+        check=False, env=clean_git_env(),
+    )
     if result.returncode:
         raise RuntimeError(f"{args[0]} failed with exit {result.returncode}")
     return result.stdout.strip()
+
+
+def sha256(path: pathlib.Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def strict_count(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def parse_timestamp(raw: str, what: str) -> dt.datetime:
@@ -55,28 +67,34 @@ def parse_timestamp(raw: str, what: str) -> dt.datetime:
 
 
 def load_test_counts(path: pathlib.Path) -> dict[str, int]:
-    """F8: counts come from the suite this job actually executed."""
+    """Load schema-2 output from collect-test-counts.py and flatten it for the receipt."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"unreadable --test-counts {path}: {type(exc).__name__}") from None
-    if not isinstance(data, dict):
-        raise RuntimeError("--test-counts must be a JSON object")
+    if not isinstance(data, dict) or data.get("schema") != 2:
+        raise RuntimeError("--test-counts must be a schema-2 JSON object")
     counts: dict[str, int] = {}
-    for key in TEST_COUNT_KEYS:
+    for key in COUNT_KEYS:
         value = data.get(key)
-        if not isinstance(value, int):
-            raise RuntimeError(f"test_counts.{key} must be an integer")
+        if not strict_count(value):
+            raise RuntimeError(f"test_counts.{key} must be a non-negative integer (not bool)")
         counts[key] = value
+    e2e = data.get("e2e")
+    if not isinstance(e2e, dict) or not strict_count(e2e.get("pass")) or not strict_count(e2e.get("fail")):
+        raise RuntimeError("test_counts.e2e must be an object with non-negative integer pass/fail")
+    counts["e2e"] = e2e["pass"]
     if counts["node_fail"] != 0:
         raise RuntimeError(f"test_counts reports {counts['node_fail']} node failures")
-    if counts["node_pass"] > counts["node_total"]:
-        raise RuntimeError("test_counts node_pass exceeds node_total")
+    parts = sum(counts[key] for key in ("node_pass", "node_fail", "node_cancelled", "node_skipped", "node_todo"))
+    if parts != counts["node_total"]:
+        raise RuntimeError("test_counts node arithmetic is inconsistent")
+    if e2e["fail"] != 0:
+        raise RuntimeError(f"test_counts reports {e2e['fail']} e2e failures")
     return counts
 
 
 def load_needs(raw: str) -> dict[str, str]:
-    """F3: the needs map is what makes `status` derived rather than asserted."""
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
@@ -97,18 +115,15 @@ def main() -> int:
     parser.add_argument("--commit", required=True)
     parser.add_argument("--runner-label", required=True)
     parser.add_argument("--output", required=True, type=pathlib.Path)
-    parser.add_argument("--test-counts", required=True, type=pathlib.Path,
-                        help="JSON written by the suite this job ran (F8)")
-    parser.add_argument("--needs-results", required=True,
-                        help="JSON map of upstream job name -> result (F3)")
-    parser.add_argument("--gate-started-at", required=True,
-                        help="ISO-8601 instant the gate started (F3: no now() fallback)")
+    parser.add_argument("--test-counts", required=True, type=pathlib.Path)
+    parser.add_argument("--needs-results", required=True)
+    parser.add_argument("--gate-started-at", required=True)
     args = parser.parse_args()
 
     try:
         if not FULL_SHA.fullmatch(args.commit):
             raise RuntimeError("commit must be a full lowercase 40-hex SHA")
-        actual = command("git", "rev-parse", "HEAD")
+        actual = command("git", "--no-pager", "-c", "core.fsmonitor=", "rev-parse", "HEAD")
         if actual != args.commit:
             raise RuntimeError("checkout HEAD does not match requested exact SHA")
         system, labels = ALLOWED[args.gate]
@@ -122,22 +137,27 @@ def main() -> int:
         if repository != "offzen/dsh-gitea-search":
             raise RuntimeError("formal repository identity mismatch")
         run_id = os.environ.get("GITHUB_RUN_ID", "")
+        run_attempt_raw = os.environ.get("GITHUB_RUN_ATTEMPT", "")
         workflow_ref = os.environ.get("GITHUB_WORKFLOW_REF", "")
         event = os.environ.get("GITHUB_EVENT_NAME", "")
         git_ref = os.environ.get("GITHUB_REF", "")
-        if not run_id or not workflow_ref or event not in {"push", "workflow_dispatch"}:
+        if not run_id.isdecimal() or not run_attempt_raw.isdecimal() or int(run_attempt_raw) < 1:
+            raise RuntimeError("workflow run id/attempt must be positive decimal integers")
+        if event not in {"push", "workflow_dispatch"} or not git_ref:
             raise RuntimeError("workflow/run/event identity is incomplete")
-        if not git_ref:
-            raise RuntimeError("GITHUB_REF is missing")
         if event == "workflow_dispatch" and os.environ.get("GTS_DISPATCH_EXACT_SHA") != actual:
             raise RuntimeError("workflow_dispatch exact_sha does not match checkout")
         expected_workflow = ALLOWED_WORKFLOWS[args.gate]
-        if f"/{expected_workflow}@" not in workflow_ref:
-            raise RuntimeError("workflow identity mismatch")
-        # F2: the workflow that produced this receipt must be the one running at git_ref,
-        # otherwise a side-branch run could mint a receipt naming the released ref.
-        if not workflow_ref.endswith("@" + git_ref):
-            raise RuntimeError("workflow_ref ref does not match the running ref")
+        expected_workflow_ref = f"{repository}/{expected_workflow}@{git_ref}"
+        if workflow_ref != expected_workflow_ref:
+            raise RuntimeError(f"workflow identity/ref mismatch: {workflow_ref!r} != {expected_workflow_ref!r}")
+
+        runner_hosted = os.environ.get("RUNNER_ENVIRONMENT", "")
+        runner_name = os.environ.get("RUNNER_NAME", "")
+        runner_os = os.environ.get("RUNNER_OS", "")
+        runner_arch = os.environ.get("RUNNER_ARCH", "")
+        if runner_hosted != "github-hosted" or not all((runner_name, runner_os, runner_arch)):
+            raise RuntimeError("measured hosted-runner identity is missing or not github-hosted")
 
         needs = load_needs(args.needs_results)
         failed = {name: result for name, result in needs.items() if result != "success"}
@@ -150,16 +170,25 @@ def main() -> int:
         if duration < 1:
             raise RuntimeError(f"--gate-started-at is not in the past (duration={duration}s)")
 
+        root = pathlib.Path(__file__).resolve().parent.parent.parent
+        inputs_sha256 = {
+            "test-counts.json": sha256(args.test_counts),
+            "collect-test-counts.py": sha256(root / "scripts" / "collect-test-counts.py"),
+            "write-gate-receipt.py": sha256(root / ".github" / "scripts" / "write-gate-receipt.py"),
+        }
         receipt = {
-            "schema": 2,
+            "schema": 3,
             "gate": args.gate,
             "provider": "github-actions-hosted",
             "runner_environment": "github-hosted-clean-windows" if args.gate == "github-windows" else "github-hosted-clean-runner",
+            "runner_hosted_environment": runner_hosted,
+            "runner_name": runner_name,
+            "runner_os": runner_os,
+            "runner_arch": runner_arch,
             "runner_label": args.runner_label,
             "repository": repository,
             "commit": actual,
-            "tree": command("git", "rev-parse", "HEAD^{tree}"),
-            # F3: derived from the needs graph, not a constant.
+            "tree": command("git", "--no-pager", "-c", "core.fsmonitor=", "rev-parse", "HEAD^{tree}"),
             "status": "success",
             "needs": needs,
             "started_at": gate_started.astimezone(dt.timezone.utc).isoformat(timespec="seconds"),
@@ -168,22 +197,20 @@ def main() -> int:
             "duration_seconds": duration,
             "run_id": run_id + ":" + args.gate,
             "workflow_run_id": run_id,
+            "run_attempt": int(run_attempt_raw),
             "workflow": expected_workflow,
             "workflow_ref": workflow_ref,
             "event": event,
             "ref": git_ref,
+            "inputs_sha256": inputs_sha256,
             "test_counts": counts,
             "checks": [
-                "checkout-exact-sha",
-                "platform-family",
-                "runner-label-allowlist",
-                "workflow-identity-and-ref",
-                "needs-all-success",
-                "test-counts-floors",
+                "checkout-exact-sha", "platform-family", "measured-hosted-runner",
+                "workflow-identity-and-ref", "needs-all-success", "test-counts-floors",
+                "input-sha256",
             ],
             "toolchain": {
-                "os": platform.platform(),
-                "python": platform.python_version(),
+                "os": platform.platform(), "python": platform.python_version(),
                 "node": command("node", "--version"),
                 "git": command("git", "--version").removeprefix("git version "),
             },

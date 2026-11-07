@@ -335,6 +335,21 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Verify workflow identity (measured env, exact match)
+        # rc7 A3: workflow_ref / run_attempt are read from the runner's own environment and the
+        # expected workflow_ref is recomputed here; any difference fails the job before a
+        # receipt can be written (exit 69). Same-party check: it stops accidents, not a forger.
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${GITHUB_REPOSITORY}/.github/workflows/windows-ci.yml@${GITHUB_REF}"
+          if [ "${GITHUB_WORKFLOW_REF:-}" != "$expected" ]; then
+            echo "::error::GITHUB_WORKFLOW_REF '${GITHUB_WORKFLOW_REF:-}' != computed '$expected'"
+            exit 69
+          fi
+          case "${GITHUB_RUN_ATTEMPT:-}" in
+            ''|*[!0-9]*|0*) echo "::error::GITHUB_RUN_ATTEMPT is not a positive integer"; exit 69 ;;
+          esac
       - name: Mark gate start
         shell: pwsh
         # rc6 F3: record the real gate start instead of letting the writer default to now().

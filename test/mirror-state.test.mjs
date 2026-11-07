@@ -48,3 +48,59 @@ test('fractional seconds normalize identically for Python and Node', (t) => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), normalizeTimestamp('2026-11-06T10:00:00.5Z'));
 });
+
+// ── rc7 B1：bin/gts 的 mirror_state import 必须在 sys.path 注入之后 ─────────────────────────────
+const GTS = fileURLToPath(new URL('../bin/gts', import.meta.url));
+function failedMirror(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gts-b1-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'state'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'o'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'last_sync'), '2026-11-01 10:00:00');
+  fs.writeFileSync(path.join(root, 'state/last_status'), 'ok=0 fail=1 total=1');
+  return root;
+}
+function gtsEnv(root) {
+  const env = { ...process.env, GITEA_MIRROR_ROOT: root, GITEA_OWNERS: 'o' };
+  delete env.PYTHONPATH;
+  return env;
+}
+
+test('B1 bin/gts --repos 在失败的同步记录上必须给出「同步失败」提示（mirror_state 只能靠 sys.path 注入导入）', (t) => {
+  const root = failedMirror(t);
+  // cwd 与 PYTHONPATH 都不含 lib/：mirror_state 只有在 bin/gts 自己注入 ../lib 之后才能 import。
+  // 旧实现把 import 写在注入之前，ImportError 被吞，这里完全没有提示。
+  const r = spawnSync(py, [GTS, '--repos'], { encoding: 'utf8', env: gtsEnv(root), cwd: os.tmpdir() });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /镜像同步状态: 最近同步失败/);
+  assert.doesNotMatch(r.stderr, /无法导入 mirror_state/);
+  assert.match(r.stdout, /共 0 个仓/);
+});
+
+test('B1 mirror_state 仍然导入失败时，--repos 必须在 stderr 明确说明而不是静默丢失提示', (t) => {
+  const root = failedMirror(t);
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'gts-b1-bin-'));
+  t.after(() => fs.rmSync(sandbox, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(sandbox, 'bin'));
+  fs.mkdirSync(path.join(sandbox, 'lib'));
+  fs.copyFileSync(GTS, path.join(sandbox, 'bin', 'gts'));
+  fs.copyFileSync(path.join(lib, 'config.py'), path.join(sandbox, 'lib', 'config.py')); // 故意不带 mirror_state.py
+  const r = spawnSync(py, [path.join(sandbox, 'bin', 'gts'), '--repos'], { encoding: 'utf8', env: gtsEnv(root), cwd: os.tmpdir() });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /警告：无法导入 mirror_state 模块（.*mirror_state.*）/);
+  assert.match(r.stderr, /无法判定镜像同步状态/);
+  assert.match(r.stdout, /共 0 个仓/, '--repos 本身仍应走到真实输出分支');
+});
+
+test('B1 只在 --repos 时才报告 mirror_state 缺失（其他模式不额外噪声）', (t) => {
+  const root = failedMirror(t);
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'gts-b1-bin-'));
+  t.after(() => fs.rmSync(sandbox, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(sandbox, 'bin'));
+  fs.mkdirSync(path.join(sandbox, 'lib'));
+  fs.copyFileSync(GTS, path.join(sandbox, 'bin', 'gts'));
+  fs.copyFileSync(path.join(lib, 'config.py'), path.join(sandbox, 'lib', 'config.py'));
+  const r = spawnSync(py, [path.join(sandbox, 'bin', 'gts'), '--show-effective-config'], { encoding: 'utf8', env: gtsEnv(root), cwd: os.tmpdir() });
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /mirror_state/);
+});

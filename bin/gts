@@ -29,11 +29,6 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-try:
-    from mirror_state import read_sync_state, sync_summary
-except ImportError:
-    read_sync_state = sync_summary = None
-
 # 动态探测引入 indexer 模块（用 realpath 解析 /usr/local/bin/gts 软链，支持同级 bin/、上级 gitea-search/ 或 lib/）
 _CUR_DIR = os.path.dirname(os.path.realpath(__file__))
 _SEARCH_PATHS = [
@@ -45,6 +40,16 @@ for p in _SEARCH_PATHS:
     norm = os.path.normpath(p)
     if norm not in sys.path and os.path.isdir(norm):
         sys.path.insert(0, norm)
+
+# mirror_state 位于 lib/，必须在上面的 sys.path 注入之后才能 import（与 indexer / config 同理）；
+# 此前放在注入之前，ImportError 被静默吞掉，--repos 的「同步失败」提示整体失效。
+# 仍然失败时不再静默：记录原因，由 --repos 分支向 stderr 明确报告。
+_MIRROR_STATE_IMPORT_ERROR = None
+try:
+    from mirror_state import read_sync_state, sync_summary
+except ImportError as _exc:
+    read_sync_state = sync_summary = None
+    _MIRROR_STATE_IMPORT_ERROR = str(_exc)
 
 try:
     import indexer
@@ -482,6 +487,8 @@ def main():
     SYNC = os.path.join(os.path.dirname(_CUR_DIR), "scripts", "sync.sh")
     if a.show_effective_config:
         print(json.dumps(effective, ensure_ascii=False, indent=2))
+        if not effective["valid"]:
+            print("CONFIG_ERROR: " + "; ".join(effective["errors"]), file=sys.stderr)
         return
     if not effective["valid"]:
         die("CONFIG_ERROR: " + "; ".join(effective["errors"]))
@@ -515,10 +522,14 @@ def main():
         print(indexer.get_stats(ROOT))
         return
 
-    if a.repos and read_sync_state and sync_summary:
-        state = read_sync_state(ROOT)
-        if state["status"] in {"unrecorded", "invalid", "failed"}:
-            print("镜像同步状态: " + sync_summary(state), file=sys.stderr)
+    if a.repos:
+        if read_sync_state and sync_summary:
+            state = read_sync_state(ROOT)
+            if state["status"] in {"unrecorded", "invalid", "failed"}:
+                print("镜像同步状态: " + sync_summary(state), file=sys.stderr)
+        else:
+            print(f"警告：无法导入 mirror_state 模块（{_MIRROR_STATE_IMPORT_ERROR}），"
+                  "无法判定镜像同步状态；『最近同步失败』等提示在本次 --repos 中不可用。", file=sys.stderr)
 
     if a.read_path:
         if not a.repo:

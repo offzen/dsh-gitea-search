@@ -37,15 +37,79 @@ def _config_candidates(explicit_config=None, project_dir=None):
     return out
 
 
+def _json_type(value):
+    """JSON type name shared (verbatim) with lib/config.mjs so both sides emit identical errors."""
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, list):
+        return "array"
+    return "object"
+
+
 def _read_config(explicit_config=None, project_dir=None):
+    """Return (data, path, source, errors); never raises for a bad/missing config file.
+
+    Contract (single source of truth, mirrored in lib/config.mjs):
+      * an explicitly requested file (--config / GITEA_SEARCH_CONFIG) that is missing or not a
+        regular file is an error and NEVER falls back to the user/project config;
+      * fallback to user/project config only happens when nothing was requested explicitly;
+      * unreadable / non-JSON / wrongly-typed content is reported in ``errors``.
+    """
     for path, source in _config_candidates(explicit_config, project_dir):
-        if not path.is_file():
+        full = os.path.abspath(str(path))
+        explicit = source in ("explicit-config", "env-config")
+        if not os.path.isfile(full):
+            if explicit:
+                origin = "--config" if source == "explicit-config" else "GITEA_SEARCH_CONFIG"
+                kind = "is not a regular file" if os.path.exists(full) else "does not exist"
+                return {}, None, source, [
+                    f"{origin} points to a config file that {kind}: {full} "
+                    "(an explicitly specified config never falls back to user/project config)"
+                ]
             continue
         try:
-            return json.loads(path.read_text(encoding="utf-8-sig")), str(path), source
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError(f"invalid config file {path}: {exc}") from exc
-    return {}, None, None
+            data = json.loads(Path(full).read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError) as exc:  # JSONDecodeError and UnicodeDecodeError are ValueErrors
+            return {}, full, source, [f"invalid config file {full}: {exc}"]
+        errors = _validate_config(data, full)
+        if errors:
+            return {}, full, source, errors
+        return data, full, source, []
+    return {}, None, None, []
+
+
+def _validate_config(data, full):
+    """Structural validation of a parsed config file; returns a list of error strings."""
+    prefix = f"invalid config file {full}: "
+    if not isinstance(data, dict):
+        return [prefix + f"top-level value must be a JSON object, got {_json_type(data)}"]
+    errors = []
+    for section in ("storage", "gitea"):
+        value = data.get(section)
+        if value is not None and not isinstance(value, dict):
+            errors.append(prefix + f'"{section}" must be an object, got {_json_type(value)}')
+    storage = data.get("storage") if isinstance(data.get("storage"), dict) else {}
+    gitea = data.get("gitea") if isinstance(data.get("gitea"), dict) else {}
+    for label, value in (("storage.mirror_root", storage.get("mirror_root")), ("mirror_root", data.get("mirror_root"))):
+        if value is not None and not isinstance(value, str):
+            errors.append(prefix + f'"{label}" must be a string, got {_json_type(value)}')
+    for label, value in (("gitea.owners", gitea.get("owners")), ("owners", data.get("owners"))):
+        if value is None or isinstance(value, str):
+            continue
+        if not isinstance(value, list):
+            errors.append(prefix + f'"{label}" must be a string or an array of strings, got {_json_type(value)}')
+            continue
+        for index, item in enumerate(value):
+            if not isinstance(item, str):
+                errors.append(prefix + f'"{label}" items must be strings, item {index} is {_json_type(item)}')
+                break
+    return errors
 
 
 def _owners(raw):
@@ -56,10 +120,24 @@ def _owners(raw):
     return [str(v).strip() for v in values if str(v).strip()]
 
 
+def _pick_owners(layers):
+    """First layer whose *normalized* list is non-empty wins.
+
+    Single cross-language contract: an empty array / empty string / ``" , "`` is an empty set,
+    equivalent to "not set", so the next layer is consulted (lib/config.mjs does the same).
+    """
+    for raw, source in layers:
+        names = _owners(raw)
+        if names:
+            return names, source
+    return [], "missing"
+
+
 def resolve_config(cli_root=None, cli_owners=None, config_path=None, project_dir=None):
-    cfg, loaded_path, file_source = _read_config(config_path, project_dir)
-    file_root = (cfg.get("storage") or {}).get("mirror_root") or cfg.get("mirror_root")
-    file_owners = (cfg.get("gitea") or {}).get("owners") or cfg.get("owners")
+    cfg, loaded_path, file_source, file_errors = _read_config(config_path, project_dir)
+    storage = cfg.get("storage") or {}
+    gitea = cfg.get("gitea") or {}
+    file_root = storage.get("mirror_root") or cfg.get("mirror_root")
 
     env_root = (
         os.environ.get("GITEA_MIRROR_ROOT")
@@ -81,18 +159,17 @@ def resolve_config(cli_root=None, cli_owners=None, config_path=None, project_dir
     else:
         root, root_source = _platform_default_root(), "platform-default"
 
-    if cli_owners:
-        owners, owners_source = _owners(cli_owners), "cli"
-    elif env_owners:
-        owners, owners_source = _owners(env_owners), "env"
-    elif file_owners:
-        owners, owners_source = _owners(file_owners), file_source
-    else:
-        owners, owners_source = [], "missing"
+    owners, owners_source = _pick_owners([
+        (cli_owners, "cli"),
+        (env_owners, "env"),
+        (gitea.get("owners"), file_source),
+        (cfg.get("owners"), file_source),
+    ])
 
-    errors = []
+    errors = list(file_errors)
     if not owners:
-        errors.append("owners are not configured")
+        if not errors:
+            errors.append("owners are not configured")
     elif any(owner.lower() in PLACEHOLDER_OWNERS for owner in owners):
         errors.append("owners contain a placeholder value")
 
