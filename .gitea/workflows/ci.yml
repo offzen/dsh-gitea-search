@@ -41,8 +41,8 @@ jobs:
           # the later gate step too, not only for this install step.
           python3 -m venv "$RUNNER_TEMP/gate2-venv"
           echo "$RUNNER_TEMP/gate2-venv/bin" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/gate2-venv/bin/python" -m pip install --disable-pip-version-check --no-input --upgrade build jieba
-          "$RUNNER_TEMP/gate2-venv/bin/python" -c 'import build, jieba; print("gate2 venv ready")'
+          "$RUNNER_TEMP/gate2-venv/bin/python" -m pip install --disable-pip-version-check --no-input --upgrade build jieba PyYAML
+          "$RUNNER_TEMP/gate2-venv/bin/python" -c 'import build, jieba, yaml; print("gate2 venv ready")'
 
       - name: Run deterministic exact-SHA gate
         env:

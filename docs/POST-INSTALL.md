@@ -4,7 +4,19 @@
 
 ## 1. 确认配置与镜像
 
-先设置有效 owner 与镜像路径（或确认 DSH profile 已包含这两个环境变量）：
+推荐先运行只读汇总助手；它不会同步、索引、编辑 profile 或 reload 宿主：
+
+```sh
+# Linux / macOS
+bash scripts/onboarding.sh --verify
+```
+
+```powershell
+# Windows
+powershell -ExecutionPolicy Bypass -File scripts\onboarding.ps1 -Verify
+```
+
+也可以按下面各步手工核查。先设置有效 owner 与镜像路径（或确认 DSH profile 已包含这两个环境变量）：
 
 ```sh
 gts --show-effective-config

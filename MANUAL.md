@@ -321,9 +321,10 @@ UTF-8 完整性保证：Buffer.concat(chunks).toString('utf8')
 
 在 v1.2.2 跨平台适配中，`lib/server.mjs` 与 `lib/indexer.py` 增设了底层安全护栏：
 
-1. **`cmd.exe` 参数防注入定界**：
-   - Windows 下若必须经由 `cmd.exe` 启动（如批处理脚本），系统采用严格引号定界：显式构造 `cmd /d /s /c "<已引号化命令>"` 并对每个输入参数单独加引号（`/s` 确保 cmd 先剥掉最外层引号，使逐参数引号真正起作用），彻底防御搜索词中恶意注入 `& | < > ^` 触发多指令逃逸执行。
-   - 对原生 `.exe` / `.com` 二进制，一律使用 `shell: false` 直执行，完全绕过 shell 解析层。
+1. **Windows 子进程参数防注入**：
+   - 首选原生 `.exe` / `.com`，始终以 `shell: false` 直执行，绕过 `cmd.exe` 解析层。
+   - 只有 `.cmd` / `.bat` 降级入口才经 `cmd /d /s /c`。在进入 shell 前先拒绝 NUL、CR/LF，以及会触发二次解析的 `% ! ^ & | < >`；其余参数再逐个按 Windows 引号规则定界。`/s` 只是外层引号解析规则，**不是**独立的注入防护。
+   - `GTS_BIN` 若被显式设置，必须是可执行文件的绝对路径；无效值会硬失败，不会静默回落到 PATH 上的另一份程序。
 2. **`IndexLock` 跨平台排他锁对齐**：
    - 在 POSIX 平台上采用 `fcntl.flock`；在 Windows 平台上采用 `msvcrt.locking` 字节区间锁。
    - Windows 平台在加锁前显式执行 `seek(0)`，与 `_release()` 保持严格对称的字节位置，确保多进程并发建索引与检索时的强排他性。
@@ -406,7 +407,7 @@ npm run test:all  # 两者都跑（CI 使用的完整组合）
 
 > ⚠️ **两个测试集此前是割裂的**：v1.2.2 的 `npm test` 只跑 3 个 Windows 用例文件，
 > 而 e2e（31 项）单独跑；Linux CI 不跑单测、Windows CI 不跑 e2e。
-> v1.2.2 的 POSIX 回归正是从这道缝里漏过去的。v1.2.2-rc2 起统一为 `npm run test:all`。
+> v1.2.2 的 POSIX 回归正是从这道缝里漏过去的。v1.2.2-rc2 起统一为 `npm run test:all`；rc7 又把 release/evidence 合约及三个此前孤立的 Python 回归套件接入 `test:preflight` 与 receipt counter。
 
 | 测试文件 | 覆盖范围 |
 |---|---|
@@ -417,3 +418,17 @@ npm run test:all  # 两者都跑（CI 使用的完整组合）
 
 `test/posix-path.test.mjs` 的 5 项用例在 v1.2.2 上**全部失败**、在 v1.2.2-rc2 上全部通过，
 可直接用于验证某个构建是否带该回归。
+
+### 9.4 候选维护与发布前核对
+
+默认 `npm run test:all` 由三层组成：Node 自动发现、九个显式 Python 合约/回归文件、31 项 E2E。`scripts/collect-test-counts.py` 在 receipt job 内重新执行同一测试面并生成 schema-2 计数；不要用“外层 job 绿”代替实测计数。`test/profile-yaml.test.py` 需要 PyYAML；若缺少该依赖，默认测试及 receipt counter 必须失败而不是跳过；gate2/hosted receipt jobs 显式安装 PyYAML 后执行完整断言。
+
+候选采用 D/P 双提交：
+
+1. 产品、测试、workflow、手册和索引等全部 tracked 改动一起提交为内容提交 D；
+2. 运行 `python3 scripts/generate-provenance.py --source-commit "$D"`；
+3. 只提交 `PROVENANCE.json` 为 P，并确认 `P^=D`、`D..P` 仅该文件；
+4. 所有 gate/receipt/evidence 都必须针对 exact P。任何后续 tracked 文档修订同样使 P 失效；
+5. 完整发布 preflight 还需四张 schema-3 receipt、四份 schema-2 forge evidence、expected ref、外置四脚本 anchor 与三个 GitHub artifact zip。缺任一项时只能写 `configured-unverified`。
+
+完整命令、信任边界与 promotion 规则见 [`docs/DEVELOPMENT-AND-RELEASE.md`](docs/DEVELOPMENT-AND-RELEASE.md)。即使 preflight 为 `verified`，信任上限仍是 `same-party`，不能表述为独立签名或不可伪造 attestation。

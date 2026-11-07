@@ -57,9 +57,35 @@ class CollectCountsTest(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIn(text, mod.validate_node(value) or "")
 
+    def test_release_suite_inventory_includes_product_regressions(self) -> None:
+        self.assertEqual(len(mod.PYTHON_SUITES), 9)
+        for suite in (
+            "test/dependency-missing.test.py",
+            "test/profile-yaml.test.py",
+            "test/repo-zero-hit.test.py",
+            "test/workflow-contract.test.py",
+            "test/documentation-contract.test.py",
+        ):
+            self.assertIn(suite, mod.PYTHON_SUITES)
+
+    def test_python_suites_reject_missing_dependency_or_skipped_tests(self) -> None:
+        skipped = completed(stderr="Ran 4 tests in 0.001s\n\nOK (skipped=4)\n")
+        missing = completed(stderr="ModuleNotFoundError: No module named 'yaml'\n", rc=1)
+        with mock.patch.object(mod, "PYTHON_SUITES", ("test/profile-yaml.test.py",)), \
+             mock.patch.object(mod, "run", side_effect=[skipped]):
+            records, ok = mod.python_suites()
+        self.assertFalse(ok)
+        self.assertEqual(records[0]["tests"], 4)
+        self.assertFalse(records[0]["ok"])
+        with mock.patch.object(mod, "PYTHON_SUITES", ("test/profile-yaml.test.py",)), \
+             mock.patch.object(mod, "run", side_effect=[missing]):
+            records, ok = mod.python_suites()
+        self.assertFalse(ok)
+        self.assertFalse(records[0]["ran"])
+
     def test_main_writes_schema2_full_shape(self) -> None:
         node = {"total": 74, "pass": 70, "fail": 0, "cancelled": 0, "skipped": 4, "todo": 0}
-        python = [{"suite": f"suite-{i}", "ran": True, "ok": True, "tests": i + 1} for i in range(4)]
+        python = [{"suite": f"suite-{i}", "ran": True, "ok": True, "tests": i + 1} for i in range(9)]
         with tempfile.TemporaryDirectory() as td, \
              mock.patch.object(mod, "node_counts", return_value=(node, "tap", True)), \
              mock.patch.object(mod, "python_suites", return_value=(python, True)), \
@@ -69,7 +95,7 @@ class CollectCountsTest(unittest.TestCase):
             data = json.loads((pathlib.Path(td) / "counts.json").read_text())
         self.assertEqual(data["schema"], 2)
         self.assertEqual(data["node_skipped"], 4)
-        self.assertEqual(data["python_suites"], 4)
+        self.assertEqual(data["python_suites"], 9)
         self.assertEqual(data["e2e"], {"pass": 31, "fail": 0})
 
     def test_main_refuses_unparseable_zero_suite(self) -> None:

@@ -83,13 +83,11 @@ EXPECTED_OS_PREFIXES = {
     "github-macos": ("macOS", "Darwin"),
     "github-windows": ("Windows",),
 }
-# F8: floors. A suite that silently loses tests cannot satisfy these. They are set
-# below the current counts (node 70 executed / e2e 31 / 2 python suites) so ordinary
-# cross-platform variance (skips differ per platform) does not produce a false red,
-# while a gutted suite (a handful of tests) is still caught.
-# rc7 A6: floors track the 2026-11-07 measured baseline (node total 74 / pass 70 /
-# skipped 4, e2e 31, 4 python suites) with a little room for platform variance.
-TEST_COUNT_FLOORS = {"node_total": 70, "node_pass": 64, "python_suites": 4, "e2e": 30}
+# F8: floors. A suite that silently loses tests cannot satisfy these. Node/e2e floors
+# allow ordinary cross-platform skips, while the Python suite floor is exact because
+# collect-test-counts.py owns a fixed list and every entry must report at least one test.
+# rc7 baseline: node total 74 / pass 70 / skipped 4, e2e 31, 9 mandatory Python suites.
+TEST_COUNT_FLOORS = {"node_total": 70, "node_pass": 64, "python_suites": 9, "e2e": 30}
 # Every key a schema-3 receipt must carry in test_counts; all strict non-negative ints.
 TEST_COUNT_INT_KEYS = (
     "node_total", "node_pass", "node_fail", "node_cancelled", "node_skipped", "node_todo",

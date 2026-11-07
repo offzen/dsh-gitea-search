@@ -55,7 +55,7 @@ git clone https://github.com/offzen/dsh-gitea-search.git && cd dsh-gitea-search
 bash scripts/quickstart-local.sh /path/to/your/git-projects
 ```
 
-首次接入 Gitea 请使用下方平台安装流程；安装后可用 [`docs/POST-INSTALL.md`](docs/POST-INSTALL.md) 的 5 分钟验收步骤检查镜像、索引与独立 MCP 进程。`quickstart-local.sh` 是本地 demo 演示，不作为 Gitea 首次同步或宿主接入流程。
+首次接入 Gitea 请使用下方平台安装流程；安装后可按 [`docs/POST-INSTALL.md`](docs/POST-INSTALL.md) 运行只读 `onboarding` 汇总与 `doctor-mcp` 探针，检查镜像、索引和独立 MCP 进程。`quickstart-local.sh` 是本地 demo 演示，不作为 Gitea 首次同步或宿主接入流程。
 
 想直接在终端测试检索效果？命令行门面工具 `bin/gts` 即开即测：
 
@@ -153,10 +153,10 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-or
 
 ## Windows 原生跨平台支持
 
-`dsh-gitea-search` 自 `v1.2.2` 起正式提供生产级原生 Windows 跨平台支持：
+`dsh-gitea-search` 的 `v1.2.2` 候选提供原生 Windows 适配；稳定版与 exact-P hosted 验证仍待完成：
 - **原生 PE 执行入口**：通过标准 `pip install .` 生成原生 `Scripts\gts.exe` PE 二进制启动器，免管理员权限直接运行；
-- **防注入命令安全与环境自适配**：`.exe` 直执行，批处理模式采用双引号严格防转义注入护栏，自动穿透系统 `PATH`、venv 与 Scoop；
-- **全套 CI 真实验证**：已在 GitHub Actions Windows Server 2022 Runner 上完成多版本矩阵验证（21/21 用例全绿）。
+- **防注入命令安全与环境自适配**：`.exe` / `.com` 直执行；批处理降级模式先拒绝 shell 元字符与换行，再执行参数定界；自动穿透系统 `PATH`、venv 与 Scoop；
+- **跨平台证据边界**：早期 Windows hosted 矩阵已取得历史绿灯；rc7 的准确发布判据仍须在最终 exact-P 上重新获取 fresh GitHub-hosted Linux/macOS/Windows 收据与 forge evidence，历史结果不可移用。
 
 > 📖 **深入了解 Windows 平台支持**：
 > - 完整技术架构、跨平台安全护栏与技术细节详见 **[WINDOWS-PORT.md](WINDOWS-PORT.md)**；
@@ -166,6 +166,7 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-or
 
 ## 文档导航
 
+- **[PROJECT-STATE.md](PROJECT-STATE.md)** —— 当前候选、仓库角色、tracked-tree 处置与 tag 判定
 - **[docs/POST-INSTALL.md](docs/POST-INSTALL.md)** —— 安装后的 5 分钟自检、首次同步、宿主重载与回滚指引
 - **[docs/BOUNDARIES.md](docs/BOUNDARIES.md)** —— 能力覆盖范围与明确不支持事项
 - **[docs/USAGE.md](docs/USAGE.md)** —— 四个工具参数速查、真实检索场景示范与防爆窗调用范例（**推荐首读**）

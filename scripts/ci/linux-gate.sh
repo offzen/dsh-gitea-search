@@ -94,9 +94,8 @@ mkdir -p "$HOME" "$XDG_CACHE_HOME" "$npm_config_cache" "$PIP_CACHE_DIR"
 
 cd "$ROOT_DIR"
 npm ci --ignore-scripts --no-audit --no-fund
-# rc6 F8: run the suites through the counter so the receipt can carry real numbers
-# instead of an asserted `status: success`. Covers the same four suites as
-# `npm run test:all` (node --test, the two python suites, and the e2e runner).
+# rc6 F8: run every default release suite through the counter so the receipt carries
+# measured Node/Python/E2E counts instead of an asserted `status: success`.
 TEST_COUNTS="$SCRATCH/test-counts.json"
 python3 scripts/collect-test-counts.py --output "$TEST_COUNTS"
 python3 -c 'import jieba' >/dev/null

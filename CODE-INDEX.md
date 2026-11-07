@@ -1,73 +1,110 @@
 # CODE-INDEX —— dsh-gitea-search 代码正册
 
-> 规则：本仓所有可执行脚本、源码模块、自动化测试与 CI gate 均登记于此；生成缓存与构建输出不属于源码资产。运行证据截至 2026-11-07，原生 Windows/macOS 未运行的项目明确标记为 unverified.
+> 规则：本仓所有可执行脚本、源码模块、自动化测试与 CI gate 均登记于此；生成缓存与构建输出不属于源码资产。状态截至 2026-11-08。这里记录覆盖范围和最近已知证据，**不把历史 rc 的运行结果当作当前候选的 exact-P 收据**。
 
 ## 1. CLI 与 MCP 入口
 
-| 路径 | 用途 | 负载/写操作 | rc3 运行证据 |
-|---|---|---|---|
-| `bin/gts` | 跨仓 Git/FTS CLI，兼容 `gitq` / `dsh-search` | 查询只读；reindex/sync 会写索引或镜像 | Linux unit/E2E verified |
-| `bin/mcp-server` | MCP stdio server 包装入口；以 file URL 动态导入，兼容 Windows ESM | 启动临时 Node 子进程 | Linux E2E + native Windows 6/6 MCP probe verified |
-| `gts_cli.py` | setuptools console-script 入口，加载已安装的 `bin/gts` | 单次启动与模块加载 | 隔离 wheel/sdist gate 待本机工具链运行；CI configured |
+| 路径 | 用途 | 负载/写操作 |
+|---|---|---|
+| `bin/gts` | 跨仓 Git/FTS CLI，兼容 `gitq` / `dsh-search` | 查询只读；reindex/sync 会写索引或镜像 |
+| `bin/mcp-server` | MCP stdio server 包装入口；以 file URL 动态导入，兼容 Windows ESM | 启动临时 Node 子进程 |
+| `gts_cli.py` | setuptools console-script 入口，加载已安装的 `bin/gts` | 单次启动与模块加载 |
 
 ## 2. 核心实现
 
-| 路径 | 用途 | 负载/写操作 | rc3 运行证据 |
-|---|---|---|---|
-| `lib/config.py` | Python effective-config resolver；owner fail closed | 轻量文件读取 | Linux unit/E2E verified |
-| `lib/config.mjs` | Node effective-config resolver | 轻量文件读取 | Linux unit/MCP smoke verified |
-| `lib/indexer.py` | SQLite FTS5/jieba 索引与查询 | build/reindex 写 SQLite | 隔离 Linux E2E verified |
-| `lib/server.mjs` | 四工具 MCP stdio server 与输出护栏 | 长驻时启动 CLI 子进程；`sync:true` 可写镜像 | 临时 Linux MCP smoke verified |
-
-## 3. 安装、同步与运维脚本
-
-| 路径 | 用途 | 负载/写操作 | rc3 运行证据 |
-|---|---|---|---|
-| `scripts/setup.sh` | Linux 依赖检查、软链与显式 profile 安装 | 可安装依赖、写软链/profile | syntax/static/profile contract verified；未真装生产 |
-| `scripts/setup-macos.sh` | macOS venv、软链、显式 profile 安装 | 可安装依赖、写 HOME/profile | Linux syntax/helper tests；native macOS unverified |
-| `scripts/setup-windows.ps1` | Windows pip 安装、与 active interpreter 绑定的 PE 发现、显式 profile 注册 | 可安装包、建索引、写 profile | PS5.1 真机隔离安装/profile smoke verified；PS5.1/PS7 WhatIf hosted verified，runtime interpreter-binding 修复待新候选 hosted 重验 |
-| `scripts/profile-patch.py` | 备份、原子、幂等修改单个 profile | 写目标与时间戳备份 | 临时 profile unit verified |
-| `scripts/launch-spec.mjs` | Node script / executable launcher 分类；Windows 无扩展名 MCP wrapper 走 Node | 无持久写入 | Linux unit + native Windows MCP smoke verified |
-| `scripts/probe-stdio.mjs` | MCP initialize/tools/list/tools/call 探针 | 临时进程 | Linux E2E verified |
-| `scripts/test-python-package.py` | 从源码树外安装 wheel/sdist 并验证三个入口；以 UTF-8 解码子进程输出，避免 Windows locale reader 崩溃 | 临时 venv/文件 I/O | Ubuntu py3.12 hosted verified；Windows py3.12 首轮暴露 locale 缺陷后已最小修复，待新候选 hosted 重验 |
-| `scripts/generate-provenance.py` / `scripts/check-provenance.py` | 从 `git ls-files` 生成/核验非自引用 SHA-256 manifest | 写/读 `PROVENANCE.json` | Linux local gate verified after candidate freeze |
-| `scripts/ci/linux-gate.sh` | 清理 ambient 配置、绑定 exact SHA、运行 Linux 完整门禁并原子生成树外 receipt | 临时 HOME/cache/mirror、构建目录与树外 receipt | offline implementation; local runtime acceptance pending |
-| `scripts/release-preflight.py` | 只读核验 D/P、provenance-only diff 与 exact-P gate2/GitHub receipts；Windows 仅接受 hosted clean runner | 只读 Git/JSON；不 push/tag/dispatch | negative fixture coverage configured; final hosted receipts pending |
-| `.gitattributes` | 强制 shell/无扩展名入口以 LF 检出 | 无运行负载 | static verified |
-| `scripts/run-e2e-test.sh` | 31 项隔离全链路验收；Windows 路径通过 argv、MCP wrapper 由 Node 启动 | 临时 bare repos/SQLite | Linux 31/31；native Windows 28/28（3 个 POSIX-only 显式 skip）verified |
-| `scripts/run-realdata-test.sh` | 真实镜像验收 | 可能增量写索引；高负载 | 本轮未运行 |
-| `scripts/sync.sh` | Gitea bare mirror 同步与索引刷新 | 网络与磁盘写入 | mock API E2E only |
-| `scripts/quickstart-local.sh` | 本地仓快速镜像/建索引 | 写目标目录 | 隔离 E2E verified |
-| `scripts/respawn-mcp.sh` | 重启单个 MCP 子进程 | 影响运行进程 | 本轮未运行，未动生产 |
-| `scripts/dsh-session-health.mjs` | 隔离会话健康检查/迁移；SQLite fallback 失败时在 JSON 中公开非秘密错误而非静默吞掉 | `--fix` 可写会话/SQLite | Linux mock HOME E2E verified；Windows sqlite3-cli hosted gate 待新候选重验 |
-| `scripts/session-export-incremental.py` | 增量导出会话 Markdown | 写导出目录 | mock HOME dry-run E2E verified |
-
-## 4. 自动化测试与 CI
-
-| 路径 | 覆盖目标 | rc3 运行证据 |
+| 路径 | 用途 | 负载/写操作 |
 |---|---|---|
-| `test/config-contract.test.mjs` | Node/Python 配置优先级与 placeholder 拒绝 | Linux + native Windows verified |
-| `test/profile-patch.test.mjs` | profile 幂等、备份、check mode | Linux + native Windows verified |
-| `test/launch-spec.test.mjs` | Node-aware launcher | Linux verified |
-| `test/macos-setup.test.mjs` | macOS installer profile selection and Bash-3-safe discovery | Linux stub smoke verified; native macOS pending |
-| `test/release-scope.test.mjs` | 版本、scope、tool naming、optional skill 契约 | Linux verified |
-| `test/posix-path.test.mjs` | POSIX 路径与 CR 语义 | Linux verified |
-| `test/windows-adapt.test.mjs` | Windows 静态适配、BOM、installer 契约 | Linux static verified |
-| `test/windows-lock.test.mjs` | Windows `msvcrt` 锁；非 Windows 跳过 | native Windows verified |
-| `test/windows-quote.test.mjs` | cmd quoting/injection；部分非 Windows 跳过 | native Windows verified |
-| `.gitea/workflows/ci.yml` | gate2 完整 Linux workflow authority；向共享脚本传递 event exact SHA | configured; 需推 private developer ref 后取得 gate2 receipt |
-| `.github/workflows/ci.yml` | Ubuntu/macOS unit+E2E、wheel/sdist，并在 required jobs 成功后上传 exact-P Linux/macOS hosted receipts | offline syntax/contract configured; final exact-P hosted receipts pending |
-| `.github/workflows/windows-ci.yml` | PE、PS5.1/PS7、Windows runtime/CRLF/Git Bash/profile gates；全部 required jobs 成功后上传 hosted-clean Windows receipt | 历史运行不作为新候选 receipt；final exact-P GitHub hosted receipt pending |
-| `.github/scripts/write-gate-receipt.py` | 在 GitHub hosted job 内绑定 formal repo、exact SHA/tree、runner label 与 run identity，原子写 artifact | offline Linux contract fixtures configured；Windows/macOS runtime pending |
-| `test/release-preflight.test.py` / `test/hosted-receipt.test.py` | D/P、receipt exact SHA、缺件、本机 Windows receipt、错误 repo/SHA 拒绝；Windows readonly Git object cleanup 与平台对应 hosted gate | Linux/Windows offline fixture suite verified |
+| `lib/config.py` / `lib/config.mjs` | Python/Node effective-config resolver；缺失或畸形显式配置 fail closed | 轻量文件读取 |
+| `lib/indexer.py` | SQLite FTS5/jieba 索引与查询 | build/reindex 写 SQLite |
+| `lib/mirror_state.py` / `lib/mirror-state.mjs` | Python/Node 镜像同步状态解释，区分成功与失败尝试 | 读取 state 元数据 |
+| `lib/next-actions.mjs` | 将 MCP/CLI 失败归因并生成结构化下一步 | 只读解释 |
+| `lib/server.mjs` | 四工具 MCP stdio server、CLI 进程管理与输出护栏 | 长驻时启动 CLI；`sync:true` 可写镜像 |
 
-## 5. 发布元数据与可选资产
+## 3. 安装、同步、诊断与发布脚本
 
-| 路径 | 用途 | 说明 |
+| 路径 | 用途 | 负载/写操作 |
 |---|---|---|
-| `pyproject.toml` | Python metadata、3 个入口与数据文件清单 | rc3 必须包含 `lib/config.py` |
-| `package.json` / `package-lock.json` | Node metadata、依赖锁与 test scripts | lockfile 随 rc3 入仓 |
-| `PROVENANCE.json` | 候选树 SHA-256 清单 | 文件哈希已冻结验证；`source_commit` 在候选提交存在后补为 exact SHA |
-| `extras/dsh-skill/gitea-search/SKILL.md` | 可选 Agent 检索指导 | 不由 installer 自动安装 |
-| `WIKI.md` | 本仓耐久踩坑与判别方法 | 只保留有证据且有适用范围的事实 |
-| `docs/DEVELOPMENT-AND-RELEASE.md` | gate2 与 GitHub hosted 双平面、D/P 状态机、receipt 与独立授权边界 | Hosted-only Windows 契约正本；运行态仍以 exact-P receipts 为准 |
+| `scripts/setup.sh` | Linux 依赖检查、兼容链接与显式 profile 安装 | 可安装依赖、写链接/profile |
+| `scripts/setup-macos.sh` | macOS venv、链接、显式 profile 安装 | 可安装依赖、写 HOME/profile |
+| `scripts/setup-windows.ps1` | Windows pip 安装、PE 入口发现、显式 profile 注册 | 可安装包、建索引、写 profile |
+| `scripts/profile-patch.py` | 备份、原子、幂等修改单个 profile | 写目标与时间戳备份 |
+| `scripts/launch-spec.mjs` | Node 脚本/可执行入口分类及 Windows 启动策略 | 无持久写入 |
+| `scripts/probe-stdio.mjs` | MCP initialize、tools/list、tools/call 探针 | 临时子进程 |
+| `scripts/doctor-mcp.sh` / `scripts/doctor-mcp.ps1` | 安装后独立 MCP 只读验收 | 临时子进程；不改 profile/宿主 |
+| `scripts/onboarding.sh` / `scripts/onboarding.ps1` | 安装后配置、镜像、索引只读汇总；给出显式下一步 | 只读；不自动同步、索引或 reload |
+| `scripts/test-python-package.py` | 从源码树外安装 wheel/sdist 并验证三个入口 | 临时 venv/文件 I/O |
+| `scripts/generate-provenance.py` / `scripts/check-provenance.py` | 从 tracked tree 生成/核验非自引用 SHA-256 manifest | 写/读 `PROVENANCE.json` |
+| `scripts/collect-test-counts.py` | 在 receipt job 内运行 Node、Python 与 E2E 并输出 schema-2 计数 | 运行测试、写树外 JSON |
+| `scripts/fetch-remote-evidence.py` | 只读拉取 forge run/job/artifact 深证据并输出 schema-2 JSON | 网络读取、写树外 JSON |
+| `scripts/ci/linux-gate.sh` | 清理 ambient 配置、绑定 exact SHA、运行 Linux 完整门禁并原子生成树外 schema-3 receipt | 临时 HOME/cache/mirror、构建目录与树外 receipt |
+| `scripts/release-preflight.py` | 只读核验 D/P、四收据、深证据、artifact、external anchor 和 exact ref | 只读 Git/JSON；不 push/tag/dispatch |
+| `scripts/run-e2e-test.sh` | 31 项隔离全链路验收 | 临时 bare repos/SQLite |
+| `scripts/run-realdata-test.sh` | 真实镜像验收 | 可能增量写索引；高负载 |
+| `scripts/sync.sh` | Gitea bare mirror 同步与索引刷新 | 网络与磁盘写入 |
+| `scripts/quickstart-local.sh` | 本地仓快速镜像/建索引 | 写目标目录 |
+| `scripts/respawn-mcp.sh` | 重启单个 MCP 子进程 | 影响运行进程 |
+| `scripts/dsh-session-health.mjs` | 会话健康检查/迁移 | `--fix` 可写会话/SQLite |
+| `scripts/session-export-incremental.py` | 增量导出会话 Markdown | 写导出目录 |
+
+## 4. 自动化测试
+
+### Node 测试（`node --test` 自动发现）
+
+| 路径 | 覆盖目标 |
+|---|---|
+| `test/config-contract.test.mjs` | Node/Python 配置优先级、错误与 placeholder 拒绝 |
+| `test/launch-spec.test.mjs` | Node-aware launcher |
+| `test/linux-gate-receipt-path.test.mjs` | gate2 receipt 必须位于 tracked checkout 外 |
+| `test/linux-gate-static.test.mjs` | Linux gate 静态合同与 Windows hosted 边界 |
+| `test/macos-setup.test.mjs` | macOS installer profile 与 Bash 3 兼容 |
+| `test/mirror-state.test.mjs` | 成功/失败同步时间与 stale 解释 |
+| `test/next-actions.test.mjs` | MCP/CLI 失败分类与下一步 |
+| `test/posix-path.test.mjs` | POSIX 反斜杠路径与 CR 语义 |
+| `test/probe-stdio.test.mjs` | MCP stdio 探针成功与错误路径 |
+| `test/profile-patch.test.mjs` | profile 幂等、备份、check mode |
+| `test/release-scope.test.mjs` | 版本、scope、tool naming、optional skill 契约 |
+| `test/windows-adapt.test.mjs` | Windows 静态适配、BOM、installer 契约 |
+| `test/windows-lock.test.mjs` | Windows `msvcrt` 锁；非 Windows 跳过 |
+| `test/windows-quote.test.mjs` | cmd/batch 参数拒绝与引号合同 |
+
+### Python 测试（`npm run test:preflight` 与 receipt counter 显式执行）
+
+| 路径 | 覆盖目标 |
+|---|---|
+| `test/release-preflight.test.py` | D/P、schema-3 receipts、evidence、artifact、anchor、ignored 面负向合同 |
+| `test/hosted-receipt.test.py` | hosted receipt writer 的平台、身份与 input hash |
+| `test/collect-test-counts.test.py` | 机器可读计数、算术和零套件拒绝 |
+| `test/fetch-remote-evidence.test.py` | evidence 分页、深字段、run id 与 token scrub |
+| `test/workflow-contract.test.py` | workflow needs/jobs/artifact/writer 静态对齐 |
+| `test/dependency-missing.test.py` | jieba 缺失时的 CJK fail-closed 与显式 override |
+| `test/profile-yaml.test.py` | YAML round-trip、控制字符和缩进回归；依赖 PyYAML，缺失时门禁失败，gate2/hosted receipt jobs 显式安装该依赖 |
+| `test/repo-zero-hit.test.py` | 显式未知 repo 的结构化零命中 |
+| `test/documentation-contract.test.py` | release guide、formal state、retired review 与 Windows 安全文档静态契约 |
+
+## 5. CI 与 receipt writer
+
+| 路径 | 权威范围 |
+|---|---|
+| `.gitea/workflows/ci.yml` | gitorca/gate2 exact-SHA Linux gate；receipt 摘要留在 job log |
+| `.github/workflows/ci.yml` | GitHub-hosted Ubuntu/macOS 单测、E2E、包门与 exact-P receipts |
+| `.github/workflows/windows-ci.yml` | GitHub-hosted PE、PS5.1/PS7、runtime、CRLF、Git Bash 与 Windows receipt |
+| `.github/scripts/write-gate-receipt.py` | 在 hosted job 内实测 runner/run/workflow、绑定 counts 与 writer hash，写 schema-3 receipt |
+
+## 6. 发布元数据与文档资产
+
+| 路径 | 用途 |
+|---|---|
+| `pyproject.toml` | Python metadata、3 个入口与数据文件清单 |
+| `package.json` / `package-lock.json` | Node metadata、依赖锁与默认 test scripts |
+| `PROVENANCE.json` | D 的 tracked 文件哈希；只允许在 P 中单独变更 |
+| `extras/dsh-skill/gitea-search/SKILL.md` | 可选 Agent 检索指导；installer 不自动安装 |
+| `docs/DEVELOPMENT-AND-RELEASE.md` | D/P、schema-3 receipt、schema-2 evidence 与发布状态机正本 |
+| `docs/POST-INSTALL.md` | 五分钟安装后验收；正式接入 onboarding/doctor helper |
+| `PROJECT-STATE.md` | 当前版本、ref、树清理和候选判定的简明快照 |
+| `WIKI.md` | 有证据、带范围和失效条件的耐久陷阱 |
+
+## 7. 当前证据边界
+
+- rc7 原始 P（`e20b37c…`）曾在 2026-11-07 本地跑过 Node 125、Python 合约 35、E2E 31/31；该证据只绑定旧 exact P。本次 hygiene 修改在未冻结新 D/P 前测得 Node 125（121 pass/4 Windows-only skip）、Python 9 套件（49 tests）、E2E 31/31；冻结后还须在 exact P 重验。
+- 本次 tree hygiene 修订会产生新的 D/P。新 P 的本地测试、gitorca gate2、gitpub Actions 与任何 hosted evidence 必须分别记录，不得复用旧 P 的 receipt。
+- 没有 fresh GitHub-hosted Linux/macOS/Windows schema-3 证据时，release preflight 只能是 `configured-unverified`；信任上限始终是 `same-party`。

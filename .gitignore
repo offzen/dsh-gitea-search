@@ -25,7 +25,6 @@ secrets/
 *_key
 *.token
 .s3cfg
-node_modules/
 .venv
 mirror/
 github_key.txt

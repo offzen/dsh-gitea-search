@@ -96,7 +96,7 @@ class ReleasePreflightTest(unittest.TestCase):
     def counts(self, gate: str) -> dict:
         return {
             "node_total": 74, "node_pass": 70, "node_fail": 0, "node_cancelled": 0,
-            "node_skipped": 4, "node_todo": 0, "python_suites": 4,
+            "node_skipped": 4, "node_todo": 0, "python_suites": 9,
             "e2e": 0 if gate == "github-windows" else 31,
         }
 

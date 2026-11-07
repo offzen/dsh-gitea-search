@@ -12,7 +12,7 @@
 
 在 `v1.2.1` 及早期版本中，项目主要面向 POSIX 环境（Linux / macOS）设计与部署。在原生 Windows（非 WSL）环境下，由于底层进程模型、文件系统语义与标准库实现的巨大差异，MCP 服务的 4 个核心工具中有 3 个完全无法运行（`read_gitea_file` 因直接调用 `git` 侥幸可用，而 `search_gitea`、`search_gitea_docs`、`list_gitea_repos` 全部中断）。
 
-自 `v1.2.2` 起，本项目正式引入了生产级**原生 Windows 跨平台架构**，在不破坏 Linux / macOS 既有兼容性与性能的前提下，彻底打破了 Windows 运行环境的底层壁垒。
+`v1.2.2` 候选引入了原生 Windows 跨平台架构；功能与历史平台测试不等同于当前 rc7 候选的发布认证。最终 exact-P 的 GitHub-hosted clean-runner 证据必须单独取得。
 
 ---
 
@@ -59,12 +59,13 @@ Git 底层对象模型（如 `git cat-file`、`git show` 与 `git ls-tree`）严
 正则（`/^[A-Za-z0-9._-]+$/`）与 Git 自身的路径解析，路径参数侧没有、也不应声称有
 `..` 过滤逻辑——早期版本曾在此处写下该声明，与实现不符，现已更正。
 
-### 2. 命令注入主动防御协议 (Command Injection Defense & winQuoteArg)
-检索模式（`pattern`）由大模型生成或用户输入，属于不可信字符串。若未经处理直接传入 `cmd.exe`，包含 `& | < > ^` 的参数会截断命令并执行恶意指令（如 `test & calc.exe`）。  
-`winQuoteArg` 严格遵循 Windows 命令行解析规则（`CommandLineToArgvW` 规范）：
-- 强制为每个参数首尾包裹双引号；
-- 内部出现的双引号翻倍转义（`"say ""hi"""`）；
-- **紧贴收尾双引号的反斜杠成倍转义**（如 `C:\dir\` 转义为 `"C:\dir\\"`），避免尾部反斜杠转义掉收尾引号引发语法失配。
+### 2. 命令注入主动防御协议 (Command Injection Defense)
+检索模式（`pattern`）由大模型生成或用户输入，属于不可信字符串。原生 `.exe` / `.com` 始终使用 `shell: false`，这是首选安全边界。只有显式 `.cmd` / `.bat` 降级入口会经过 `cmd.exe`；在此之前实现会 fail closed：
+- 拒绝 NUL、CR 与 LF，避免命令截断或跨行解释；
+- 拒绝 `% ! ^ & | < >`，避免环境变量展开、delayed expansion 与 shell 控制符二次解析；
+- 对通过上述检查的参数再逐个引号定界，并正确处理内部双引号和尾部反斜杠。
+
+`cmd /s` 只控制外层引号解析，不能单独阻止 `%NAME%` 展开或批处理转义，因此不得把 `/s` 或 `winQuoteArg` 本身描述为“彻底防御”。
 
 ### 3. CRLF / LF 混合工作区文本流清洗 (CRLF Stream Sanitation)
 Git for Windows 默认启用 `core.autocrlf=true`，检出代码与文档通常携带 CRLF（`\r\n`）。若直接切分行，残留的 `\r` 会导致控制台光标跳回行首覆盖前序内容，或在 Web 界面渲染出乱码。  
@@ -105,7 +106,7 @@ Windows 中文控制台默认代码页为 CP936 (GBK)，英文控制台常为 CP
 
 ## 四、Windows CI 验证矩阵
 
-下表前五项是早期 v1.2.2 候选在 GitHub Actions Windows Server 2022 上取得的历史证据；rc3 新增的 wheel/sdist、PS5.1/PS7 `-WhatIf`、Git Bash E2E 与 profile smoke 必须在候选 commit 上重新跑绿，不能沿用旧结果宣称 rc3 已验证：
+下表区分**历史平台证据**与**当前候选要求**。任何历史 rc3/rc4、vtWSL 或 self-hosted 结果都不能替代 rc7 exact-P 的 GitHub-hosted schema-3 receipt；没有 fresh exact-P evidence 时，当前候选状态必须写成 `configured-unverified`：
 
 | 判据任务 | 验证目标 | 运行环境 | 验证结果 |
 |---|---|---|---|
@@ -115,9 +116,9 @@ Windows 中文控制台默认代码页为 CP936 (GBK)，英文控制台常为 CP
 | **W8: Injection Defense** | 测试 `cmd.exe` 参数转义往返一致性与 `& \| < > ^` 注入拦截 | Py 3.11/3.12 × Node 20/22 | ✅ **4/4 矩阵全绿** |
 | **W9: CRLF & Git Grep** | 在真实 bare 仓库与 CRLF 换行环境下验证路径形态与换行清洗 | Win Server 2022 | ✅ **SUCCESS** |
 | **平台单测集** | 覆盖 Windows 可执行分类、引号转义、路径归一化等 21 项测试断言 | Win Server 2022 | ✅ **21 / 21 PASS (0 fail, 0 skip)** |
-| **rc3 packaging** | 隔离 venv 安装 wheel，PE launcher 完成 help/config/indexer smoke | Windows Server 2022 / Python 3.15 | ✅ **vtWSL host native verified；hosted Py3.12 wheel+sdist runner pending** |
-| **rc3 installer** | PowerShell 5.1 隔离 profile 矩阵：Auto fail-closed、desktop/web/headless/all、幂等性与显式 `-DshHome` | Windows Server 2022 | 🟡 **PS5.1 native verified；PS7 hosted runner pending** |
-| **W10: Git Bash E2E** | Git for Windows Bash 执行平台适用 unit/E2E；POSIX `HOME`、sync mock-API、quickstart 判据由 Linux 31/31 覆盖 | Windows Server 2022 / Git Bash | 🟡 **native 40/40 unit + 28/28 E2E verified（3 POSIX-only skip）；hosted runner pending** |
+| **Packaging** | 隔离 venv 安装 wheel/sdist，PE launcher 完成 help/config/indexer smoke | GitHub-hosted Windows / Python 3.12 | **当前 exact-P 必须 fresh rerun；历史 native/hosted 仅作回归线索** |
+| **Installer** | PowerShell 5.1/7 `-WhatIf` 与隔离 profile 矩阵：Auto fail-closed、desktop/web/headless/all、幂等和显式 `-DshHome` | GitHub-hosted Windows | **当前 exact-P 必须 fresh rerun** |
+| **W10: Git Bash E2E** | Git for Windows Bash 执行平台适用 unit/E2E；POSIX-only 判据显式 skip | GitHub-hosted Windows / Git Bash | **当前 exact-P 必须 fresh rerun；receipt 必须依赖该 job 成功** |
 
 ---
 
@@ -172,4 +173,4 @@ node lib\server.mjs
 ## 六、已知运行时限制与规范
 
 1. **CPU 遥测指标**：POSIX 特有的 `resource.getrusage` 在 Windows 下返回全 0（`cpu_ms=0`），不影响搜索、读取与索引构建的核心功能与准确性；
-2. **cmd.exe 环境变量预展开**：在经由 `cmd.exe` 执行时，形如 `%NAME%` 的参数会被 Windows 命令解释器优先展开为环境变量值（属于 Windows 既定语义，已通过 `W8-8` 用例测试固化）。推荐优先使用默认的 `.exe` 直执行方式。
+2. **批处理降级限制**：`.cmd` / `.bat` 参数中的 `% ! ^ & | < >`、CR/LF/NUL 会在进入 `cmd.exe` 前被拒绝；需要这些字面字符时应使用默认的 `.exe` 直执行入口，而不是绕过校验。

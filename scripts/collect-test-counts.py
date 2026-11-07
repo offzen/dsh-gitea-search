@@ -53,6 +53,7 @@ SPEC_SUMMARY = {
 }
 PYTHON_RAN = re.compile(r"^Ran (\d+) tests? in ", re.MULTILINE)
 PYTHON_OK = re.compile(r"^OK\b", re.MULTILINE)
+PYTHON_SKIPPED = re.compile(r"^OK \(skipped=(\d+)\)$", re.MULTILINE)
 # The e2e runner reports in Chinese: "验收汇总: 31 绿 (PASS) / 0 红 (FAIL)".
 E2E_SUMMARY = re.compile(r"验收汇总:\s*(\d+)\s*绿")
 E2E_FAIL_SUMMARY = re.compile(r"验收汇总:\s*\d+\s*绿[^/]*/\s*(\d+)\s*红")
@@ -66,6 +67,11 @@ PYTHON_SUITES = (
     "test/hosted-receipt.test.py",
     "test/collect-test-counts.test.py",
     "test/fetch-remote-evidence.test.py",
+    "test/workflow-contract.test.py",
+    "test/dependency-missing.test.py",
+    "test/profile-yaml.test.py",
+    "test/repo-zero-hit.test.py",
+    "test/documentation-contract.test.py",
 )
 
 
@@ -133,9 +139,14 @@ def python_suites() -> tuple[list[dict[str, object]], bool]:
         output = (result.stdout or "") + (result.stderr or "")
         ran_match = PYTHON_RAN.search(output)
         tests = int(ran_match.group(1)) if ran_match else 0
-        ok = result.returncode == 0 and PYTHON_OK.search(output) is not None
+        skipped_match = PYTHON_SKIPPED.search(output)
+        skipped = int(skipped_match.group(1)) if skipped_match else 0
+        ok = result.returncode == 0 and PYTHON_OK.search(output) is not None and skipped == 0
         records.append({"suite": suite, "ran": tests >= 1, "ok": ok, "tests": tests})
         if not ok:
+            print(f"PYTHON_SUITE_FAILED suite={suite} rc={result.returncode} skipped={skipped}", file=sys.stderr)
+            for line in output.splitlines()[-12:]:
+                print("  " + line[:300], file=sys.stderr)
             all_ok = False
     return records, all_ok
 

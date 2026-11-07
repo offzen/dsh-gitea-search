@@ -1,46 +1,42 @@
 # dsh-gitea-search Wiki
 
-## rc3：安装、配置与发布边界（2026-11-01）
+> 本页只保留跨版本仍有用的判别方法。一次性 run id、主机路径和开发现场记录属于私有审计 ledger，不进入发布树。每条证据以文件/测试合同为主；文件结构或合同改变时必须重审。
 
-### 根因与判别方法
+## 根因与判别方法
 
 | 结论 | 证据 | 适用范围与失效条件 |
 |---|---|---|
-| placeholder owner（例如 `myorg`）不能作为运行时默认值；缺少真实 owner 应 fail closed。 | `test/config-contract.test.mjs:81-90` 覆盖 missing/placeholder；Linux `npm test` 通过（2026-11-01，精确计数见当次 CI/验收记录）。 | v1.2.2-rc3 配置 resolver；若未来引入经认证 API 自动推导 owner，需重审。 |
-| Windows 安装器不能猜 `gts.exe` 路径；必须向当前 Python 查询 scripts 路径并校验身份。 | `scripts/setup-windows.ps1:37-58` 查询 active/user scripts path，并对候选执行 `--help` 身份校验。 | 原生 Windows + setuptools console script；若 launcher 机制更换则失效。 |
-| profile 接入不能默认写 `web` 或同时写全部 profile。 | `scripts/setup-windows.ps1:60-77` 的 `Auto` 只接受唯一候选；`test/profile-patch.test.mjs:18-43` 验证同 id 唯一且 check mode 零写入。 | desktop/web/headless 风格 DSH profile；若 DSH 配置 schema 改变需迁移 patcher。 |
-| MCP 工具前缀不是协议固定格式。 | `docs/TOOL-NAMING.md:3-29` 区分裸名、宿主注册名与 GUI 名，并要求以实际工具表为准。 | 所有 MCP 宿主；具体宿主版本仍须读取实际工具表。 |
-| FTS 文档搜索覆盖默认分支，不等于 bare mirror 的全部 refs。 | `lib/server.mjs:608-618,688-696` 输出 `scope: default-branches` 并给出 `search_gitea` 回退。 | rc3 当前 indexer；未来若实现可配置 ref scope 则需更新。 |
+| placeholder owner（如 `myorg`）不能作为运行时默认值；缺真实 owner 应 fail closed。 | `test/config-contract.test.mjs` 覆盖 missing/placeholder 与 Python/Node parity。 | 当前 effective-config resolver；若未来引入认证 API 自动推导 owner，需重审。 |
+| 显式配置或 `GTS_BIN` 不是“提示”，而是硬合同：缺失/畸形/不可执行必须报结构化错误，不能静默回落。 | `lib/config.py`、`lib/config.mjs`、`lib/server.mjs` 与 `test/config-contract.test.mjs`。 | rc7 resolver/launcher；若新增明确的 fallback 开关，需更新。 |
+| profile 接入不能默认写 `web` 或同时写全部 profile；`Auto` 只接受唯一候选。 | `scripts/profile-patch.py`、`scripts/setup-*.{sh,ps1}`、`test/profile-patch.test.mjs` 与 `test/profile-yaml.test.py`。 | desktop/web/headless 风格 DSH profile；配置 schema 改变后需迁移。 |
+| MCP 工具前缀不是协议固定格式。 | `docs/TOOL-NAMING.md` 区分裸名、宿主注册名与 GUI 名。 | 所有 MCP 宿主；具体调用名仍以实时工具表为准。 |
+| FTS 文档搜索覆盖默认分支，不等于 bare mirror 全部 refs。 | `docs/BOUNDARIES.md`、`docs/USAGE.md` 与 `lib/server.mjs` 的 scope/fallback。 | 当前 indexer；实现可配置 ref scope 后失效。 |
+| `verified` 不等于独立可信。 | `scripts/release-preflight.py` 固定 `TRUST_CEILING="same-party"`，并要求 receipts/evidence/artifacts/external anchor/exact ref。 | 当前 release contract；只有引入真正独立签名/attestation 才可抬高。 |
 
-### 反直觉事实
+## 反直觉事实
 
-1. **Node 能运行 `.mjs`，不代表 Windows `spawn(path.mjs)` 能运行。** E2E/probe 应通过 `process.execPath` 启动脚本；证据：`scripts/launch-spec.mjs` 与 `test/launch-spec.test.mjs`。
-2. **SQLite 查询本体毫秒级，不代表 MCP 文档搜索端到端毫秒级。** 当前每次调用仍付 Python/jieba 冷启动成本；证据：`lib/server.mjs` tool description 与 `README.md` 性能边界。
-3. **PowerShell 内容是 UTF-8，不代表 PowerShell 5.1 会按 UTF-8 解析。** 含中文的入口脚本仍需 BOM；证据：`test/windows-adapt.test.mjs:146-153` 断言前三字节 `EF BB BF`。
-4. **wheel/sdist 构建成功、甚至 `gts --help` 成功，也不代表安装包可执行真实命令。** argparse 会在配置导入检查前处理 `--help`；`scripts/test-python-package.py` 因此从中立目录进一步验证 config 与 indexer。
-5. **`new URL('..', import.meta.url).pathname` 在 POSIX 正常，不代表 Windows 正常。** 原生 Windows 会得到 `/C:/...`，再经 `path.resolve` 变成 `C:\\C:\\...`；测试定位仓根必须使用 `fileURLToPath(import.meta.url)`。rc3 真机测试已据此修正 config/profile/macOS-static 三组测试。
-6. **Git Bash 里的路径变量可能仍来自 Windows Node/Python。** 把 `C:\\...` 直接插进 Python 源码会触发 `\U` unicode escape；路径必须经 `sys.argv` 传入，而不是拼进 `python -c` 源码。证据：`scripts/run-e2e-test.sh` 的 UTF-8 fixture 与 SQLite 路径均改用 argv，native Windows 已越过 Phase 2/3。
-7. **Windows 可以由 Node 打开无扩展名脚本，但 ESM 动态 import 不能直接吃 `C:\\...` 字符串。** `bin/mcp-server` 先前 `await import(serverScript)` 报 `ERR_UNSUPPORTED_ESM_URL_SCHEME`；必须使用 `new URL('../lib/server.mjs', import.meta.url).href`。`scripts/launch-spec.mjs` 同时负责把无扩展名 MCP wrapper 交给 `process.execPath`。
-8. **MCP server 可启动不代表 search_gitea 走到真实 CLI。** Windows 测试若不显式给隔离 venv 的 `GTS_BIN=<venv>\\Scripts\\gts.exe`，probe 会正确返回“找不到可执行的 gts CLI”，协议绿而搜索判据红；native harness 因而在 Git Bash E2E 期间临时注入该路径，结束后恢复环境。
-9. **CLI 已强制 UTF-8 输出，不代表 Python 测试父进程会按 UTF-8 解码。** 首次 hosted Windows W5 中，`subprocess.run(text=True)` 的 reader 仍按 Windows locale 解码子进程 UTF-8，先在线程抛 `UnicodeDecodeError`，随后 `stdout=None` 引发 `TypeError`；package gate 必须显式使用 `encoding="utf-8", errors="replace"`。证据：private hosted run `41273247111`，W5 step 9。
-10. **PowerShell 变量不区分大小写。** Workflow 的 `foreach ($home ...)` 会尝试覆盖只读自动变量 `$HOME`；应使用 `$isolatedHome`。证据：private hosted run `41273247111`，W6 runtime smoke 明确报 `Cannot overwrite variable HOME`。
-11. **Windows Git Bash 能运行 Node/Python，不等于具备 SQLite CLI fallback 的同构依赖。** W10 首轮因强制 `DSH_FORCE_SQLITE_CLI=1` 而 runner 缺 `sqlite3`，旧 health helper 又静默吞掉异常，最终只表现为 `KeyError: 'engine'`；CI 必须显式安装 sqlite CLI，helper 必须把非秘密错误写入结构化结果。证据：private hosted run `41273247111`，W10 汇总 27 PASS / 1 FAIL。
-12. **Windows 路径字符串不同不代表文件不同。** Hosted runner 的 `%TEMP%` 参数以 8.3 short path（`RUNNER~1`）进入 CLI，而 Python 解析结果是 long path（`runneradmin`）；`GetLongPathNameW` 与 `samefile` 都要求目标目录实际存在，package gate 的 `--show-effective-config` 本身不创建 mirror。因此 gate 必须先创建 resolver 返回的目录，再用 `os.path.samefile()` 比较 file identity。证据：private hosted runs `41273989314`、`41274376766`、`41274603172`，W5 step 9。
-13. **`py -3` 与 Actions `python` 不保证是同一解释器。** setup-python 将 `python.exe` 置于 PATH，但系统 Python Launcher 可能选到另一安装；安装与 `gts.exe` 发现必须绑定同一解释器，优先 active `python`，并从该解释器的 `sys.executable`/distribution 元数据找 launcher。证据：private hosted run `41273989314`，W6 runtime smoke 在 pip 成功后旧探测仍找不到对应 `gts.exe`。
-14. **显式配置夹具不等于天然隔离。** rc3 release smoke 正确设置隔离 `GITEA_MIRROR_ROOT` / `GITEA_OWNERS` 后，Python parity helper 会清除这些变量，而同一测试中的 Node resolver 继承它们，导致两次 full smoke 都在 unit gate 失败；无这些 ambient 变量的独立诊断则通过。rc4 将 Node resolver 放进独立子进程，并对 Node/Python 使用同一组已清理的配置环境，避免修改父进程环境。
-15. **Linux 上 `shutil.rmtree()` 能清理 Git fixture，不代表 Windows 也能。** Git for Windows 创建的 `.git/objects/*` 可带 `ReadOnly` 属性，普通 teardown 会报 `PermissionError [WinError 5]`；测试清理必须仅在删除失败时清除目标 readonly 位并重试。证据：`test/release-preflight.test.py`、`test/hosted-receipt.test.py` 的 `remove_test_tree()`，以及 vtWSL focused run `windows-ci-focused-20261101T155659Z/focused.log`（6+5 tests OK）。适用于 Windows Git fixture；若 Python 将来改变 `rmtree` readonly 语义，需重验。
-16. **Hosted receipt 的 Linux gate fixture 在 Windows 上运行会在契约检查前按平台正确拒绝。** 跨平台离线 fixture 必须按 `sys.platform` 选择 `github-linux/ubuntu-latest/ci.yml` 或 `github-windows/windows-latest/windows-ci.yml`，否则 Windows 只会得到 `gate/platform mismatch`，无法验证后续 repository/SHA/workflow contract。证据：`test/hosted-receipt.test.py:43-126` 与同一 vtWSL focused run。适用于当前 writer 的 platform allowlist；新增 gate/runner label 时需更新矩阵。
+1. **Node 能运行 `.mjs`，不代表 Windows `spawn(path.mjs)` 能运行。** 脚本需通过 `process.execPath` 启动；见 `scripts/launch-spec.mjs` 与 `test/launch-spec.test.mjs`。
+2. **SQLite 查询本体毫秒级，不代表 MCP 端到端毫秒级。** Python/jieba 冷启动仍计入调用耗时；见 `docs/BOUNDARIES.md`。
+3. **PowerShell 文件是 UTF-8，不代表 PowerShell 5.1 会按 UTF-8 解析。** Windows 入口的 BOM 合同由 `test/windows-adapt.test.mjs` 固定。
+4. **wheel/sdist 构建成功或 `gts --help` 成功，不证明真实命令可用。** `scripts/test-python-package.py` 必须在源码树外继续验证 config/indexer。
+5. **Windows Git Bash 能运行 Node/Python，不代表 Windows 路径能安全拼进 `python -c`。** 路径应通过 argv 传递；`scripts/run-e2e-test.sh` 采用该合同。
+6. **`.cmd/.bat` 的逐参数引号不能消除 `cmd.exe` 二次解析。** rc7 在 shell 前拒绝 `% ! ^ & | < >` 与 CR/LF/NUL；原生 `.exe/.com` 才是首选入口。证据：`lib/server.mjs` 与 `test/windows-quote.test.mjs`。
+7. **本地全套测试通过不等于 exact-P release ready。** receipt 还必须绑定 P/tree/ref/run，remote evidence 必须深验，GitHub artifact 必须绑定 digest；见 `docs/DEVELOPMENT-AND-RELEASE.md`。
+8. **preflight shell exit 0 不等于 `verified`。** `configured-unverified` 会返回完整诊断并正常退出；调用方必须解析 JSON 的 `status` 与 `blocked_reasons`。证据：`scripts/release-preflight.py` 的返回合同及其测试。
+9. **tracked tree 之外的本地 `node_modules` / `__pycache__` 不是发布冗余，但 exact-P gate 会在开始时拒绝非白名单 untracked/ignored 面。** 正式范围应以 `git ls-tree P` 判断；见 `scripts/ci/linux-gate.sh` 与 `release-preflight.py`。
+10. **文档改动也会让旧 P 失效。** D/P 合同绑定整个 tracked tree；任何手册、索引或 release guide 修订都必须形成新 D 和 provenance-only P，再跑 exact-P gates。
 
-### 固定动作序列
+## 固定动作序列
 
-1. 构建 Python 发布物时同时生成 wheel 与 sdist；分别安装到隔离 venv，并从源码树外、`PYTHONPATH` 未设置的目录运行三个入口。
-2. `--help` 只能证明 argparse 可启动；还必须跑 `--show-effective-config` 与 `--fts-stats`，才能证明 `config.py` / `indexer.py` 已进入发布物。
-3. profile 注册只能显式选择单个 profile；`Auto` 只在唯一候选时成立，`all` 必须由用户明确选择。自动化或用户环境 smoke 应传 `-DshHome <临时根>`，不得依赖 ambient `DSH_HOME` 误触现役配置。
-4. rc3 不实现 all-ref FTS、常驻 jieba worker或自动安装 skill。
-5. hosted gate 失败先按 job/step 取证：运行日志下载需要 Actions read 权限；若 job-log endpoint 受限，可下载 run-attempt ZIP 并只提取失败 job 的错误上下文，禁止凭 step 名盲修。
+1. 开发完成后先跑默认测试；把产品、测试、workflow 和文档一起提交为 D。
+2. 以 D 生成 `PROVENANCE.json`，只提交该文件为 P；核对 `P^=D`、单文件 diff 与 manifest。
+3. 所有 receipt/evidence/artifact/anchor 放在 checkout 外，并绑定 exact P 和 expected ref。
+4. 私有预发布从同一本地 P 分别推 gitorca 与 gitpub RC，逐端读回 SHA；禁止把派生树回灌正本。
+5. 候选失败时保留旧 ref 作为证据，创建新候选；不 force、不移动既有 tag。
+6. 没有 fresh GitHub-hosted Linux/macOS/Windows exact-P evidence 时，不建议创建 stable tag，也不把历史 native/self-hosted 结果冒充当前验证。
 
-### 已排除方案
+## 有意不做
 
-- rc3 不实现 all-ref FTS：会扩大索引、重复结果、ref 清理与迁移面；保留到 v1.3。
-- rc3 不实现常驻 jieba worker：属于进程生命周期/并发/崩溃恢复结构性变化；保留到 v1.3。
+- v1.2.x 不实现 all-ref FTS：会扩大索引、重复结果、ref 清理与迁移面；留待结构性版本。
+- v1.2.x 不实现常驻 jieba worker：涉及进程生命周期、并发和崩溃恢复；留待结构性版本。
 - 可选 skill 不自动安装、不写 memory：避免覆盖用户内容与隐藏副作用。
