@@ -22,22 +22,6 @@ if ! git -C "$ROOT_DIR" diff --quiet || ! git -C "$ROOT_DIR" diff --cached --qui
   exit 66
 fi
 
-if [[ -z "$RECEIPT_PATH" ]]; then
-  RECEIPT_PATH="$(mktemp "${TMPDIR:-/tmp}/dsh-gitea-search-linux-receipt.XXXXXX.json")"
-fi
-case "$RECEIPT_PATH" in
-  "$ROOT_DIR"|"$ROOT_DIR"/*)
-    echo "receipt path must be outside the tracked checkout" >&2
-    exit 67
-    ;;
-esac
-mkdir -p "$(dirname "$RECEIPT_PATH")"
-RECEIPT_PATH="$(python3 - "$RECEIPT_PATH" <<'PY'
-import pathlib, sys
-print(pathlib.Path(sys.argv[1]).resolve())
-PY
-)"
-
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/dsh-gitea-search-linux-gate.XXXXXX")"
 cleanup() {
@@ -93,6 +77,27 @@ PYTHON_VERSION="$(python3 -c 'import platform; print(platform.python_version())'
 GIT_VERSION="$(git --version | awk '{print $3}')"
 RUN_ID="${GITHUB_RUN_ID:-local-offline}"
 WORKFLOW_REF="${GITHUB_WORKFLOW_REF:-offline}"
+
+if [[ -z "$RECEIPT_PATH" ]]; then
+  RECEIPT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dsh-gitea-search-linux-receipt.XXXXXX")"
+  RECEIPT_PATH="$RECEIPT_DIR/receipt.json"
+fi
+mkdir -p "$(dirname "$RECEIPT_PATH")"
+RECEIPT_PATH="$(python3 - "$RECEIPT_PATH" <<'PY'
+import pathlib, sys
+print(pathlib.Path(sys.argv[1]).resolve())
+PY
+)"
+case "$RECEIPT_PATH" in
+  "$ROOT_DIR"|"$ROOT_DIR"/*)
+    echo "receipt path must be outside the tracked checkout" >&2
+    exit 67
+    ;;
+esac
+if [[ -e "$RECEIPT_PATH" || -L "$RECEIPT_PATH" ]]; then
+  echo "receipt path already exists; use a new path for this gate run" >&2
+  exit 67
+fi
 
 RECEIPT_TMP="${RECEIPT_PATH}.tmp.$$"
 export GATE_ACTUAL_SHA="$ACTUAL_SHA" GATE_TREE_SHA="$TREE_SHA"

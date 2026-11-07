@@ -278,7 +278,7 @@ assert_ok "FTS5 BM25 备份仓自动降权（活跃仓排在 backup 仓之前）
 # ------------------------------------------------------------------------------
 echo ""
 echo "[Phase 4] 测试 MCP Server stdio 协议 (probe-stdio.mjs + 4 工具全覆盖) ..."
-assert_ok "probe-stdio.mjs 冒烟探针 (6 项协议与 UTF-8/护栏断言)" "node \"$PROBE_STDIO\" \"$MCP_BIN\" gitea >/dev/null"
+assert_ok "probe-stdio.mjs 冒烟探针 (6 项协议与 UTF-8/护栏断言)" "node \"$PROBE_STDIO\" \"$MCP_BIN\" gitea"
 
 # 进一步直接测试 search_gitea_docs / read_gitea_file / list_gitea_repos
 MCP_FULL_TEST=$(node - "$MCP_BIN" << 'EOF'

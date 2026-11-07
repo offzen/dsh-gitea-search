@@ -46,13 +46,15 @@ jobs:
 
       - name: Run deterministic exact-SHA gate
         env:
-          GTS_CI_RECEIPT: ${{ runner.temp }}/dsh-gitea-search-gate2-linux.json
+          GTS_CI_RECEIPT: ${{ runner.temp }}/dsh-gitea-search-gate2-linux-${{ github.run_id }}-${{ github.sha }}.json
         run: bash scripts/ci/linux-gate.sh "${{ github.sha }}" "$GTS_CI_RECEIPT"
 
       - name: Validate receipt remains outside tracked source
+        env:
+          GTS_CI_RECEIPT: ${{ runner.temp }}/dsh-gitea-search-gate2-linux-${{ github.run_id }}-${{ github.sha }}.json
         run: |
-          test ! -e "$GITHUB_WORKSPACE/dsh-gitea-search-gate2-linux.json"
-          test -s "$RUNNER_TEMP/dsh-gitea-search-gate2-linux.json"
+          test ! -e "$GITHUB_WORKSPACE/$(basename "$GTS_CI_RECEIPT")"
+          test -s "$GTS_CI_RECEIPT"
 
       - name: Publish gate2 receipt summary
         # actions/upload-artifact@v4 fails on the Gitea act_runner with
@@ -61,9 +63,11 @@ jobs:
         # either: its evidence contract is job conclusion plus a receipt file
         # kept outside the tracked tree. Emit the receipt into the job log as
         # the durable record instead of relying on artifact storage.
+        env:
+          GTS_CI_RECEIPT: ${{ runner.temp }}/dsh-gitea-search-gate2-linux-${{ github.run_id }}-${{ github.sha }}.json
         run: |
           set -euo pipefail
-          RECEIPT="$RUNNER_TEMP/dsh-gitea-search-gate2-linux.json"
+          RECEIPT="$GTS_CI_RECEIPT"
           test -s "$RECEIPT"
           echo "gate2 receipt: $RECEIPT"
           echo "receipt_sha256=$(sha256sum "$RECEIPT" | cut -d' ' -f1)"

@@ -2,16 +2,8 @@
 /**
  * probe-stdio.mjs —— 不依赖 DSH 的 MCP stdio 冒烟探针。
  *
- * 用途：验证某一份 server.mjs 副本本身能否正常启动并完成端到端检索。
- * 它做的事：按 MCP stdio 协议直接和 server 对话 —— initialize → tools/list → 调一次
- * search_gitea，然后断言：① 工具在 ② 有命中 ③ 输出无 U+FFFD（传输层按块解码损坏）
- * ④ 输出字节数在上限内（护栏生效）。收块用 Buffer 累积、按行分帧。
- *
- * 用法：
- *   node probe-stdio.mjs                                   # 默认探本仓 bin/mcp-server 入口
- *   node probe-stdio.mjs /srv/gitea-tool/bin/mcp-server-gitea-search
- *   node probe-stdio.mjs <入口> <查询词>                    # 默认查询词 gitea
- * 退出码：0=全部断言通过；1=有断言失败；2=用法/启动错误。
+ * 用途：验证某一份 MCP server 副本能正常启动并完成真实检索。
+ * 退出码：0=断言通过；1=协议/断言失败；2=用法或进程启动错误。
  */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -36,56 +28,104 @@ function resolveDefaultCmd() {
 
 const CMD = resolveDefaultCmd();
 const QUERY = process.argv[3] || 'gitea';
-const MAX_OUT_BYTES = 131072;          // GITQ_MAX_SEARCH_BYTES 默认值
+const MAX_OUT_BYTES = 131072;
+const CALL_TIMEOUT_MS = 90_000;
 
-if (!existsSync(CMD)) { console.error(`入口不存在：${CMD}`); process.exit(2); }
+if (!existsSync(CMD)) {
+  console.error(`入口不存在：${CMD}`);
+  process.exit(2);
+}
 
 const spec = launchSpec(CMD);
 const p = spawn(spec.command, spec.args, { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env }, windowsHide: true });
-p.on('error', (e) => { console.error(`启动失败：${e.message}`); process.exit(2); });
-
-// —— 收输出：累积 Buffer，按 0x0A 切**完整行**再解码（绝不按块 toString）——
 let acc = Buffer.alloc(0);
-const waiters = new Map();
 let stderrText = '';
-p.stderr.on('data', (d) => { stderrText += d.toString('utf8'); });
-p.stdout.on('data', (d) => {
-  acc = Buffer.concat([acc, d]);
-  let nl;
-  while ((nl = acc.indexOf(0x0a)) >= 0) {
-    const line = acc.subarray(0, nl).toString('utf8');
-    acc = acc.subarray(nl + 1);
+let spawnError;
+let closeInfo;
+let activeMethod = '启动';
+let pass = 0;
+let fail = 0;
+const waiters = new Map();
+const closed = new Promise((resolve) => p.once('close', (code, signal) => {
+  closeInfo = { code, signal };
+  resolve(closeInfo);
+  for (const [id, resolveWaiter] of waiters) {
+    waiters.delete(id);
+    resolveWaiter({ __closed: true, code, signal });
+  }
+}));
+const started = new Promise((resolve, reject) => {
+  p.once('spawn', resolve);
+  p.once('error', reject);
+});
+p.on('error', (error) => {
+  spawnError = error;
+  for (const [id, resolve] of waiters) {
+    waiters.delete(id);
+    resolve({ __spawnError: error });
+  }
+});
+p.stderr.on('data', (chunk) => {
+  stderrText = (stderrText + chunk.toString('utf8')).slice(-8192);
+});
+p.stdout.on('data', (chunk) => {
+  acc = Buffer.concat([acc, chunk]);
+  let newline;
+  while ((newline = acc.indexOf(0x0a)) >= 0) {
+    const line = acc.subarray(0, newline).toString('utf8');
+    acc = acc.subarray(newline + 1);
     if (!line.trim()) continue;
-    let msg;
-    try { msg = JSON.parse(line); } catch { continue; }
-    const w = waiters.get(msg.id);
-    if (w) { waiters.delete(msg.id); w(msg); }
+    let message;
+    try { message = JSON.parse(line); } catch { continue; }
+    const resolve = waiters.get(message.id);
+    if (resolve) {
+      waiters.delete(message.id);
+      resolve(message);
+    }
   }
 });
 
-const send = (obj) => p.stdin.write(JSON.stringify(obj) + '\n');
-p.on('close', (code) => {
-  for (const [id, w] of waiters) {
-    waiters.delete(id);
-    w({ __closed: true, code });
-  }
-});
-function call(id, method, params, ms = 90_000) {
+function call(id, method, params) {
+  activeMethod = method;
   return new Promise((resolve, reject) => {
-    const t = setTimeout(() => { waiters.delete(id); reject(new Error(`${method} 超时 ${ms}ms`)); }, ms);
-    waiters.set(id, (msg) => {
-      clearTimeout(t);
-      if (msg && msg.__closed) reject(new Error(`${method} 子进程提前退出 (code=${msg.code})`));
-      else resolve(msg);
+    const timer = setTimeout(() => {
+      waiters.delete(id);
+      reject(new Error(`${method} 超时 ${CALL_TIMEOUT_MS}ms`));
+    }, CALL_TIMEOUT_MS);
+    waiters.set(id, (message) => {
+      clearTimeout(timer);
+      if (message?.__spawnError) reject(message.__spawnError);
+      else if (message?.__closed) reject(new Error(`${method} 子进程提前退出 (code=${message.code}, signal=${message.signal || 'none'})`));
+      else resolve(message);
     });
-    send({ jsonrpc: '2.0', id, method, ...(params ? { params } : {}) });
+    if (closeInfo) {
+      waiters.delete(id);
+      clearTimeout(timer);
+      reject(new Error(`${method} 子进程已关闭`));
+      return;
+    }
+    p.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, ...(params ? { params } : {}) }) + '\n', (error) => {
+      if (error && waiters.has(id)) {
+        waiters.delete(id);
+        clearTimeout(timer);
+        reject(error);
+      }
+    });
   });
 }
 
-let pass = 0, fail = 0;
-const ok = (c, m) => { if (c) { pass += 1; console.log(`  ✓ ${m}`); } else { fail += 1; console.log(`  ✗ ${m}`); } };
+const ok = (condition, message) => {
+  if (condition) {
+    pass += 1;
+    console.log(`  ✓ ${message}`);
+  } else {
+    fail += 1;
+    console.log(`  ✗ ${message}`);
+  }
+};
 
 try {
+  await started;
   console.log(`探针目标：${CMD}`);
   console.log(`cwd=${process.cwd()}  mirror=${process.env.GITQ_MIRROR_ROOT || '(未设)'}\n`);
 
@@ -95,29 +135,41 @@ try {
     clientInfo: { name: 'probe-stdio', version: '1.0.0' },
   });
   ok(!!init.result, `initialize 有响应（server=${init.result?.serverInfo?.name ?? '?'} v${init.result?.serverInfo?.version ?? '?'}）`);
-  send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+  p.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
 
   const list = await call(2, 'tools/list');
-  const names = (list.result?.tools ?? []).map((t) => t.name).sort();
+  const names = (list.result?.tools ?? []).map((tool) => tool.name).sort();
   ok(names.includes('search_gitea') && names.includes('read_gitea_file'), `tools/list 工具齐全：${names.join(', ') || '(空)'}`);
 
-  const res = await call(3, 'tools/call', { name: 'search_gitea', arguments: { query: QUERY } });
-  const text = res.result?.content?.[0]?.text ?? '';
+  const result = await call(3, 'tools/call', { name: 'search_gitea', arguments: { query: QUERY } });
+  const text = result.result?.content?.[0]?.text ?? '';
   const bytes = Buffer.byteLength(text, 'utf8');
-  const fffd = (text.match(/\uFFFD/g) ?? []).length;
+  const replacements = (text.match(/\uFFFD/g) ?? []).length;
   const firstLine = text.split('\n')[0] ?? '';
   console.log(`      查询 "${QUERY}" ⇒ ${bytes}B / ${text.split('\n').length} 行；首行：${firstLine.slice(0, 120)}`);
   ok(text.length > 0, 'search_gitea 返回了内容');
   ok(/命中\s*\d+\s*条/.test(firstLine), '首行是「命中 N 条」统计（走的是真实检索路径，不是空壳）');
-  ok(fffd === 0, `输出无 U+FFFD（本次 ${fffd} 个）`);
+  ok(replacements === 0, `输出无 U+FFFD（本次 ${replacements} 个）`);
   ok(bytes <= MAX_OUT_BYTES, `输出 ${bytes}B 在上限 ${MAX_OUT_BYTES}B 内（护栏生效）`);
-} catch (e) {
+} catch (error) {
   fail += 1;
-  console.log(`  ✗ 探针异常：${e.message}`);
-  if (stderrText) console.log(`      stderr: ${stderrText.slice(0, 500)}`);
+  if (spawnError) activeMethod = '启动';
+  console.error(`  ✗ 探针异常（阶段=${activeMethod}）：${error.message}`);
+  if (spawnError) console.error(`      spawn error: ${spawnError.code || ''} ${spawnError.message}`);
+  if (stderrText) console.error(`      子进程 stderr（尾部最多 8KB）：\n${stderrText}`);
 } finally {
-  try { p.kill('SIGTERM'); } catch { /* 已退出 */ }
+  if (p.exitCode === null && p.signalCode === null) {
+    p.kill('SIGTERM');
+    const terminated = await Promise.race([
+      closed.then(() => true),
+      new Promise((resolve) => setTimeout(() => resolve(false), 1000)),
+    ]);
+    if (!terminated) p.kill('SIGKILL');
+  }
 }
 
+if (closeInfo && (closeInfo.code !== 0 || closeInfo.signal)) {
+  console.error(`      子进程退出：code=${closeInfo.code} signal=${closeInfo.signal || '(none)'}`);
+}
 console.log(`\n结果：${pass} 绿 / ${fail} 红`);
-process.exit(fail ? 1 : 0);
+process.exitCode = spawnError ? 2 : fail ? 1 : 0;

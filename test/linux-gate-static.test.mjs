@@ -23,13 +23,15 @@ test('gate2 workflow is complete Linux authority and binds event exact SHA', () 
   assert.doesNotMatch(workflow, /windows-latest|self-hosted|vtwsl/i);
 });
 
-test('Linux gate strips ambient aliases and keeps receipt outside checkout', () => {
+test('Linux gate strips ambient aliases and fails closed on reused receipt paths', () => {
   for (const name of [
     'GITEA_MIRROR_ROOT', 'GITEA_MIRROR_PATH', 'GITQ_MIRROR_ROOT',
     'GITEA_OWNERS', 'GITEA_OWNER', 'GITQ_OWNER', 'GITEA_SEARCH_CONFIG',
   ]) assert.match(gate, new RegExp(name));
   assert.match(gate, /\^\[0-9a-f\]\{40\}\$/);
   assert.match(gate, /receipt path must be outside the tracked checkout/);
+  assert.match(gate, /receipt path already exists; use a new path/);
+  assert.match(gate, /\[\[ -e "\$RECEIPT_PATH" \|\| -L "\$RECEIPT_PATH" \]\]/);
   assert.match(gate, /"gate": "gate2-linux"/);
 });
 

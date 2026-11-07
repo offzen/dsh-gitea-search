@@ -14,15 +14,24 @@ These SHAs are no longer the candidate after the correction described below.
 
 **Candidate correction found during continued validation:** the required local PyYAML test exposed that POSIX-hosted profile patch tests did not normalize simulated Windows drive paths, and `pathlib.Path` on POSIX computed the wrong Windows `cwd`. The fix is currently uncommitted on the development branch, after P, and invalidates P as a candidate for the corrected source. Latest available verification is the corrected Node suite (70 total, 66 passed, 4 platform skips), full local Python regression suites, and E2E 31/31; all ran against the working tree, not a frozen candidate SHA. Freeze a new D from the corrected tree and regenerate a new provenance-only P; rerun all gates against that new P. The SHA above is retained only as historical pre-correction evidence.
 
-Verified locally on the corrected worktree (not a frozen candidate SHA):
+## Verified on prior corrected worktree (not a frozen candidate SHA)
 
 - `npm test`: 70 total, 66 passed, 4 Windows-only skips, 0 failed.
-- Python suites: release preflight 6/6; missing dependency 3/3; repo zero-hit 1/1; hosted receipt 5/5; PyYAML profile suite 4/4 (PyYAML loaded from an isolated temporary extraction).
-- `bash scripts/run-e2e-test.sh <isolated-mirror>`: 31 passed, 0 failed. This run also verified the new empty-mirror fixture setup.
-- `git diff --check` passed. `scripts/check-provenance.py` passed after regenerating a pending-freeze manifest for 75 tracked content files; final D/P are not yet created.
-- Wheel/sdist package gate remains blocked: system Python has neither `build` nor `pip`, `venv` creation fails because `ensurepip` is unavailable, and no `uv`/`pipx` is installed. An isolated install was authorized but could not be carried out without changing system packages; no system mutation was attempted.
-- Native Windows/macOS behavior and exact-P hosted receipts remain pending. No CI workflow was dispatched or ref pushed.
-- No push, tag, dispatch, remote-ref write, or production mutation was performed.
+- Python suites: release preflight 6/6; missing dependency 3/3; repo zero-hit 1/1; hosted receipt 5/5; PyYAML profile suite 4/4.
+- `bash scripts/run-e2e-test.sh <isolated-mirror>`: 31 passed, 0 failed.
+- Wheel/sdist package gate remains blocked on a suitable isolated Python packaging toolchain.
+
+## Current review-fix delta (2026-11-09; dirty development tree, not candidate evidence)
+
+User authorized code changes for F2 receipt lifecycle and F3 MCP probe diagnostics. The current tree adds:
+
+- Linux gate now rejects pre-existing receipt paths (including symlinks) before test/build execution, instead of permitting stale success JSON to remain or be overwritten. Added isolated-fixture regressions for existing-file and symlink targets.
+- `probe-stdio.mjs` now records the active MCP request stage, bounded child stderr tail, spawn errors, and child exit code/signal; on early close it rejects pending calls immediately rather than waiting for the 90-second timeout. It terminates the child with a bounded SIGTERM/SIGKILL cleanup path.
+- E2E Phase 4 no longer discards probe output. Added regressions for early child exit and Node spawn ENOENT handling.
+- Focused checks: 8/8 passed (`linux-gate-static`, receipt-path, probe-stdio); `node --check`, `bash -n`, and `git diff --check` passed.
+- Full `npm run test:all`, package build gate, true independent-clone E2E, and hosted receipts were not run. F1 dependency-input digest suggestion remains unchanged/not addressed.
+- Gate2 workflow receipt path now includes run ID and exact commit SHA; its readback steps use the same path, avoiding a fixed-path collision under the new F2 fail-closed contract. The release guide corrects the old artifact-upload claim to match the existing job-log receipt mechanism.
+- These tracked changes are after P=`1acc0a3dce71c3041acdf32dad91635af320092d`; P is invalid for the modified source. No D/P commit, push, tag, dispatch, or remote write was performed.
 
 ## Candidate invariants
 
@@ -33,7 +42,7 @@ Verified locally on the corrected worktree (not a frozen candidate SHA):
 
 ## Next actions
 
-1. Fresh-clone P into an isolated temporary directory; run the local release preflight in allow-partial mode with zero receipts to verify exact-P/provenance validation. Do not treat this as full release readiness.
-2. Obtain exact-P gate2/GitHub hosted receipts through their authorized workflows. GitHub workflow dispatch/ref writes require separate explicit authorization and target/action-matched precheck; do not perform them implicitly.
-3. Commit the correction as a new D, regenerate a provenance-only P, and repeat exact-P gate/fresh-clone checks against that new P. GitHub workflow dispatch and remote ref writes remain out of scope unless separately reauthorized.
-4. Only after the gates, ask for explicit authorization before any remote candidate-ref write; this note authorizes no push.
+1. Review current dirty code diff; rerun full local tests and independent-clone smoke only with a confirmed independent dependency path.
+2. Resolve the isolated Python packaging toolchain blocker without modifying system Python.
+3. Freeze a new content D and provenance-only P after all tracked corrections, then rerun exact-P gates.
+4. Hosted workflow dispatch and remote ref writes remain out of scope without separate explicit authorization and target/action-matched precheck.

@@ -32,7 +32,7 @@ Any tracked edit after P invalidates the candidate. Create a new D, then a new p
 4. Freeze D, regenerate `PROVENANCE.json` with `--source-commit D`, and commit only the manifest as P.
 5. Re-run gate2 for exact P.
 
-Receipts must remain outside the tracked checkout (CI artifact storage or a private audit ledger). The gate2 workflow uploads `gate2-linux-<P>` as a run artifact. Never commit a receipt into the candidate tree.
+Receipts must remain outside the tracked checkout (CI artifact storage or a private audit ledger). The gate2 workflow records the receipt and its digest in the job log, using a run- and SHA-specific path under runner.temp; Gitea's runner does not support the upload-artifact action used by GitHub. Never commit a receipt into the candidate tree.
 
 ## Final hosted gate
 
