@@ -31,10 +31,10 @@ Any tracked edit after P invalidates the candidate. Create a new D, then a new p
 3. Commit the complete content change as D. No receipt is valid for D once P exists.
 4. Regenerate the manifest with `python3 scripts/generate-provenance.py --source-commit "$D"` and commit **only** `PROVENANCE.json` as P.
 5. Confirm the D/P invariants and run `scripts/check-provenance.py` at exact P.
-6. Push the reviewed candidate branch to private gitorca. Require gate2 for exact P, then copy its receipt from the run log into the private audit ledger.
-7. If GitHub clean-platform evidence is authorized, push/dispatch the exact same P on the expected ref and collect the three hosted receipts, remote evidence and artifact zips.
+6. Send the reviewed candidate branch to the private canonical forge. Require gate2 for exact P, then copy its receipt from the run log into the private audit ledger.
+7. When clean-platform evidence for the same exact P is available, collect the three hosted receipts, remote evidence and artifact zips.
 
-Receipts, evidence, artifacts and trust anchors must remain outside the tracked checkout. Gitea's gate2 runner records the receipt and digest in the job log rather than claiming a forge artifact digest it cannot provide. Never commit operational evidence into the candidate tree.
+Private forge coordinates are mandatory runtime inputs: `fetch-remote-evidence.py --forge-api-base/--repository` and `release-preflight.py --expected-gate2-repository` have no private defaults. Receipts, evidence, artifacts and trust anchors must remain outside the tracked checkout. Gitea's gate2 runner records the receipt and digest in the job log rather than claiming a forge artifact digest it cannot provide. Never commit operational evidence into the candidate tree.
 
 ## Exact-P evidence contract
 
@@ -65,6 +65,7 @@ python3 /absolute/external-anchor/release-preflight.py \
   --content "$D" \
   --provenance "$P" \
   --expected-ref refs/heads/rc/v1.2.2-rc7 \
+  --expected-gate2-repository "$PRIVATE_SOURCE_REPOSITORY" \
   --trust-anchor /absolute/external-anchor \
   --receipt gate2-linux=/absolute/receipts/gate2-linux.json \
   --receipt github-linux=/absolute/receipts/github-linux.json \
@@ -85,10 +86,10 @@ The final JSON must say `status: verified`, `remote_evidence_complete: true`, `p
 
 Every remote mutation requires its own target/action-matched PRECHECK and compare-and-set readback. The normal private prerelease path is:
 
-1. local exact P → gitorca candidate ref;
-2. the same local exact P → private gitpub RC ref after a fail-closed secret/internal-identifier review;
+1. local exact P → private canonical candidate ref;
+2. the same local exact P → private prerelease ref after a fail-closed secret/internal-identifier review;
 3. read back both refs and confirm their SHA equals local P;
-4. leave all `main`, `release/*`, existing tags and GitHub refs unchanged unless separately authorized.
+4. leave all unrelated branches, existing tags and public refs unchanged.
 
 A candidate branch is append-only in practice: if a published candidate fails, retain it as evidence and publish a corrected suffix/new candidate rather than force-moving the ref. Do not create a tag merely because private prerelease branches exist. Stable/tag consideration requires fresh exact-P clean-platform evidence and an explicit release decision.
 

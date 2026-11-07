@@ -86,7 +86,7 @@
 
 | 路径 | 权威范围 |
 |---|---|
-| `.gitea/workflows/ci.yml` | gitorca/gate2 exact-SHA Linux gate；receipt 摘要留在 job log |
+| `.gitea/workflows/ci.yml` | private forge/gate2 exact-SHA Linux gate；receipt 摘要留在 job log |
 | `.github/workflows/ci.yml` | GitHub-hosted Ubuntu/macOS 单测、E2E、包门与 exact-P receipts |
 | `.github/workflows/windows-ci.yml` | GitHub-hosted PE、PS5.1/PS7、runtime、CRLF、Git Bash 与 Windows receipt |
 | `.github/scripts/write-gate-receipt.py` | 在 hosted job 内实测 runner/run/workflow、绑定 counts 与 writer hash，写 schema-3 receipt |
@@ -107,5 +107,5 @@
 ## 7. 当前证据边界
 
 - rc7 原始 P（`e20b37c…`）曾在 2026-11-07 本地跑过 Node 125、Python 合约 35、E2E 31/31；该证据只绑定旧 exact P。本次 hygiene 修改在未冻结新 D/P 前测得 Node 125（121 pass/4 Windows-only skip）、Python 9 套件（49 tests）、E2E 31/31；冻结后还须在 exact P 重验。
-- 首个私有 rc7 P `8183902…` 的 gitorca/gitpub gate2 因 Gitea runner 不提供 `GITHUB_WORKFLOW_REF` 而红；兼容修订产生新的 D/P 与后缀候选。新 P 的本地测试、两端 gate2 与任何 hosted evidence 必须分别记录，不得复用旧 P 的 receipt。
+- 先前私有候选的 gate2 因 runner 缺少 hosted-only workflow identity 变量而红；兼容修订必须产生新的 D/P 与新候选。新 P 的本地测试、私有 gate2 与 hosted evidence 必须分别记录，不得复用旧 P 的 receipt。
 - 没有 fresh GitHub-hosted Linux/macOS/Windows schema-3 证据时，release preflight 只能是 `configured-unverified`；信任上限始终是 `same-party`。

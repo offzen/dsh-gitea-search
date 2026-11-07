@@ -1,24 +1,24 @@
-# Project state — v1.2.2-rc7 private prerelease review
+# Project state — v1.2.2-rc7 prerelease review
 
-Snapshot date: 2026-11-08. This file is a concise, publication-safe review surface; detailed session/HANDOFF history and host-local evidence live in the private archive repository, not in this release tree.
+Snapshot date: 2026-11-09. This file is a publication-safe review surface. Private forge coordinates, host-local evidence, detailed handoffs and operational ledgers remain outside the public release tree.
 
 ## Repository roles
 
 | Repository/ref role | Current role | Rule |
 |---|---|---|
-| gitorca `zaoz/dsh-gitea-search` | Private formal source and authoritative history | Candidate refs and `release/1.2.x`; its unrelated `main` is not the release line |
-| gitpub `zaoz/dsh-gitea-search-RC` | Private prerelease mirror | Receives the exact reviewed local candidate; not a source for reverse synchronization |
-| GitHub `offzen/dsh-gitea-search` | Public upstream/release surface | Read-only in this prerelease scope; public `main` remains the v1.2.1 baseline |
-| gitorca private archive | Internal matrix, handoffs, audits and operational evidence | Never a release/tag source |
+| Private canonical source | Authoritative development history | Exact coordinates and internal ref topology are supplied only by private runtime configuration |
+| Private prerelease mirror | Stages the exact reviewed candidate | Never acts as a reverse-synchronization source |
+| Public project | Public source and release surface | Public refs remain unchanged until a separately completed release decision |
+| Private audit archive | Stores matrices, handoffs and operational evidence | Never acts as a release or tag source |
 
-The release baseline is a ref role, not the branch name `main`: gitorca/gitpub `release/1.2.x` currently point to the rc6 private baseline, while GitHub `main` is the public v1.2.1 lineage. The other `main` branches are intentionally not aligned.
+The release baseline is a role, not a branch named `main`; private branch names and coordinates are intentionally omitted from this public tree.
 
 ## Version and candidate
 
 - Product identity: npm `1.2.2-rc7`; Python `1.2.2rc7`.
-- Previous private baseline: rc6 P `7fd7a8b33c3cc625ba91cb764c1e5b388db5c59c`; annotated private tag `v1.2.2-rc6` peels to that commit.
-- The original local rc7 pair (`D=7c1376a…`, `P=e20b37c…`) completed its 2026-11-07 local test set, but this tree review found documentation drift and three Python tests outside the default gate. The hygiene tree tested locally with Node 125 (121 pass, 4 Windows-only skips), nine Python suites (49 tests) and E2E 31/31 before the new freeze; exact-P retesting remains required.
-- The first private rc7 P (`8183902…`) is preserved with its red gitorca/gitpub runs: both runners omitted the GitHub-only `GITHUB_WORKFLOW_REF`. The dual-forge gate compatibility fix requires another **new D/P pair** and a suffix candidate; old rc7 receipts or local exact-P evidence must not be reused.
+- A previous private baseline exists, but its exact commit, tag and repository coordinates belong in the private release ledger.
+- An earlier local rc7 pair completed its local test set, but the tree review found documentation drift and three Python tests outside the default gate. The hygiene tree then passed Node 125 (121 pass, 4 Windows-only skips), nine Python suites (49 tests) and E2E 31/31 before the new freeze; exact-P retesting remains required.
+- A prior private candidate failed its workflow-identity check. The compatibility fix requires a new D/P pair and new evidence; old receipts and local exact-P evidence must not be reused.
 
 ## Tracked-tree review
 
@@ -32,23 +32,22 @@ Disposition:
 | `CODE-INDEX.md`, release guide, manual, Windows guide, WIKI | Update to rc7 contracts |
 | Three Python regressions absent from default gates | Add all to `test:preflight`/receipt counter plus a documentation guard; gate2/hosted jobs provision PyYAML, and missing dependencies fail closed |
 | `scripts/onboarding.{sh,ps1}` | Keep and formally connect from README/POST-INSTALL as read-only helpers |
-| `docs/RC5-REVIEW.md` | Remove from the release tree after preserving it in the private archive; it describes a superseded dirty development snapshot |
+| Superseded private review notes | Keep only in the private audit archive |
 | `CHANGELOG.md` / `RELEASE-NOTES.md` | Keep: changelog is cumulative; release notes remain candidate-facing history |
 
 ## Release-evidence boundary
 
-A fully `verified` release preflight requires four schema-3 receipts, four schema-2 forge evidence documents, exact expected ref, an external four-script trust anchor, and digest-bound GitHub artifacts. The fixed trust ceiling remains `same-party`.
+A fully `verified` release preflight requires four schema-3 receipts, four schema-2 forge evidence documents, an exact expected ref, an external four-script trust anchor and digest-bound hosted artifacts. The fixed trust ceiling remains `same-party`.
 
-The private gitorca → gitpub prerelease can verify ref identity, privacy, clean D/P topology, provenance and available forge Actions. It cannot create missing GitHub-hosted Linux/macOS/Windows evidence without a separately authorized GitHub candidate push/dispatch. Until those fresh exact-P gates exist, stable/tag promotion remains **deferred**.
+The private prerelease path can verify ref identity, privacy, clean D/P topology, provenance and available forge Actions. Until fresh exact-P hosted platform evidence exists, stable/tag promotion remains **deferred**.
 
 ## Freeze and tag recommendation
 
 - **Product code**: feature-frozen for rc7; this hygiene pass changes tests/docs/release bookkeeping, not the search runtime contract.
-- **Candidate**: private prerelease may proceed after new exact-P local tests, provenance and clean-tree checks pass; gitorca gate2 is then recorded as a separate required release-evidence gate. If it is pending or red, label the candidate `configured-unverified`, not release-ready.
-- **Tag**: do not create `v1.2.2-rc7` or stable `v1.2.2` in this scope. Reconsider a tag only after fresh exact-P GitHub-hosted receipts/evidence/artifacts make preflight `verified`, followed by an explicit release decision.
+- **Candidate**: private prerelease may proceed only after new exact-P local tests, provenance and clean-tree checks pass; the private Linux gate is then recorded as a separate required release-evidence gate. If pending or red, label the candidate `configured-unverified`, not release-ready.
+- **Tag**: do not create a new candidate or stable tag in this scope. Reconsider only after fresh exact-P hosted receipts/evidence/artifacts make preflight `verified`, followed by an explicit release decision.
 
 ## Review links
 
-- Formal source: https://git.orca.kdns.fr/zaoz/dsh-gitea-search
-- Private prerelease mirror: https://gitpub.orca.kdns.fr/zaoz/dsh-gitea-search-RC
-- Public project (read-only for this scope): https://github.com/offzen/dsh-gitea-search
+- Private source and prerelease coordinates: intentionally supplied at runtime and omitted from this public tree.
+- Public project: `https://github.com/offzen/dsh-gitea-search`.

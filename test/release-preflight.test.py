@@ -17,6 +17,7 @@ import zipfile
 SOURCE = pathlib.Path(__file__).resolve().parent.parent
 GATES = ("gate2-linux", "github-linux", "github-macos", "github-windows")
 REF = "refs/heads/release/test"
+PRIVATE_REPO = "example-org/private-source"
 WORKFLOWS = {
     "gate2-linux": ".gitea/workflows/ci.yml",
     "github-linux": ".github/workflows/ci.yml",
@@ -102,7 +103,7 @@ class ReleasePreflightTest(unittest.TestCase):
 
     def receipt(self, gate: str, counts_raw: bytes) -> dict:
         hosted = gate.startswith("github-")
-        repo = "offzen/dsh-gitea-search" if hosted else "zaoz/dsh-gitea-search"
+        repo = "offzen/dsh-gitea-search" if hosted else PRIVATE_REPO
         workflow = WORKFLOWS[gate]
         result = {
             "schema": 3, "gate": gate,
@@ -158,7 +159,7 @@ class ReleasePreflightTest(unittest.TestCase):
         return {
             "schema": 2, "forge": "github" if hosted else "gitea", "gate": gate,
             "provider": "github-actions-hosted" if hosted else "gitea-actions",
-            "repository": "offzen/dsh-gitea-search" if hosted else "zaoz/dsh-gitea-search",
+            "repository": "offzen/dsh-gitea-search" if hosted else PRIVATE_REPO,
             "workflow_path": WORKFLOWS[gate], "workflow_name": "CI", "event": "push",
             "head_branch": "release/test", "run_attempt": 1 if hosted else None,
             "head_sha": self.provenance, "conclusion": "success", "status": "completed",
@@ -191,8 +192,10 @@ class ReleasePreflightTest(unittest.TestCase):
         path.write_text(json.dumps(value, sort_keys=True) + "\n", encoding="utf-8")
 
     def run_preflight(self, *, full: bool = False, extra: list[str] | None = None,
-                      env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+                      env: dict[str, str] | None = None, include_private_repository: bool = True) -> subprocess.CompletedProcess[str]:
         args = [sys.executable, "scripts/release-preflight.py", "--content", self.content, "--provenance", self.provenance]
+        if include_private_repository:
+            args += ["--expected-gate2-repository", PRIVATE_REPO]
         for gate in GATES:
             args += ["--receipt", f"{gate}={self.data / f'{gate}.json'}"]
         if full:
@@ -230,6 +233,11 @@ class ReleasePreflightTest(unittest.TestCase):
                 self.write_contract_inputs(); self.patch_json(name, mutation)
                 result = self.run_preflight(full=True)
                 self.assertEqual(result.returncode, 2); self.assertIn(message, result.stderr)
+
+    def test_gate2_repository_has_no_default(self) -> None:
+        result = self.run_preflight(include_private_repository=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--expected-gate2-repository", result.stderr)
 
     def test_rejects_bad_counts(self) -> None:
         cases = [

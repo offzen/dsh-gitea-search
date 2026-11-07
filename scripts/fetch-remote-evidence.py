@@ -38,16 +38,16 @@ import pathlib
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 GITHUB_REPO = "offzen/dsh-gitea-search"
-GITEA_REPO = "zaoz/dsh-gitea-search"
-GITEA_BASE = "https://git.orca.kdns.fr/api/v1"
 GATES = ("gate2-linux", "github-linux", "github-macos", "github-windows")
 EVIDENCE_SCHEMA = 2
 PER_PAGE = 100
 MAX_PAGES = 50
 RUN_ID = re.compile(r"[0-9]+")
+REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 
 
 def get(url: str, headers: dict[str, str]) -> tuple[int, object]:
@@ -158,10 +158,10 @@ def github_evidence(gate: str, run_id: str) -> dict:
     }
 
 
-def gitea_task(run_id: str, headers: dict[str, str]) -> dict:
+def gitea_task(run_id: str, headers: dict[str, str], api_base: str, repository: str) -> dict:
     """Best effort: Gitea's tasks listing carries event / head_branch / workflow_id per run."""
     for page in range(1, 6):
-        status, payload = get(f"{GITEA_BASE}/repos/{GITEA_REPO}/actions/tasks?limit=50&page={page}", headers)
+        status, payload = get(f"{api_base}/repos/{repository}/actions/tasks?limit=50&page={page}", headers)
         rows = payload.get("workflow_runs") if status == 200 and isinstance(payload, dict) else None
         if not isinstance(rows, list) or not rows:
             return {}
@@ -171,15 +171,15 @@ def gitea_task(run_id: str, headers: dict[str, str]) -> dict:
     return {}
 
 
-def gitea_evidence(gate: str, run_id: str) -> dict:
+def gitea_evidence(gate: str, run_id: str, api_base: str, repository: str) -> dict:
     token = os.environ.get("GITEA_TOKEN") or ""
     headers = {"Authorization": f"token {token}"} if token else {}
-    status, run = get(f"{GITEA_BASE}/repos/{GITEA_REPO}/actions/runs/{run_id}", headers)
+    status, run = get(f"{api_base}/repos/{repository}/actions/runs/{run_id}", headers)
     # On the 2026-11 Gitea build, GET /actions/runs/{index} answers 403 ("Only signed
     # in user is allowed to call APIs") for a read token while /jobs works, so the run
     # metadata is reconstructed from the jobs response and the tasks listing instead.
     run_ok = status == 200 and isinstance(run, dict) and run.get("head_sha")
-    status, jobs = get(f"{GITEA_BASE}/repos/{GITEA_REPO}/actions/runs/{run_id}/jobs", headers)
+    status, jobs = get(f"{api_base}/repos/{repository}/actions/runs/{run_id}/jobs", headers)
     items = jobs if isinstance(jobs, list) else (jobs.get("jobs", []) if isinstance(jobs, dict) else [])
     if status != 200 or not items:
         raise blocked(f"run {run_id} -> HTTP {status} (run and jobs both unusable)" if not run_ok
@@ -193,11 +193,11 @@ def gitea_evidence(gate: str, run_id: str) -> dict:
     if not run_ok:
         run = {"id": run_id, "head_sha": items[0].get("head_sha"), "event": None,
                "name": items[0].get("name"), "conclusion": None}
-    task = gitea_task(run_id, headers) if not (run.get("event") and run.get("path")) else {}
+    task = gitea_task(run_id, headers, api_base, repository) if not (run.get("event") and run.get("path")) else {}
     conclusions = [j.get("conclusion") for j in items]
     artifacts: list = []
     artifacts_available = False
-    a_status, a_payload = get(f"{GITEA_BASE}/repos/{GITEA_REPO}/actions/runs/{run_id}/artifacts", headers)
+    a_status, a_payload = get(f"{api_base}/repos/{repository}/actions/runs/{run_id}/artifacts", headers)
     if a_status == 200 and isinstance(a_payload, dict) and isinstance(a_payload.get("artifacts"), list):
         artifacts = [
             {"name": a.get("name"), "digest": a.get("digest"), "size_in_bytes": a.get("size_in_bytes"),
@@ -210,7 +210,7 @@ def gitea_evidence(gate: str, run_id: str) -> dict:
         "forge": "gitea",
         "gate": gate,
         "provider": "gitea-actions",
-        "repository": GITEA_REPO,
+        "repository": repository,
         "workflow_path": workflow_path_of(run.get("path")) or task.get("workflow_id") or None,
         "workflow_name": run.get("name") or run.get("title"),
         "event": run.get("event") or task.get("event"),
@@ -234,17 +234,32 @@ def gitea_evidence(gate: str, run_id: str) -> dict:
     }
 
 
-def main() -> int:
+def main_from_args(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gate", required=True, choices=GATES)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--forge-api-base", help="gate2 only: private forge API base (required; no default)")
+    parser.add_argument("--repository", help="gate2 only: owner/repository identity (required; no default)")
     parser.add_argument("--output", required=True, type=pathlib.Path)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if not RUN_ID.fullmatch(args.run_id):
         print("FETCH_EVIDENCE_BLOCKED: --run-id must be a plain decimal number", file=sys.stderr)
         return 2
 
-    evidence = (gitea_evidence if args.gate == "gate2-linux" else github_evidence)(args.gate, args.run_id)
+    if args.gate == "gate2-linux":
+        if not args.forge_api_base or not args.repository:
+            print("FETCH_EVIDENCE_BLOCKED: gate2-linux requires --forge-api-base and --repository", file=sys.stderr)
+            return 2
+        parsed = urllib.parse.urlsplit(args.forge_api_base.rstrip("/"))
+        if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
+            print("FETCH_EVIDENCE_BLOCKED: --forge-api-base must be an HTTPS URL without credentials, query, or fragment", file=sys.stderr)
+            return 2
+        if not REPOSITORY.fullmatch(args.repository):
+            print("FETCH_EVIDENCE_BLOCKED: --repository must be owner/name", file=sys.stderr)
+            return 2
+        evidence = gitea_evidence(args.gate, args.run_id, args.forge_api_base.rstrip("/"), args.repository)
+    else:
+        evidence = github_evidence(args.gate, args.run_id)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(evidence, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     print(
@@ -253,6 +268,10 @@ def main() -> int:
         f"jobs={len(evidence['jobs'])}/{evidence['jobs_total_count']} artifacts={len(evidence['artifacts'])}"
     )
     return 0
+
+
+def main() -> int:
+    return main_from_args()
 
 
 if __name__ == "__main__":

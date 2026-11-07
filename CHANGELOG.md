@@ -205,7 +205,7 @@ Tagged as `v1.2.2-rc4` (annotated tag object `6c4c516`, peeled commit `a78e456`)
 ### Fixed (跨平台与运行环境稳健性加固)
 - **CLI 同步跨平台容错与前缀规范 (`bin/gts`)**：`gts --sync` 增加 `shutil.which('bash')` 动态探测与友好的跨平台回退提示；统一 `die()` 报错前缀为 `gts:`。
 - **PATH 环境变量引号安全剥离 (`lib/server.mjs`)**：增强 `findSearchCli()` 对 Windows 系统 `PATH` 中包含双引号目录项的清洗处理，防止路径拼接残损。
-- **Gitea Actions 队列卡滞防护 (`.github/workflows/windows-ci.yml`)**：为 Windows CI 工作流任务增设 `if: github.server_url == 'https://github.com'` 守卫，避免在缺少 Windows runner 的自建 Gitea/gitpub Actions 环境中触发永久 queued 队列堆积。
+- **Gitea Actions 队列卡滞防护 (`.github/workflows/windows-ci.yml`)**：为 Windows CI 工作流任务增设 `if: github.server_url == 'https://github.com'` 守卫，避免在缺少 Windows runner 的自建 Gitea Actions 环境中触发永久 queued 队列堆积。
 - **PowerShell YAML 路径转义安全 (`scripts/setup-windows.ps1`)**：改用 `.Replace('\', '/')` 正斜杠进行 DSH 配置插值，彻底杜绝 Windows 路径反斜杠在 YAML 解析器中触发 `\U` / `\b` 等非法转义错误。
 - **CRLF 换行符尾部截断残留 (`bin/gts`, `lib/indexer.py`)**：文本流读取升级为 `.rstrip('\r\n')`，索引摘要生成器彻底规整孤立 `\r`，消除 Windows 文本在终端与 Web UI 渲染时的光标跳行与显示混乱。
 - **Windows 文件排他锁区间一致性 (`lib/indexer.py`)**：`IndexLock` 在 Windows `msvcrt.locking` 加锁前显式执行 `seek(0)`，与 `_release()` 保持严格对称，确保多进程并发构建索引时的严格互斥。

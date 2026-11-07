@@ -31,7 +31,7 @@
 1. 开发完成后先跑默认测试；把产品、测试、workflow 和文档一起提交为 D。
 2. 以 D 生成 `PROVENANCE.json`，只提交该文件为 P；核对 `P^=D`、单文件 diff 与 manifest。
 3. 所有 receipt/evidence/artifact/anchor 放在 checkout 外，并绑定 exact P 和 expected ref。
-4. 私有预发布从同一本地 P 分别推 gitorca 与 gitpub RC，逐端读回 SHA；禁止把派生树回灌正本。
+4. 私有预发布把同一本地 P 分别送往 canonical 与 prerelease 两个私有阶段，逐端读回 SHA；禁止把派生树回灌正本。
 5. 候选失败时保留旧 ref 作为证据，创建新候选；不 force、不移动既有 tag。
 6. 没有 fresh GitHub-hosted Linux/macOS/Windows exact-P evidence 时，不建议创建 stable tag，也不把历史 native/self-hosted 结果冒充当前验证。
 

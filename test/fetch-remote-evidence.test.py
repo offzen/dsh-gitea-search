@@ -18,6 +18,9 @@ assert SPEC and SPEC.loader
 mod = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(mod)
 
+PRIVATE_API = "https://forge.example.invalid/api/v1"
+PRIVATE_REPO = "example-org/private-source"
+
 
 class FetchEvidenceTest(unittest.TestCase):
     def test_paged_fetches_every_item_and_rejects_truncation(self) -> None:
@@ -60,6 +63,34 @@ class FetchEvidenceTest(unittest.TestCase):
         self.assertEqual(data["jobs_total_count"], 1)
         self.assertEqual(data["artifacts"][0]["digest"], "sha256:" + "b" * 64)
         self.assertTrue(data["fetched_at"].endswith("Z"))
+
+    def test_gate2_requires_runtime_coordinates_before_network(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            output = pathlib.Path(td) / "out.json"
+            with mock.patch.object(mod, "get") as get:
+                result = mod.main_from_args([
+                    "--gate", "gate2-linux", "--run-id", "42", "--output", str(output),
+                ])
+            self.assertEqual(result, 2)
+            get.assert_not_called()
+            self.assertFalse(output.exists())
+
+    def test_gate2_uses_supplied_coordinates(self) -> None:
+        run = {"id": 42, "head_sha": "a" * 40, "event": "push",
+               "path": ".gitea/workflows/ci.yml", "name": "CI",
+               "conclusion": "success", "status": "completed"}
+        job = {"name": "Exact-SHA Linux gate", "head_sha": "a" * 40,
+               "conclusion": "success", "status": "completed", "id": 7}
+        def fake_get(url, _headers):
+            self.assertTrue(url.startswith(PRIVATE_API + "/repos/" + PRIVATE_REPO))
+            if url.endswith("/42"): return 200, run
+            if url.endswith("/42/jobs"): return 200, [job]
+            if url.endswith("/42/artifacts"): return 404, {}
+            raise AssertionError(url)
+        with mock.patch.object(mod, "get", side_effect=fake_get):
+            data = mod.gitea_evidence("gate2-linux", "42", PRIVATE_API, PRIVATE_REPO)
+        self.assertEqual(data["repository"], PRIVATE_REPO)
+        self.assertEqual(data["head_sha"], "a" * 40)
 
     def test_non_numeric_run_id_is_rejected_without_network(self) -> None:
         with tempfile.TemporaryDirectory() as td:

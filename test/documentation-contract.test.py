@@ -26,6 +26,18 @@ class DocumentationContractTest(unittest.TestCase):
         self.assertIn("stable/tag promotion remains **deferred**", state)
         self.assertFalse((ROOT / "docs/RC5-REVIEW.md").exists())
 
+    def test_private_coordinates_are_runtime_only(self) -> None:
+        fetcher = self.read("scripts/fetch-remote-evidence.py")
+        preflight = self.read("scripts/release-preflight.py")
+        state = self.read("PROJECT-STATE.md")
+        for value in ("--forge-api-base", "--repository"):
+            self.assertIn(value, fetcher)
+        self.assertNotIn("GITEA_BASE =", fetcher)
+        self.assertNotIn("GITEA_REPO =", fetcher)
+        self.assertIn("--expected-gate2-repository", preflight)
+        self.assertNotIn("GITEA_REPOSITORY =", preflight)
+        self.assertIn("intentionally supplied at runtime", state)
+
     def test_windows_docs_do_not_overclaim_cmd_quoting(self) -> None:
         manual = self.read("MANUAL.md")
         windows = self.read("WINDOWS-PORT.md")

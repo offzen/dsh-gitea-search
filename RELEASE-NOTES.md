@@ -51,7 +51,7 @@
 - Prevents a valid isolated mirror/owner configuration supplied by release smoke from overriding the explicit fixture on only the Node side.
 - Requires a new immutable rc4 candidate and tag; the existing rc3 tag remains unchanged.
 
-Release status: annotated tag `v1.2.2-rc4` (`6c4c516` → commit `a78e456`) is identical across local, gitorca, and gitPUB, and the tag passed all 17 fresh-clone smoke checks. The immutable tag cannot be moved; any fix requires `rc5`.
+Release status: the immutable rc4 candidate was byte-identical across its approved private stages and passed all 17 fresh-clone smoke checks. The tag cannot be moved; any fix requires a new candidate.
 
 Known gap: the `github-windows` release receipt is not produced. `release-preflight.py` allows only `github-actions-hosted` providers and structurally rejects `vtwsl` / `self-hosted` evidence, while the repository is not published to GitHub — so the hosted Windows jobs cannot run. This is a deliberate contract boundary, deferred to v1.3, not an rc4 defect.
 

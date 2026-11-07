@@ -14,6 +14,7 @@ import unittest
 
 SOURCE = pathlib.Path(__file__).resolve().parent.parent
 GATE = "scripts/ci/linux-gate.sh"
+PRIVATE_REPO = "example-org/private-source"
 
 
 @functools.lru_cache(maxsize=1)
@@ -90,7 +91,7 @@ class LinuxGateContextTest(unittest.TestCase):
             ["git", *args], cwd=self.repo, check=True, text=True, capture_output=True,
         ).stdout
 
-    def write_event(self, *, repository: str = "zaoz/dsh-gitea-search", ref: str = "refs/heads/rc/test",
+    def write_event(self, *, repository: str = PRIVATE_REPO, ref: str = "refs/heads/rc/test",
                     after: str | None = None) -> None:
         self.event.write_text(
             json.dumps({"repository": {"full_name": repository}, "ref": ref, "after": after or self.sha}) + "\n",
@@ -98,7 +99,7 @@ class LinuxGateContextTest(unittest.TestCase):
         )
 
     def environment(self, **overrides: str) -> dict[str, str]:
-        repository = "zaoz/dsh-gitea-search"
+        repository = PRIVATE_REPO
         ref = "refs/heads/rc/test"
         env = {
             **os.environ,
@@ -153,7 +154,7 @@ class LinuxGateContextTest(unittest.TestCase):
         self.assertNotIn("event payload does not match", result.stderr)
 
     def test_native_workflow_ref_remains_exact(self) -> None:
-        expected = "zaoz/dsh-gitea-search/.gitea/workflows/ci.yml@refs/heads/rc/test"
+        expected = f"{PRIVATE_REPO}/.gitea/workflows/ci.yml@refs/heads/rc/test"
         env = self.environment(GITHUB_WORKFLOW_REF=expected)
         result = self.run_gate(env)
         diagnostics = f"stdout={result.stdout}\nstderr={result.stderr}"
@@ -167,15 +168,15 @@ class LinuxGateContextTest(unittest.TestCase):
 
     def test_rejects_conflicting_native_workflow_ref(self) -> None:
         self.assert_context_rejected(
-            self.environment(GITHUB_WORKFLOW_REF="zaoz/dsh-gitea-search/.gitea/workflows/other.yml@refs/heads/rc/test"),
+            self.environment(GITHUB_WORKFLOW_REF=f"{PRIVATE_REPO}/.gitea/workflows/other.yml@refs/heads/rc/test"),
             "GITHUB_WORKFLOW_REF",
         )
 
     def test_rejects_repository_ref_and_sha_event_mismatch(self) -> None:
         cases = [
-            {"repository": "zaoz/other", "ref": "refs/heads/rc/test", "after": self.sha},
-            {"repository": "zaoz/dsh-gitea-search", "ref": "refs/heads/evil", "after": self.sha},
-            {"repository": "zaoz/dsh-gitea-search", "ref": "refs/heads/rc/test", "after": "0" * 40},
+            {"repository": "other-org/other", "ref": "refs/heads/rc/test", "after": self.sha},
+            {"repository": PRIVATE_REPO, "ref": "refs/heads/evil", "after": self.sha},
+            {"repository": PRIVATE_REPO, "ref": "refs/heads/rc/test", "after": "0" * 40},
         ]
         for case in cases:
             with self.subTest(case=case):
