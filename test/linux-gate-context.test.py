@@ -2,6 +2,7 @@
 """Negative/positive contracts for gate2's dual-forge workflow identity resolver."""
 from __future__ import annotations
 
+import functools
 import json
 import os
 import pathlib
@@ -13,6 +14,47 @@ import unittest
 
 SOURCE = pathlib.Path(__file__).resolve().parent.parent
 GATE = "scripts/ci/linux-gate.sh"
+
+
+@functools.lru_cache(maxsize=1)
+def resolve_bash() -> str:
+    if os.name != "nt":
+        path = shutil.which("bash")
+        if not path:
+            raise AssertionError("GNU bash not found on PATH")
+        return path
+
+    # Anchor native Python to the Git for Windows installation, never the WSL launcher.
+    git_env = {key: value for key, value in os.environ.items() if key.upper() != "GIT_EXEC_PATH"}
+    exec_path = pathlib.Path(subprocess.run(
+        ["git", "--exec-path"], check=True, text=True, capture_output=True, env=git_env,
+    ).stdout.strip())
+    roots = list(exec_path.parents[:4])
+    if git_bin := shutil.which("git"):
+        roots.extend(pathlib.Path(git_bin).resolve().parents[:3])
+    roots.extend(
+        pathlib.Path(base) / "Git"
+        for key in ("ProgramW6432", "ProgramFiles")
+        if (base := os.environ.get(key))
+    )
+    checked = []
+    for root in dict.fromkeys(roots):
+        if root == root.parent:
+            continue
+        for relative in (("bin", "bash.exe"), ("usr", "bin", "bash.exe")):
+            candidate = root.joinpath(*relative)
+            checked.append(str(candidate))
+            if not candidate.is_file():
+                continue
+            probe = subprocess.run(
+                [str(candidate), "--noprofile", "--norc", "--version"],
+                encoding="utf-8", errors="replace", capture_output=True,
+            )
+            if probe.returncode == 0 and "GNU bash" in probe.stdout:
+                return str(candidate)
+    raise AssertionError(
+        f"Git for Windows GNU bash.exe not found (git --exec-path={exec_path}); checked: {checked}"
+    )
 
 
 class LinuxGateContextTest(unittest.TestCase):
@@ -77,36 +119,45 @@ class LinuxGateContextTest(unittest.TestCase):
         return env
 
     def run_gate(self, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+        # Define the npm sentinel inside Bash. Passing BASH_FUNC_npm%% through the native
+        # Windows CreateProcess environment is not portable; Bash-to-Bash export is.
+        clean_env = {key: value for key, value in env.items()
+                     if not key.startswith("BASH_FUNC_npm")}
         return subprocess.run(
-            ["bash", GATE, self.sha, str(self.temp / "receipt.json")],
+            [
+                resolve_bash(), "--noprofile", "--norc", "-c",
+                'npm() { return 42; }; export -f npm; exec "$BASH" "$@"',
+                "gate-context", GATE, self.sha, str(self.temp / "receipt.json"),
+            ],
             cwd=self.repo,
-            env=env,
-            text=True,
+            env=clean_env,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
         )
 
     def assert_context_rejected(self, env: dict[str, str], text: str) -> None:
         result = self.run_gate(env)
-        self.assertEqual(result.returncode, 69, result.stderr)
+        diagnostics = f"stdout={result.stdout}\nstderr={result.stderr}"
+        self.assertEqual(result.returncode, 69, diagnostics)
         self.assertIn(text, result.stderr)
         self.assertFalse((self.temp / "receipt.json").exists())
 
     def test_gitea_derivation_passes_context_then_reaches_build(self) -> None:
         # With a valid Gitea context, identity resolution must pass. A stub npm then stops the
         # gate immediately after identity resolution, proving it reached the build phase.
-        env = self.environment(**{"BASH_FUNC_npm%%": "() {  return 42\n}"})
+        env = self.environment()
         result = self.run_gate(env)
-        self.assertEqual(result.returncode, 42, result.stderr)
+        diagnostics = f"stdout={result.stdout}\nstderr={result.stderr}"
+        self.assertEqual(result.returncode, 42, diagnostics)
         self.assertNotIn("event payload does not match", result.stderr)
 
     def test_native_workflow_ref_remains_exact(self) -> None:
         expected = "zaoz/dsh-gitea-search/.gitea/workflows/ci.yml@refs/heads/rc/test"
-        env = self.environment(
-            GITHUB_WORKFLOW_REF=expected,
-            **{"BASH_FUNC_npm%%": "() {  return 42\n}"},
-        )
+        env = self.environment(GITHUB_WORKFLOW_REF=expected)
         result = self.run_gate(env)
-        self.assertEqual(result.returncode, 42, result.stderr)
+        diagnostics = f"stdout={result.stdout}\nstderr={result.stderr}"
+        self.assertEqual(result.returncode, 42, diagnostics)
 
     def test_rejects_missing_gitea_marker(self) -> None:
         self.assert_context_rejected(self.environment(GITEA_ACTIONS=""), "Gitea Actions forge markers")
