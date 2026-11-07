@@ -87,6 +87,12 @@ def e2e_count() -> tuple[int, bool]:
     total = int(m.group(1)) if (m := E2E_SUMMARY.search(output)) else 0
     if not total:
         total = len(E2E_PASS_LINE.findall(output))
+    if result.returncode != 0:
+        # Without this the job log only says "e2e=0" and the real reason is lost;
+        # rc6 run 42336982455 failed exactly that way.
+        print("E2E_FAILED_OUTPUT_TAIL:", file=sys.stderr)
+        for line in output.splitlines()[-25:]:
+            print("  " + line[:300], file=sys.stderr)
     return total, result.returncode == 0
 
 

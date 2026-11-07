@@ -351,7 +351,10 @@ jobs:
       - name: Run the suite this receipt attests to
         shell: bash
         # rc6 F8: the receipt job runs the suite itself so the counts are real.
-        run: python scripts/collect-test-counts.py --output "$RUNNER_TEMP/test-counts.json"
+        # --skip-e2e: the e2e suite needs the Git-Bash environment that the separate
+        # `windows-git-bash` job provides, so this job records node/python counts only
+        # and the verifier requires that job's success via `needs` instead.
+        run: python scripts/collect-test-counts.py --skip-e2e --output "$RUNNER_TEMP/test-counts.json"
 
       - name: Write hosted clean-runner receipt
         shell: pwsh

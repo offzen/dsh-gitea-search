@@ -61,6 +61,13 @@ EXPECTED_OS_PREFIXES = {
 # cross-platform variance (skips differ per platform) does not produce a false red,
 # while a gutted suite (a handful of tests) is still caught.
 TEST_COUNT_FLOORS = {"node_total": 60, "python_suites": 2, "e2e": 25}
+# The e2e floor only applies to gates that run the e2e suite inside the receipt job.
+# On Windows the suite runs in the separate `windows-git-bash` job (the receipt job
+# cannot reproduce its environment), so its coverage is attested by that job's
+# result in `needs` — which `check_needs` requires to be success. Asserting a count
+# we did not measure would be exactly the self-attestation rc6 set out to remove.
+E2E_COUNTED_GATES = {"gate2-linux", "github-linux", "github-macos"}
+WINDOWS_E2E_NEEDS_JOB = "windows-git-bash"
 
 
 class Blocked(RuntimeError):
@@ -103,9 +110,17 @@ def check_test_counts(gate: str, counts: Any) -> None:
     require(counts["node_fail"] == 0, f"{gate}: test_counts reports {counts['node_fail']} node failures")
     require(counts["node_pass"] <= counts["node_total"], f"{gate}: test_counts node_pass > node_total")
     for key, floor in TEST_COUNT_FLOORS.items():
+        if key == "e2e" and gate not in E2E_COUNTED_GATES:
+            # Windows: e2e is measured by its own job; see E2E_COUNTED_GATES.
+            continue
         require(
             counts[key] >= floor,
             f"{gate}: test_counts.{key}={counts[key]} below floor {floor} (suite was weakened)",
+        )
+    if gate == "github-windows":
+        require(
+            counts["e2e"] == 0,
+            f"{gate}: test_counts.e2e={counts['e2e']} but this gate does not run e2e itself",
         )
 
 
@@ -191,6 +206,14 @@ def check_receipt(path: pathlib.Path, expected_gate: str, provenance: str, tree:
     if expected_gate == "github-windows":
         require(data.get("runner_environment") == "github-hosted-clean-windows", "github-windows: not a hosted clean runner")
         require(data.get("provider") in ALLOWED_WINDOWS_PROVIDERS, "github-windows: local/self-hosted provider rejected")
+        # F8 on Windows: the e2e suite is measured by the `windows-git-bash` job, so the
+        # receipt must name it as a successful need. Dropping that job from the workflow
+        # would otherwise remove e2e coverage without any count noticing.
+        needs = data.get("needs") or {}
+        require(
+            needs.get(WINDOWS_E2E_NEEDS_JOB) == "success",
+            f"github-windows: needs must include {WINDOWS_E2E_NEEDS_JOB}=success (e2e attestation)",
+        )
         forbidden = ("vtwsl", "local", "self-hosted", "dshwindowsgate", "scheduled-task", "broker")
         serialized = json.dumps(data, ensure_ascii=False).lower()
         require(not any(marker in serialized for marker in forbidden), "github-windows: local gate evidence rejected")

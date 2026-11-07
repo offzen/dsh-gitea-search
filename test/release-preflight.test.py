@@ -74,7 +74,10 @@ class ReleasePreflightTest(unittest.TestCase):
             "run_id": "run-" + gate,
             "test_counts": {
                 "node_total": 74, "node_pass": 70, "node_fail": 0,
-                "python_suites": 2, "e2e": 31,
+                "python_suites": 2,
+                # Windows measures e2e in the separate windows-git-bash job, so the
+                # receipt job records 0 and the verifier requires that job via `needs`.
+                "e2e": 0 if gate == "github-windows" else 31,
             },
             "checks": ["checkout-exact-sha", "test-counts-floors"],
             "toolchain": {
@@ -95,7 +98,11 @@ class ReleasePreflightTest(unittest.TestCase):
                     else "macos-latest" if gate == "github-macos"
                     else "ubuntu-latest"
                 ),
-                "needs": {"test": "success"},
+                "needs": (
+                    {"windows-git-bash": "success", "windows-pe": "success", "windows-ps": "success",
+                     "windows-tests": "success", "windows-grep-crlf": "success"}
+                    if gate == "github-windows" else {"test": "success"}
+                ),
             })
             data["workflow_ref"] = (
                 f"offzen/dsh-gitea-search/{data['workflow']}@{data['ref']}"
@@ -344,6 +351,23 @@ class ReleasePreflightTest(unittest.TestCase):
         result = self.run_preflight()
         self.assertEqual(result.returncode, 2)
         self.assertIn("trust must be declared as same-party", result.stderr)
+
+    def test_rejects_windows_receipt_without_e2e_attestation(self) -> None:
+        """F8 on Windows: e2e coverage comes from the windows-git-bash job, so the
+        receipt must name it as a successful need."""
+        self.patch_receipt("github-windows", needs={"windows-pe": "success", "windows-ps": "success"})
+        result = self.run_preflight()
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("needs must include windows-git-bash=success", result.stderr)
+
+    def test_rejects_windows_receipt_claiming_e2e_counts(self) -> None:
+        """F8 on Windows: the receipt job does not run e2e, so claiming a count is
+        an unmeasured assertion."""
+        self.patch_receipt("github-windows", test_counts={
+            "node_total": 74, "node_pass": 70, "node_fail": 0, "python_suites": 2, "e2e": 31})
+        result = self.run_preflight()
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("does not run e2e itself", result.stderr)
 
 
 if __name__ == "__main__":
