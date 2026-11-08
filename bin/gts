@@ -100,29 +100,57 @@ def die(msg, code=2):
     sys.exit(code)
 
 
-def mirror_dir(repo):
-    clean = repo.split("/", 1)[1] if "/" in repo else repo
-    for o in OWNERS:
-        cand = os.path.join(ROOT, o, clean + ".git")
-        if os.path.isdir(cand):
-            return cand
-    return os.path.join(MIRROR, clean + ".git")
+_REPO_PART_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _repo_arg(repo):
+    raw = str(repo or "").strip()
+    if IS_WINDOWS:
+        raw = raw.replace("\\", "/")
+    parts = raw.split("/")
+    if len(parts) not in (1, 2) or any(not p or p in (".", "..") or not _REPO_PART_RE.fullmatch(p) for p in parts):
+        die(f"INVALID_REPO: 仓库名必须是 repo 或 owner/repo：{repo}")
+    return parts
 
 
 def all_repos():
     found_dir = False
-    out = set()
-    for o in OWNERS:
-        mdir = os.path.join(ROOT, o)
+    out = []
+    for owner in OWNERS:
+        mdir = os.path.join(ROOT, owner)
         if not os.path.isdir(mdir):
             continue
         found_dir = True
-        for e in os.listdir(mdir):
-            if e.endswith(".git") and os.path.isdir(os.path.join(mdir, e)):
-                out.add(e[:-4])
+        for entry in os.listdir(mdir):
+            if entry.endswith(".git") and os.path.isdir(os.path.join(mdir, entry)):
+                out.append(f"{owner}/{entry[:-4]}")
     if not found_dir:
         die(f"镜像目录不存在：{MIRROR}（先跑 {SYNC}）")
     return sorted(out)
+
+
+def resolve_repo(repo):
+    parts = _repo_arg(repo)
+    if len(parts) == 2:
+        repo_id = "/".join(parts)
+        if parts[0] not in OWNERS:
+            die(f"镜像中不存在仓库：{repo_id}")
+        gitdir = os.path.join(ROOT, parts[0], parts[1] + ".git")
+        if not os.path.isdir(gitdir):
+            die(f"镜像中不存在仓库：{repo_id}")
+        return repo_id, gitdir
+    candidates = [repo_id for repo_id in all_repos() if repo_id.rsplit("/", 1)[1] == parts[0]]
+    if len(candidates) > 1:
+        die(f"AMBIGUOUS_REPO: 裸仓名 {parts[0]} 匹配多个仓：{', '.join(candidates)}；请使用 owner/repo")
+    if not candidates:
+        die(f"镜像中不存在仓库：{parts[0]}")
+    repo_id = candidates[0]
+    owner, name = repo_id.split("/", 1)
+    return repo_id, os.path.join(ROOT, owner, name + ".git")
+
+
+def mirror_dir(repo):
+    return resolve_repo(repo)[1]
 
 
 def pick_repos(patterns):
@@ -130,21 +158,14 @@ def pick_repos(patterns):
     if not patterns:
         return repos
     pats = [p.strip() for chunk in patterns for p in chunk.split(",") if p.strip()]
-    out = []
-    for r in repos:
-        for p in pats:
-            if fnmatch_any(r, p):
-                out.append(r)
-                break
-    return out
+    return [repo_id for repo_id in repos if any(fnmatch_any(repo_id, p) for p in pats)]
 
 
 def fnmatch_any(name, pat):
-    # 仅 Windows 侧做 "\" → "/"：POSIX 下反斜杠在 glob 里是转义字符（"a\*b" 匹配字面 a*b），
-    # 无脑替换会破坏转义语义；且 git 的 repo/branch 名本身禁止含 "\"。
+    # 完整 owner/repo 模式匹配完整身份；旧的裸 repo 模式匹配 basename。
     norm_pat = (pat or "").replace("\\", "/") if IS_WINDOWS else (pat or "")
-    p = norm_pat.split("/", 1)[1] if "/" in norm_pat and "/" not in name else norm_pat
-    nl, pl = name.lower(), p.lower()
+    target = name if "/" in norm_pat else name.rsplit("/", 1)[-1]
+    nl, pl = target.lower(), norm_pat.lower()
     if any(ch in pl for ch in "*?["):
         return fnmatch.fnmatchcase(nl, pl)
     return pl in nl
@@ -200,7 +221,7 @@ def split_grep(line, ref):
 
 
 def search_repo(repo, a, and_words=None):
-    """返回 (records, capped, error)"""
+    """返回 (records, capped, error)；repo 是 canonical owner/repo。"""
     gitdir = mirror_dir(repo)
     rl = refs_of(gitdir, a.all_refs)
     if a.branch:
@@ -450,6 +471,7 @@ def main():
     ap.add_argument("--kind", default=None,
                     help="按内容类型过滤（逗号分隔）：doc/session/config/script")
     ap.add_argument("--reindex", action="store_true", help="增量更新文档与会话 FTS5 索引")
+    ap.add_argument("--full", action="store_true", help="配合 --reindex 安全全量重建 owner-aware 索引")
     ap.add_argument("--fts-stats", action="store_true", help="查看 FTS5 索引库统计信息")
     ap.add_argument("--perf-stats", action="store_true", help="查看性能与磁盘 I/O 监测统计")
     ap.add_argument("--doctor", action="store_true", help="运行索引与宿主 DSH 会话健康及 I/O 诊断")
@@ -540,9 +562,7 @@ def main():
     if a.read_path:
         if not a.repo:
             die("使用 --read 时必须通过 -r 指定仓库名")
-        gd = mirror_dir(a.repo[0])
-        if not os.path.isdir(gd):
-            die(f"镜像中不存在仓库：{a.repo[0]}")
+        repo_id, gd = resolve_repo(a.repo[0])
         ref = a.branch or "HEAD"
         clean_rel_path = normalize_git_path(a.read_path)
         p = subprocess.run(GN + [f"--git-dir={gd}", "show", f"{ref}:{clean_rel_path}"], capture_output=True, text=True)
@@ -555,7 +575,7 @@ def main():
         if not indexer:
             die("未找到 indexer 模块，无法构建索引")
         repo_filter = ",".join(a.repo) if a.repo else None
-        indexer.build_index(ROOT, OWNER, repo_filter=repo_filter, verbose=not a.json)
+        indexer.build_index(ROOT, OWNER, repo_filter=repo_filter, full=a.full, verbose=not a.json)
         return
 
     if a.doc_mode:

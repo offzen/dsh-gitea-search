@@ -59,7 +59,7 @@ for (const source of ['json', 'config-option', 'cli']) {
     assert.equal(captured.env.GITEA_MIRROR_ROOT, mirror);
     assert.equal(captured.env.GITEA_OWNERS, 'selected');
     assert.equal(captured.env.GITEA_TOKEN, 'fixture-token');
-    assert.deepEqual(JSON.parse(result.stdout).repos, ['demo']);
+    assert.deepEqual(JSON.parse(result.stdout).repos, ['selected/demo']);
   });
 }
 

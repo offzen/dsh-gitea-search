@@ -464,7 +464,21 @@ class IndexLock:
             self.fd = None
 
 
-def init_db(conn):
+INDEX_IDENTITY_VERSION = 2
+
+
+def _index_identity_version(conn):
+    return int(conn.execute("PRAGMA user_version").fetchone()[0])
+
+
+def _index_has_documents(conn):
+    try:
+        return conn.execute("SELECT 1 FROM docs_fts LIMIT 1").fetchone() is not None
+    except sqlite3.OperationalError:
+        return False
+
+
+def init_db(conn, identity_version=INDEX_IDENTITY_VERSION):
     with conn:
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA synchronous=NORMAL;")
@@ -517,6 +531,17 @@ def init_db(conn):
                 tokenize=%s
             );
         """ % TOKENIZER_SPEC)
+        if identity_version is not None:
+            conn.execute(f"PRAGMA user_version={int(identity_version)}")
+
+
+def _require_current_index(conn):
+    version = _index_identity_version(conn)
+    if version != INDEX_IDENTITY_VERSION and _index_has_documents(conn):
+        raise RuntimeError(
+            f"INDEX_REBUILD_REQUIRED: 索引身份版本 {version or 1} 不含 owner；"
+            "请执行全量重建后再搜索或增量更新"
+        )
 
 
 def extract_title(path_str, content):
@@ -724,10 +749,11 @@ def read_blob(gitdir, blob_sha):
         return None
 
 
-def index_repo(conn, mirror_dir, repo, exts, verbose=False, force=False):
-    gitdir = os.path.join(mirror_dir, repo + ".git")
+def index_repo(conn, gitdir, repo_id, exts, verbose=False, force=False):
+    """Index one bare mirror using canonical owner/repo as its logical identity."""
     if not os.path.isdir(gitdir):
         return 0, 0, 0
+    repo = repo_id
 
     ref, head_commit = get_head_ref_and_sha(gitdir)
 
@@ -881,23 +907,20 @@ def index_repo(conn, mirror_dir, repo, exts, verbose=False, force=False):
 
 
 def _normalize_repo_pattern(pat):
-    # 同 classify_kind：仅 Windows 侧把 "\" 视作分隔符
-    p = (pat or "").strip().replace("\\", "/") if IS_WINDOWS else (pat or "").strip()
-    if "/" in p:
-        p = p.split("/", 1)[1].strip()
-    return p
+    # Windows 接受 owner\repo；POSIX 保留反斜杠语义。
+    return ((pat or "").strip().replace("\\", "/") if IS_WINDOWS else (pat or "").strip())
 
 
-def _match_repo_any(repo_name, pats):
-    rl = repo_name.lower()
+def _match_repo_any(repo_id, pats):
     for raw_p in pats:
         p = _normalize_repo_pattern(raw_p).lower()
         if not p:
             continue
+        target = repo_id.lower() if "/" in p else repo_id.rsplit("/", 1)[-1].lower()
         if any(ch in p for ch in "*?["):
-            if fnmatch.fnmatchcase(rl, p):
+            if fnmatch.fnmatchcase(target, p):
                 return True
-        elif p in rl:
+        elif p in target:
             return True
     return False
 
@@ -956,7 +979,11 @@ def build_index(mirror_root, owners=None, repo_filter=None, exts=DEFAULT_EXTS, f
                     os.remove(p)
 
         conn = sqlite3.connect(db_path)
-        init_db(conn)
+        # identity-v1 行已经丢失 owner，不能猜迁移。只有 --full 可删除旧库后建立 v2。
+        init_db(conn, identity_version=None)
+        _require_current_index(conn)
+        # identity v2 is marked only after the complete build succeeds. A failed
+        # first/full build therefore stays unreadable instead of exposing partial data.
 
         # 旧库升级与一致性自愈：一次性为 docs_fts 补建 rowid 映射，并清理可能存在的历史重复行/孤儿行
         n_map = conn.execute("SELECT COUNT(*) FROM doc_rowid").fetchone()[0]
@@ -1003,13 +1030,15 @@ def build_index(mirror_root, owners=None, repo_filter=None, exts=DEFAULT_EXTS, f
                 all_r = list_repos(mirror_dir)
                 if repo_filter:
                     pats = [p for p in repo_filter.split(",") if p.strip()]
-                    repos = [r for r in all_r if _match_repo_any(r, pats)]
+                    repos = [r for r in all_r if _match_repo_any(f"{owner}/{r}", pats)]
                 else:
                     repos = all_r
 
                 total_repos_scanned += len(repos)
                 for r in repos:
-                    mod, dele, same = index_repo(conn, mirror_dir, r, exts, verbose=verbose, force=full)
+                    repo_id = f"{owner}/{r}"
+                    gitdir = os.path.join(mirror_dir, r + ".git")
+                    mod, dele, same = index_repo(conn, gitdir, repo_id, exts, verbose=verbose, force=full)
                     total_mod += mod
                     total_del += dele
                     total_same += same
@@ -1035,6 +1064,8 @@ def build_index(mirror_root, owners=None, repo_filter=None, exts=DEFAULT_EXTS, f
                 f"rchar={m.get('rchar', 0)}, write={m.get('write_bytes', 0)}, status={judgment['status']})"
             )
 
+        with conn:
+            conn.execute(f"PRAGMA user_version={INDEX_IDENTITY_VERSION}")
         conn.close()
         return total_mod, total_del, total_same
 
@@ -1082,6 +1113,11 @@ def search_fts(mirror_root, query, repo=None, limit=20, kind=None):
         }
 
     conn = sqlite3.connect(db_path)
+    try:
+        _require_current_index(conn)
+    except RuntimeError as exc:
+        conn.close()
+        return {"total": 0, "results": [], "error": str(exc)}
     # 2026-10-21 加固：默认 busy_timeout=0 会让并发写入（每小时 indexer 重建窗口）时
     # 立即抛 "database is locked"。这里给一个有界等待（2000ms），避免瞬时 BUSY 误判，
     # 也绝不无限期卡住搜索（有界上限=2s，超时按未命中返回，不会拖出 600s 级超时）。
@@ -1141,15 +1177,19 @@ def search_fts(mirror_root, query, repo=None, limit=20, kind=None):
         if repo_pats:
             like_clauses = []
             for rp in repo_pats:
-                # 将 glob 通配符 * ? 转换为 SQL LIKE 的 % _，并支持子串匹配
+                # 完整 owner/repo 匹配完整身份；旧裸名只匹配 basename（最后一个 / 之后）。
                 sql_pat = rp.replace("*", "%").replace("?", "_")
-                if not sql_pat.startswith("%"):
-                    sql_pat = "%" + sql_pat
-                if not sql_pat.endswith("%"):
-                    sql_pat = sql_pat + "%"
+                if "/" in rp:
+                    if not sql_pat.startswith("%"):
+                        sql_pat = "%" + sql_pat
+                    if not sql_pat.endswith("%"):
+                        sql_pat = sql_pat + "%"
+                    like_clauses.append("docs_fts.repo LIKE ?")
+                else:
+                    sql_pat = "%/" + sql_pat + "%"
+                    like_clauses.append("docs_fts.repo LIKE ?")
                 while "%%" in sql_pat:
                     sql_pat = sql_pat.replace("%%", "%")
-                like_clauses.append("docs_fts.repo LIKE ?")
                 params.append(sql_pat)
             sql += " AND (" + " OR ".join(like_clauses) + ")"
     if kind:
