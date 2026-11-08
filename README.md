@@ -4,7 +4,6 @@
 [![CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml)
 [![Windows CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/windows-ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions)
 [![Version](https://img.shields.io/badge/Version-v1.2.2-blue)](RELEASE-NOTES.md)
-[![npm](https://img.shields.io/npm/v/dsh-gitea-search?color=red)](https://www.npmjs.com/package/dsh-gitea-search)
 [![Archive](https://img.shields.io/badge/Archive-v0.1.1%20(Pure%20Node)-orange)](https://github.com/offzen/dsh-gitea-search/tree/legacy-0.1.x)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows%20(Native)-brightgreen)](MANUAL.md#3-多场景部署流程)
 [![Node](https://img.shields.io/badge/Node-%3E%3D20.11-success)](package.json)
@@ -148,6 +147,8 @@ cd dsh-gitea-search
 powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-org -WhatIf
 # 复核计划后去掉 -WhatIf；接入 DSH 时再显式加 -RegisterDsh -Profile desktop/web/headless
 ```
+
+> 📦 **发行渠道说明**：npm 上的 `dsh-gitea-search@0.1.1`（MIT、纯 Node、另一维护者 `rayuai`）是本项目**早期遗留原型**，与当前 Apache-2.0 代码库无关；PyPI 亦无官方包。请只从本仓库源码或经哈希核验的制品安装 —— `pip install '.[fts]'` 走本地源码，不会从注册表拉取本项目。
 
 > ⚠️ **v1.2.2 早期候选用户请注意**：该版本在 Linux / macOS 上存在路径归一化回归
 > （读取文件名含反斜杠的文件时会静默返回另一个文件的内容）。请直接使用 **v1.2.2-rc2+**，

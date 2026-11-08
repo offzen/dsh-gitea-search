@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.2] - Unreleased
 
+> **Candidate scope note (not a release announcement).** This line contains the
+> owner-qualified repository identity work and the Windows legacy-index SQLite handle
+> release. It supersedes the earlier private-only freeze published as `v1.2.2` on the
+> private forges (exact P `9db7010…`); that private tag is immutable and is **not**
+> moved, deleted or recreated by this entry. No public stable `v1.2.2` tag or Release
+> exists, and the date stays `Unreleased` until formal exact-P evidence is closed.
+
 Closes the remaining rc6 audit findings. The default verifier is fail-closed and
 can only report `verified` when all four schema-3 receipts, deep forge evidence,
 GitHub artifact digests, an exact expected ref, and an externally held four-file

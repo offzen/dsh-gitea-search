@@ -21,10 +21,17 @@ The release baseline is a role, not a branch named `main`; private branch names 
 - Evidence from earlier rc candidates is historical only and must not be reused for the stable exact P.
 - Follow-up first-run fixes pass effective settings into sync, reject partial multi-owner
   sync, provision Windows FTS/MCP dependencies, and preserve JSON diagnostics and spaced
-  CLI paths during onboarding. The new content/provenance pair needs fresh platform evidence.
-- Cross-owner repositories with identical names remain an open runtime limitation.
-  Formal hosted receipts still require the public repository identity; candidate-mirror
-  regression results alone do not authorize promotion.
+  CLI paths during onboarding.
+- Cross-owner repositories with identical names are no longer an open runtime limitation:
+  the owner-qualified CLI/MCP/FTS path resolves repositories by `owner/name`, and it is
+  covered by dedicated regressions plus hosted product jobs.
+- The Windows legacy-index upgrade releases its SQLite handle before re-raising
+  `INDEX_REBUILD_REQUIRED`, so an in-process `--full` rebuild works on NTFS; a
+  cross-platform regression guards this behaviour.
+- Evidence is layered and the two layers must not be conflated: product-level hosted
+  compatibility is verified for the pre-convergence candidate, while formal hosted
+  schema-3 receipts remain 0/3 and joint release preflight is not `verified`.
+  Candidate-mirror product results alone do not authorize promotion.
 
 ## Tracked-tree review
 

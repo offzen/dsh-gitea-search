@@ -7,9 +7,12 @@ name = "dsh-gitea-search"
 version = "1.2.2"
 description = "Windows-capable gts launcher for dsh-gitea-search (Gitea/Git mirror hybrid search CLI)"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 classifiers = [
+  # 本包只经源码/Release 分发；PyPI 上的同名名字不由本项目持有。
+  # 该 classifier 让上传路径 fail-closed，避免误发布到未持有的名字。
+  "Private :: Do Not Upload",
   "Programming Language :: Python :: 3",
   "Operating System :: Microsoft :: Windows",
   "Operating System :: POSIX :: Linux",
