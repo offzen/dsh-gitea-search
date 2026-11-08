@@ -32,7 +32,7 @@ set -uo pipefail
 
 ROOT=${GITEA_MIRROR_ROOT:-${GITEA_MIRROR_PATH:-${GITQ_MIRROR_ROOT:-/srv/gitea-mirror}}}
 RAW_OWNER=${GITEA_OWNERS:-${GITEA_OWNER:-${GITQ_OWNER:-myorg}}}
-OWNER=${RAW_OWNER%%,*}
+OWNER=$RAW_OWNER
 REMOTE=${GITEA_REMOTE:-${GITQ_REMOTE:-gitea}}          # ~/.ssh/config 里的 ssh 别名
 JOBS=${GITQ_JOBS:-6}
 # 枚举源：
@@ -82,6 +82,13 @@ while [ $# -gt 0 ]; do
     *) echo "未知参数: $1（-h 看用法）" >&2; exit 2 ;;
   esac
 done
+
+case "$RAW_OWNER" in
+  *,*)
+    echo "CONFIG_ERROR: sync.sh currently supports exactly one owner; sync each owner separately." >&2
+    exit 2
+    ;;
+esac
 
 # 兼容 bash 3.2（macOS 自带）：无 mapfile
 _fill_repos() { repos=(); while IFS= read -r _lr; do [ -n "$_lr" ] && repos+=("$_lr"); done; }

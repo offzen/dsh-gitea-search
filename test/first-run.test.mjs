@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PY = process.platform === 'win32' ? 'python' : 'python3';
+const POSIX = process.platform !== 'win32';
 
 function fixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gts-first-run-'));
@@ -79,6 +80,22 @@ test('--sync rejects multiple owners before a partial or wrong-target sync', (t)
   assert.match(result.stderr, /exactly one owner/);
 });
 
+test('direct sync.sh rejects multiple owners instead of silently truncating', { skip: !POSIX }, (t) => {
+  const { dir, env } = fixture(t);
+  const mirror = path.join(dir, 'mirror');
+  fs.mkdirSync(path.join(mirror, 'one', 'alpha.git'), { recursive: true });
+  fs.mkdirSync(path.join(mirror, 'two', 'beta.git'), { recursive: true });
+  env.GITEA_MIRROR_ROOT = mirror;
+  env.GITEA_OWNERS = 'one,two';
+  const result = spawnSync('bash', [path.join(ROOT, 'scripts', 'sync.sh'), '--list'], {
+    encoding: 'utf8', env, timeout: 15000,
+  });
+  assert.equal(result.status, 2, `${result.stdout}\n${result.stderr}`);
+  assert.equal(result.stdout, '');
+  assert.match(result.stderr, /exactly one owner/);
+  assert.doesNotMatch(result.stdout, /alpha|beta/);
+});
+
 test('--sync rejects invalid explicit configuration before starting a child', (t) => {
   const { dir, env } = fixture(t);
   const { result, captured } = syncCli(dir, env, ['--config', path.join(dir, 'missing.json'), '--owners', 'team', '--sync']);
@@ -87,7 +104,6 @@ test('--sync rejects invalid explicit configuration before starting a child', (t
   assert.match(result.stderr, /CONFIG_ERROR/);
 });
 
-const POSIX = process.platform !== 'win32';
 function onboarding(t, status, valid = true) {
   const { dir, env } = fixture(t);
   const app = path.join(dir, '安装目录 with spaces');
