@@ -494,11 +494,17 @@ def main():
         die("CONFIG_ERROR: " + "; ".join(effective["errors"]))
 
     if a.sync:
+        if len(OWNERS) != 1:
+            die("CONFIG_ERROR: --sync currently supports exactly one owner; "
+                "sync each owner separately with --owners before searching multiple owners")
         if not os.path.exists(SYNC):
             die(f"同步脚本不存在：{SYNC}")
         bash_bin = "/bin/bash" if os.path.exists("/bin/bash") else (shutil.which("bash") or "bash")
         try:
-            sync_result = subprocess.run([bash_bin, SYNC, "-q"], check=False)
+            # sync.sh does not read JSON or CLI options. Pass the resolved values,
+            # rather than letting it fall back to another directory/owner.
+            sync_env = dict(os.environ, GITEA_MIRROR_ROOT=ROOT, GITEA_OWNERS=OWNER)
+            sync_result = subprocess.run([bash_bin, SYNC, "-q"], check=False, env=sync_env)
             if sync_result.returncode != 0:
                 die(f"SYNC_FAILED: 同步脚本退出码 {sync_result.returncode}", code=sync_result.returncode or 1)
         except Exception as e:

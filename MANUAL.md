@@ -158,6 +158,8 @@ Windows 的进程创建机制（`CreateProcess`）只认 PE 二进制文件（`.
 
 通过内置的 `scripts\setup-windows.ps1` 脚本，自动完成 Python/Node/Git 环境检查、pip 构建 `gts.exe`、镜像目录准备、FTS5 索引初始化以及 DSH `cordis.patch.yml` 自动配置：
 
+安装器要求 Python ≥ 3.10、Node ≥ 20.11 及随 Node 安装的 `npm.cmd`。默认通过 `pip install ".[fts]"` 安装 jieba，并在源码目录运行 `npm ci`、验证 MCP SDK 可导入后才注册 profile。`-SkipIndex` 仅跳过建索引及 FTS extra，仍安装 MCP SDK；`-WhatIf` 不安装依赖、不建索引、不修改 profile。首次远端镜像同步仍需单独执行。
+
 ```powershell
 # 以管理员或普通用户身份在 PowerShell 中执行（绕过当前进程执行策略）
 powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-org -MirrorRoot C:\gitea-mirror -RegisterDsh -Profile web -WhatIf

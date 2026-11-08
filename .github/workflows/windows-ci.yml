@@ -181,6 +181,40 @@ jobs:
             if ((Get-FileHash $decoyFile -Algorithm SHA256).Hash -ne $decoyBefore[$name]) { throw "-DshHome 未优先于 ambient DSH_HOME: $name" }
           }
 
+      - name: Clean Windows first install with FTS and MCP dependencies
+        shell: pwsh
+        run: |
+          $cleanRoot = Join-Path $env:RUNNER_TEMP 'gts clean first install'
+          $archive = Join-Path $env:RUNNER_TEMP 'gts-first-install.zip'
+          git archive --format=zip --output=$archive HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'git archive failed' }
+          Expand-Archive -LiteralPath $archive -DestinationPath $cleanRoot -Force
+          if (Test-Path (Join-Path $cleanRoot 'node_modules')) { throw 'fixture must not include node_modules' }
+          $venv = Join-Path $env:RUNNER_TEMP 'gts-first-install-venv'
+          python -m venv $venv
+          if ($LASTEXITCODE -ne 0) { throw 'clean venv failed' }
+          $venvPython = Join-Path $venv 'Scripts\python.exe'
+          & $venvPython -c "import importlib.util; assert importlib.util.find_spec('jieba') is None"
+          if ($LASTEXITCODE -ne 0) { throw 'fixture must not have jieba' }
+          $env:PATH = "$(Join-Path $venv 'Scripts');$env:PATH"
+          $dsh = Join-Path $env:RUNNER_TEMP 'gts-first-install-dsh'
+          $profileDir = Join-Path $dsh 'profiles\desktop'
+          New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
+          '[]' | Set-Content -Encoding utf8 (Join-Path $profileDir 'cordis.patch.yml')
+          $mirror = Join-Path $cleanRoot 'mirror'
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $cleanRoot 'scripts\setup-windows.ps1') -Owners ci-owner -MirrorRoot $mirror -RegisterDsh -Profile desktop -DshHome $dsh
+          if ($LASTEXITCODE -ne 0) { throw 'clean default installer failed' }
+          & $venvPython -c 'import jieba'
+          if ($LASTEXITCODE -ne 0) { throw 'installer did not install jieba' }
+          if (-not (Test-Path (Join-Path $mirror 'state\gitea-fts.sqlite'))) { throw 'default index was not built' }
+          Push-Location $cleanRoot
+          try {
+            node --input-type=module -e "await import('@modelcontextprotocol/sdk/server/index.js')"
+            if ($LASTEXITCODE -ne 0) { throw 'MCP SDK cannot be imported after installer' }
+          } finally { Pop-Location }
+          $patch = Get-Content -Raw (Join-Path $profileDir 'cordis.patch.yml')
+          if ($patch -notmatch 'id: mcp-gitea-search') { throw 'profile was not registered' }
+
   # ── W7/W8：运行时行为测试（锁排他 / 引号往返）在真实 Windows 上跑 ────────
   windows-tests:
     name: W7/W8 运行时行为（py${{ matrix.python }} / node${{ matrix.node }}）

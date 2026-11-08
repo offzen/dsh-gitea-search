@@ -33,10 +33,10 @@ function Resolve-Python {
     if (-not (Get-Command $exe -ErrorAction SilentlyContinue)) { continue }
     try {
       $version = & $exe @prefix -c "import sys;print('%d.%d' % sys.version_info[:2])" 2>$null
-      if ($LASTEXITCODE -eq 0 -and $version) { return @($exe, $prefix) }
+      if ($LASTEXITCODE -eq 0 -and $version -and [version]($version.Trim()) -ge [version]'3.10') { return @($exe, $prefix) }
     } catch { }
   }
-  throw 'Python >= 3.8 was not found.'
+  throw 'Python >= 3.10 was not found.'
 }
 function Find-Gts([string]$PythonExe, [object[]]$PythonArgs) {
   $probe = @'
@@ -105,6 +105,10 @@ $PythonArgs = if ($python.Count -gt 1 -and $python[1]) { @($python[1]) } else { 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw 'Git for Windows was not found.' }
 $node = Get-Command node -ErrorAction SilentlyContinue
 if (-not $node) { throw 'Node.js >= 20.11 was not found.' }
+& $node.Source -e 'const [major, minor] = process.versions.node.split(''.'').map(Number); process.exit(major > 20 || (major === 20 && minor >= 11) ? 0 : 1)'
+if ($LASTEXITCODE -ne 0) { throw 'Node.js >= 20.11 is required.' }
+$npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
+if (-not $npm) { throw 'npm.cmd was not found; install the npm component of Node.js.' }
 
 $profileTargets = @()
 if ($RegisterDsh) {
@@ -122,12 +126,13 @@ if ($RegisterDsh) {
 }
 
 Write-Step 'Installing the Python launcher'
+$package = if ($SkipIndex) { '.' } else { '.[fts]' }
 if ($PSCmdlet.ShouldProcess($RootDir, 'pip install dsh-gitea-search')) {
   Push-Location $RootDir
   try {
-    & $PythonExe @PythonArgs -m pip install .
+    & $PythonExe @PythonArgs -m pip install $package
     if ($LASTEXITCODE -ne 0) {
-      & $PythonExe @PythonArgs -m pip install --user .
+      & $PythonExe @PythonArgs -m pip install --user $package
       if ($LASTEXITCODE -ne 0) { throw 'pip install failed.' }
     }
   } finally { Pop-Location }
@@ -138,6 +143,17 @@ if ($WhatIfPreference) {
 }
 $gtsExe = Find-Gts $PythonExe $PythonArgs
 Write-Host "gts.exe: $gtsExe"
+
+Write-Step 'Installing and checking the MCP SDK'
+if ($PSCmdlet.ShouldProcess($RootDir, 'npm ci and MCP SDK import check')) {
+  Push-Location $RootDir
+  try {
+    & $npm.Source ci --no-audit --no-fund
+    if ($LASTEXITCODE -ne 0) { throw 'npm ci failed; MCP profile was not registered.' }
+    & $node.Source --input-type=module -e 'await import(''@modelcontextprotocol/sdk/server/index.js'')'
+    if ($LASTEXITCODE -ne 0) { throw 'MCP SDK import failed; MCP profile was not registered.' }
+  } finally { Pop-Location }
+}
 
 Write-Step 'Preparing the mirror and index'
 if ($PSCmdlet.ShouldProcess($MirrorRoot, 'create mirror directories')) {

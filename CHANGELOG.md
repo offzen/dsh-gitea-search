@@ -38,6 +38,14 @@ not an independent attestation.
   the three legacy entrypoints are accepted only as exact compatibility symlinks.
 
 ### Fixed
+- Pass effective CLI/JSON mirror and owner settings to `--sync`; reject multiple
+  owners before starting the single-owner synchronizer instead of silently syncing
+  only the first owner.
+- Windows setup installs the FTS extra when indexing, installs and imports the MCP
+  SDK before profile registration, and validates Python >= 3.10 / Node >= 20.11.
+- Post-install verification keeps stderr diagnostics out of JSON and supports CLI
+  paths containing spaces or non-ASCII characters. Added executable regressions
+  and a clean Windows installer gate without preinstalled jieba or node_modules.
 - Gitea gate2 no longer requires the GitHub-only `GITHUB_WORKFLOW_REF` variable. GitHub still
   requires the native value exactly; Gitea derives the same canonical value only when its
   Actions marker and event payload independently match repository, ref and exact checkout SHA,

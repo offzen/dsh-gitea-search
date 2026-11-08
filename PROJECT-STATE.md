@@ -19,6 +19,12 @@ The release baseline is a role, not a branch named `main`; private branch names 
 - Development follows the public `v1.2.1` / `main` first-parent line. The historical rc2 tree entered through a two-parent bridge and is an imported content ancestor, not the current development baseline.
 - The stable content line starts from the reviewed rc7 successor, adds the missing Windows full-suite PyYAML dependency, and updates stable-version metadata. Its direct-child provenance commit records the exact content commit in `PROVENANCE.json`; private commit coordinates remain in the private release ledger.
 - Evidence from earlier rc candidates is historical only and must not be reused for the stable exact P.
+- Follow-up first-run fixes pass effective settings into sync, reject partial multi-owner
+  sync, provision Windows FTS/MCP dependencies, and preserve JSON diagnostics and spaced
+  CLI paths during onboarding. The new content/provenance pair needs fresh platform evidence.
+- Cross-owner repositories with identical names remain an open runtime limitation.
+  Formal hosted receipts still require the public repository identity; candidate-mirror
+  regression results alone do not authorize promotion.
 
 ## Tracked-tree review
 

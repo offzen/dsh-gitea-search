@@ -26,7 +26,7 @@ if [[ ! -x "$GTS" ]]; then
   exit 1
 fi
 
-CONFIG_JSON="$($GTS --show-effective-config 2>&1)" || { printf '%s\n' "$CONFIG_JSON" >&2; exit 1; }
+CONFIG_JSON="$("$GTS" --show-effective-config)" || { printf '%s\n' "$CONFIG_JSON" >&2; exit 1; }
 MIRROR="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["mirror_root"])' <<<"$CONFIG_JSON")"
 OWNERS="$(python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["owners"]))' <<<"$CONFIG_JSON")"
 VALID="$(python3 -c 'import json,sys; print(str(json.load(sys.stdin)["valid"]).lower())' <<<"$CONFIG_JSON")"
@@ -37,7 +37,7 @@ if [[ "$VALID" != true ]]; then
 fi
 printf 'Configuration: valid\nMirror root: %s\nOwners: %s\n' "$MIRROR" "$OWNERS"
 
-REPOS_JSON="$($GTS --repos --json 2>&1)" || { printf '%s\n' "$REPOS_JSON" >&2; echo 'Next: check owner directories and mirror permissions.' >&2; exit 1; }
+REPOS_JSON="$("$GTS" --repos --json)" || { printf '%s\n' "$REPOS_JSON" >&2; echo 'Next: check owner directories and mirror permissions.' >&2; exit 1; }
 REPO_COUNT="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("count",0))' <<<"$REPOS_JSON")"
 printf 'Mirrored repositories: %s\n' "$REPO_COUNT"
 if [[ "$REPO_COUNT" == 0 ]]; then
@@ -47,7 +47,7 @@ else
   echo 'Repository mirror: present'
 fi
 
-DOCTOR="$($GTS --doctor --json 2>&1)" || { printf '%s\n' "$DOCTOR" >&2; exit 1; }
+DOCTOR="$("$GTS" --doctor --json)" || { printf '%s\n' "$DOCTOR" >&2; exit 1; }
 python3 - "$DOCTOR" <<'PY'
 import json, sys
 report = json.loads(sys.argv[1])

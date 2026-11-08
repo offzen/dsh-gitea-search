@@ -41,6 +41,10 @@ bash scripts/sync.sh -q
 
 同步会访问 Gitea、写入本地 bare 镜像，并在成功后自动更新 FTS 索引；无需紧接着重复运行 `--build`。它不由验收脚本自动触发。Windows 原生 PowerShell 不能直接运行该 Bash 脚本，请使用 Git Bash 或既有镜像获取流程。
 
+若镜像路径与 owner 来自 JSON 配置或 CLI 参数，请使用 `gts --sync --repos --json`：CLI 会把最终生效的镜像路径和 owner 传给同步器。直接执行 `sync.sh` 仍需设置对应环境变量。当前同步器一次仅支持一个 owner；多 owner 的 `--sync` 会在写入前明确拒绝，请分别用 `gts --owners owner-a --sync --repos` 和 `gts --owners owner-b --sync --repos` 同步。
+
+Windows 安装器默认安装 FTS 所需 jieba 和 MCP Node SDK，再建索引及按需注册 profile；`-SkipIndex` 只跳过索引及 FTS extra，仍安装 MCP SDK。安装器不会自动从远端下载仓库，首次同步仍需显式执行。
+
 ## 2. 确认 FTS 索引与健康状态
 
 ```sh
