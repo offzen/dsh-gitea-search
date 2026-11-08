@@ -124,6 +124,47 @@ class OwnerQualifiedReposTest(unittest.TestCase):
         self.assertNotIn("error", rebuilt)
         self.assertEqual([r["repo"] for r in rebuilt["results"]], ["team/demo"])
 
+    def test_rejected_legacy_build_closes_sqlite_connection(self):
+        """A rejected incremental build must release the DB handle before raising.
+
+        NTFS refuses to unlink a file while an sqlite3.Connection still holds it, so
+        the required ``--full`` upgrade can only follow the INDEX_REBUILD_REQUIRED
+        rejection if the exception path closes the connection. POSIX hides the leak,
+        hence this handle-level assertion instead of relying on the delete.
+        """
+        legacy_root = self.root / "legacy-handle"
+        db_path = Path(indexer.get_db_path(str(legacy_root)))
+        seed = sqlite3.connect(db_path)
+        indexer.init_db(seed, identity_version=None)
+        with seed:
+            cur = seed.execute(
+                "INSERT INTO docs_fts(repo, ref, path, title, body, kind, mtime, body_raw) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                ("demo", "main", "README.md", "legacy", "legacy", "doc", 1, "legacy"),
+            )
+            seed.execute("INSERT INTO doc_rowid VALUES (?, ?, ?, ?)",
+                         ("demo", "main", "README.md", cur.lastrowid))
+        seed.close()
+
+        opened: list[sqlite3.Connection] = []
+        real_connect = sqlite3.connect
+
+        def tracking_connect(*args, **kwargs):
+            connection = real_connect(*args, **kwargs)
+            opened.append(connection)
+            return connection
+
+        with mock.patch.object(indexer.sqlite3, "connect", side_effect=tracking_connect), \
+             mock.patch.object(indexer, "_get_jieba", return_value=None), \
+             mock.patch.dict(os.environ, {**self.env, "GITQ_ALLOW_NO_JIEBA": "1"}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "INDEX_REBUILD_REQUIRED"):
+                indexer.build_index(str(legacy_root), owners=["team"], verbose=False)
+
+        self.assertTrue(opened, "build_index should open the index database")
+        for connection in opened:
+            with self.assertRaises(sqlite3.ProgrammingError):
+                connection.execute("SELECT 1")
+
 
 if __name__ == "__main__":
     unittest.main()

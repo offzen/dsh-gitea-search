@@ -724,8 +724,15 @@ class BlobReader:
         except Exception:
             try:
                 self.p.kill()
+                self.p.wait(timeout=5)
             except Exception:
                 pass
+        for stream in (self.p.stdout, self.p.stderr):
+            if stream is not None:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
         self.p = None
 
 
@@ -981,7 +988,14 @@ def build_index(mirror_root, owners=None, repo_filter=None, exts=DEFAULT_EXTS, f
         conn = sqlite3.connect(db_path)
         # identity-v1 行已经丢失 owner，不能猜迁移。只有 --full 可删除旧库后建立 v2。
         init_db(conn, identity_version=None)
-        _require_current_index(conn)
+        try:
+            _require_current_index(conn)
+        except Exception:
+            # On Windows an open sqlite3.Connection keeps the database file locked.
+            # The caller must be able to follow a rejected incremental build with
+            # the required full rebuild in the same process.
+            conn.close()
+            raise
         # identity v2 is marked only after the complete build succeeds. A failed
         # first/full build therefore stays unreadable instead of exposing partial data.
 
