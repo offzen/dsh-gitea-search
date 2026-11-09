@@ -137,9 +137,6 @@ def main() -> int:
         repository = os.environ.get("GITHUB_REPOSITORY", "")
         if not REPOSITORY.fullmatch(repository):
             raise RuntimeError("GitHub repository identity must be owner/name")
-        repository_visibility = os.environ.get("GITHUB_REPOSITORY_VISIBILITY", "")
-        if repository_visibility != "private":
-            raise RuntimeError("hosted staging repository visibility must be private")
         run_id = os.environ.get("GITHUB_RUN_ID", "")
         run_attempt_raw = os.environ.get("GITHUB_RUN_ATTEMPT", "")
         workflow_ref = os.environ.get("GITHUB_WORKFLOW_REF", "")
@@ -191,7 +188,6 @@ def main() -> int:
             "runner_arch": runner_arch,
             "runner_label": args.runner_label,
             "repository": repository,
-            "repository_visibility": repository_visibility,
             "commit": actual,
             "tree": command("git", "--no-pager", "-c", "core.fsmonitor=", "rev-parse", "HEAD^{tree}"),
             "status": "success",

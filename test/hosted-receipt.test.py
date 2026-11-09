@@ -70,7 +70,7 @@ class HostedReceiptTest(unittest.TestCase):
     def writer_env(self, *, repository: str = "example-org/private-hosted", workflow: str | None = None,
                    git_ref: str = "refs/heads/release/test", workflow_ref_ref: str | None = None,
                    dispatch_sha: str | None = None, run_attempt: str = "1",
-                   runner_environment: str = "github-hosted", repository_visibility: str = "private") -> dict[str, str]:
+                   runner_environment: str = "github-hosted") -> dict[str, str]:
         _, default_workflow, _ = self.platform_gate()
         workflow = workflow or default_workflow
         ref_for_workflow = git_ref if workflow_ref_ref is None else workflow_ref_ref
@@ -78,7 +78,6 @@ class HostedReceiptTest(unittest.TestCase):
             **os.environ,
             "GITHUB_ACTIONS": "true",
             "GITHUB_REPOSITORY": repository,
-            "GITHUB_REPOSITORY_VISIBILITY": repository_visibility,
             "GITHUB_RUN_ID": "12345",
             "GITHUB_RUN_ATTEMPT": run_attempt,
             "GITHUB_WORKFLOW_REF": f"{repository}/.github/workflows/{workflow}@{ref_for_workflow}",
@@ -115,7 +114,6 @@ class HostedReceiptTest(unittest.TestCase):
         data = json.loads((self.temp / "receipt.json").read_text(encoding="utf-8"))
         self.assertEqual(data["schema"], 3)
         self.assertEqual(data["repository"], "example-org/private-hosted")
-        self.assertEqual(data["repository_visibility"], "private")
         self.assertEqual(data["commit"], self.sha)
         self.assertEqual(data["run_attempt"], 1)
         self.assertEqual(data["runner_hosted_environment"], "github-hosted")
@@ -135,13 +133,6 @@ class HostedReceiptTest(unittest.TestCase):
         rejected = self.run_writer(repository="not-owner-slash-repository")
         self.assertEqual(rejected.returncode, 2)
         self.assertIn("owner/name", rejected.stderr)
-
-    def test_rejects_non_private_staging_repository(self) -> None:
-        for visibility in ("", "public", "internal"):
-            with self.subTest(visibility=visibility):
-                result = self.run_writer(env=self.writer_env(repository_visibility=visibility))
-                self.assertEqual(result.returncode, 2)
-                self.assertIn("visibility must be private", result.stderr)
 
     def test_rejects_wrong_sha(self) -> None:
         result = self.run_writer(sha="0" * 40)

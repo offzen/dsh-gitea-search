@@ -61,7 +61,7 @@ Disposition:
 
 A fully `verified` release preflight requires four schema-3 receipts, four schema-2 forge evidence documents, an exact expected ref, explicit expected identities for both private gate2 and private GitHub hosted staging, an external four-script trust anchor and digest-bound hosted artifacts. The fixed trust ceiling remains `same-party`.
 
-The private prerelease and hosted-staging path records the repository where each receipt actually ran and requires both runner context and forge metadata to prove it is private; the external verifier, not candidate-controlled CI, decides whether it matches the approved private staging identity. Public refs are not a pre-release test bed. Until fresh stable exact-P hosted platform evidence exists and strict joint preflight is verified, remote/tag promotion remains **deferred**.
+The private prerelease and hosted-staging path records the repository where each receipt actually ran and requires forge API metadata to prove it is private; the external verifier, not candidate-controlled CI, decides whether it matches the approved private staging identity. Public refs are not a pre-release test bed. Until fresh stable exact-P hosted platform evidence exists and strict joint preflight is verified, remote/tag promotion remains **deferred**.
 
 ## Freeze and tag recommendation
 

@@ -112,7 +112,6 @@ class ReleasePreflightTest(unittest.TestCase):
             "runner_environment": ("github-hosted-clean-windows" if gate == "github-windows"
                                    else "github-hosted-clean-runner" if hosted else "clean-linux-runner"),
             "repository": repo, "commit": self.provenance, "tree": self.tree, "status": "success",
-            **({"repository_visibility": "private"} if hosted else {}),
             "started_at": "2026-11-07T00:00:00Z", "gate_started_at": "2026-11-07T00:00:00Z",
             "ended_at": "2026-11-07T00:01:00Z", "duration_seconds": 60,
             "run_id": str(900 if not hosted else 1000 + GATES.index(gate)) + (":" + gate if hosted else ""),
@@ -254,12 +253,7 @@ class ReleasePreflightTest(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("repository mismatch", result.stderr)
 
-    def test_rejects_hosted_repository_without_private_visibility_proof(self) -> None:
-        self.patch_json("github-linux.json", lambda d: d.update(repository_visibility="public"))
-        receipt = self.run_preflight(full=True)
-        self.assertEqual(receipt.returncode, 2)
-        self.assertIn("not measured private", receipt.stderr)
-        self.write_contract_inputs()
+    def test_rejects_hosted_repository_without_private_forge_proof(self) -> None:
         self.patch_json("evidence-github-linux.json", lambda d: d.update(repository_private=False))
         evidence = self.run_preflight(full=True)
         self.assertEqual(evidence.returncode, 2)

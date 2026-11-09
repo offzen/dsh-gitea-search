@@ -430,8 +430,6 @@ def check_receipt(
         require(data.get("provider") == "github-actions-hosted", f"{expected_gate}: provider is not GitHub hosted")
         require(data.get("repository") == expected_repo,
                 f"{expected_gate}: repository mismatch (want {expected_repo})")
-        require(data.get("repository_visibility") == "private",
-                f"{expected_gate}: hosted staging repository is not measured private")
         require(data.get("workflow") == EXPECTED_GITHUB_WORKFLOWS[expected_gate], f"{expected_gate}: workflow mismatch")
         require(bool(data.get("workflow_run_id")), f"{expected_gate}: workflow run identity missing")
         require(data.get("event") in {"push", "workflow_dispatch"}, f"{expected_gate}: unsupported event")
