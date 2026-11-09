@@ -2,6 +2,17 @@
 
 ## v1.2.2 — cross-platform search and fail-closed release evidence
 
+> **Documentation and tag-provenance clarification.** The turn-count, token-volume,
+> and 85% saving figures retained in the v1.2.1 historical notes below were early,
+> unbenchmarked observations without a standardized methodology. They are preserved
+> only as historical record and are not a current performance promise. The private
+> canonical and prerelease forges also retain an immutable legacy annotated
+> `v1.2.2` tag at commit `9db7010…` (tree `e3964dd…`). A later public candidate with
+> the same version name is different content. Cross-forge builds, SBOMs, mirrors and
+> incident reports must therefore identify the full commit or tree, not assume that
+> the tag name alone denotes identical bytes. This disclosure records the unresolved
+> naming risk; it is not a release announcement or a risk-acceptance decision.
+
 - `verified` now requires four schema-3 receipts, deep forge evidence, exact
   workflow/ref/run identity, fresh complete job listings, GitHub-hosted runner
   signals, matching artifact digests, and an out-of-tree four-script trust anchor.

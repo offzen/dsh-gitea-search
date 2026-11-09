@@ -1,6 +1,6 @@
 # Project state — v1.2.2 stable candidate review
 
-Snapshot date: 2026-11-09. This file is a publication-safe review surface. Private forge coordinates, host-local evidence, detailed handoffs and operational ledgers remain outside the public release tree.
+Snapshot date: 2026-11-09. This file is a publication-safe review surface for the local `release-integration/1.2.2` line derived from immutable baseline `52d05b6…`. Private forge coordinates, host-local evidence, detailed handoffs and operational ledgers remain outside the public release tree.
 
 ## Repository roles
 
@@ -28,10 +28,16 @@ The release baseline is a role, not a branch named `main`; private branch names 
 - The Windows legacy-index upgrade releases its SQLite handle before re-raising
   `INDEX_REBUILD_REQUIRED`, so an in-process `--full` rebuild works on NTFS; a
   cross-platform regression guards this behaviour.
-- Evidence is layered and the two layers must not be conflated: product-level hosted
-  compatibility is verified for the pre-convergence candidate, while formal hosted
-  schema-3 receipts remain 0/3 and joint release preflight is not `verified`.
-  Candidate-mirror product results alone do not authorize promotion.
+- Evidence is layered and the layers must not be conflated: product-level hosted
+  compatibility is historical evidence for the pre-convergence candidate only. It
+  does not transfer to this release-integration line or its new exact P. Formal hosted
+  schema-3 receipts for the new P remain 0/3 and joint release preflight is not
+  `verified`. Candidate-mirror product results alone do not authorize promotion.
+- Private canonical and prerelease forges retain an immutable legacy annotated
+  `v1.2.2` tag at commit `9db7010…` (tree `e3964dd…`). This line is different content.
+  Cross-forge consumers must identify full commit or tree hashes rather than assume
+  tag-name equivalence. This is a disclosure of an unresolved naming risk, not an
+  acceptance of that risk or authorization to move, delete or recreate the legacy tag.
 
 ## Tracked-tree review
 
