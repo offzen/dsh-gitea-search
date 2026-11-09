@@ -100,10 +100,9 @@ TEST_COUNT_INT_KEYS = (
 # we did not measure would be exactly the self-attestation rc6 set out to remove.
 E2E_COUNTED_GATES = {"gate2-linux", "github-linux", "github-macos"}
 WINDOWS_E2E_NEEDS_JOB = "windows-git-bash"
-# Each gate must name the repository where it actually ran. The public hosted
-# repository is part of this public project; the private gate2 identity is an explicit
-# runtime input so this tree carries no private deployment coordinate.
-GITHUB_REPOSITORY = "offzen/dsh-gitea-search"
+# Each gate must name the repository where it actually ran. Both the private gate2
+# identity and the private GitHub hosted-staging identity are explicit runtime inputs;
+# the candidate tree carries no deployment coordinate and cannot silently bless itself.
 REPOSITORY_ID = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 
 # ---- rc7 constants -------------------------------------------------------------
@@ -355,6 +354,7 @@ def check_receipt_inputs(gate: str, data: dict[str, Any]) -> None:
 def check_receipt(
     path: pathlib.Path, expected_gate: str, provenance: str, tree: str,
     expected_ref: str | None = None, expected_gate2_repository: str | None = None,
+    expected_hosted_repository: str | None = None,
 ) -> tuple[dict[str, Any], bytes]:
     require(path.is_absolute(), f"receipt path must be absolute: {path}")
     try:
@@ -395,8 +395,11 @@ def check_receipt(
         require(data.get("ref") == expected_ref,
                 f"{expected_gate}: receipt ref {data.get('ref')!r} != --expected-ref {expected_ref!r} (A3)")
     expected_workflow = EXPECTED_WORKFLOWS[expected_gate]
-    expected_repo = expected_gate2_repository if expected_gate == "gate2-linux" else GITHUB_REPOSITORY
-    require(bool(expected_repo), "gate2-linux requires --expected-gate2-repository")
+    expected_repo = expected_gate2_repository if expected_gate == "gate2-linux" else expected_hosted_repository
+    require(bool(expected_repo), (
+        "gate2-linux requires --expected-gate2-repository" if expected_gate == "gate2-linux"
+        else f"{expected_gate} requires --expected-hosted-repository"
+    ))
     got_workflow_ref = str(data.get("workflow_ref"))
     expected_workflow_ref = f"{expected_repo}/{expected_workflow}@{data.get('ref')}"
     ref_head, _, ref_tail = got_workflow_ref.rpartition("@")
@@ -425,8 +428,10 @@ def check_receipt(
 
     if expected_gate.startswith("github-"):
         require(data.get("provider") == "github-actions-hosted", f"{expected_gate}: provider is not GitHub hosted")
-        require(data.get("repository") == GITHUB_REPOSITORY,
-                f"{expected_gate}: repository mismatch (want {GITHUB_REPOSITORY})")
+        require(data.get("repository") == expected_repo,
+                f"{expected_gate}: repository mismatch (want {expected_repo})")
+        require(data.get("repository_visibility") == "private",
+                f"{expected_gate}: hosted staging repository is not measured private")
         require(data.get("workflow") == EXPECTED_GITHUB_WORKFLOWS[expected_gate], f"{expected_gate}: workflow mismatch")
         require(bool(data.get("workflow_run_id")), f"{expected_gate}: workflow run identity missing")
         require(data.get("event") in {"push", "workflow_dispatch"}, f"{expected_gate}: unsupported event")
@@ -503,6 +508,7 @@ def parse_utc(raw: Any, what: str) -> dt.datetime:
 def check_remote_evidence(
     path: pathlib.Path, gate: str, receipt: dict[str, Any], provenance: str,
     *, expected_ref: str | None = None, expected_gate2_repository: str | None = None,
+    expected_hosted_repository: str | None = None,
     max_age_seconds: int = DEFAULT_MAX_EVIDENCE_AGE_SECONDS,
     now: dt.datetime | None = None,
 ) -> tuple[dict[str, Any], str]:
@@ -516,10 +522,16 @@ def check_remote_evidence(
     require(data.get("gate") == gate, f"{gate}: remote evidence is for gate {data.get('gate')}")
     require(data.get("forge") == EXPECTED_FORGE[gate],
             f"{gate}: remote evidence forge is {data.get('forge')!r}, want {EXPECTED_FORGE[gate]!r}")
-    expected_repository = expected_gate2_repository if gate == "gate2-linux" else GITHUB_REPOSITORY
-    require(bool(expected_repository), "gate2-linux requires --expected-gate2-repository")
+    expected_repository = expected_gate2_repository if gate == "gate2-linux" else expected_hosted_repository
+    require(bool(expected_repository), (
+        "gate2-linux requires --expected-gate2-repository" if gate == "gate2-linux"
+        else f"{gate} requires --expected-hosted-repository"
+    ))
     require(data.get("repository") == expected_repository,
             f"{gate}: remote evidence repository {data.get('repository')!r} != {expected_repository!r}")
+    if not gitea:
+        require(data.get("repository_private") is True,
+                f"{gate}: forge metadata does not prove the hosted staging repository is private")
     expected_workflow = EXPECTED_WORKFLOWS[gate]
     evidence_workflow = data.get("workflow_path")
     if gitea:
@@ -787,6 +799,8 @@ def main() -> int:
                         help="the ref the receipts must name; required for `verified` (A3)")
     parser.add_argument("--expected-gate2-repository", metavar="OWNER/REPOSITORY",
                         help="private gate2 repository identity; required when gate2 is supplied; no default")
+    parser.add_argument("--expected-hosted-repository", metavar="OWNER/REPOSITORY",
+                        help="private GitHub staging repository identity; required when hosted gates are supplied; no default")
     parser.add_argument("--max-evidence-age-seconds", type=int, default=DEFAULT_MAX_EVIDENCE_AGE_SECONDS,
                         help="maximum age of remote evidence `fetched_at` (default 30 days)")
     parser.add_argument("--allow-missing-evidence", action="store_true",
@@ -866,6 +880,11 @@ def main() -> int:
             require(bool(args.expected_gate2_repository), "gate2-linux requires --expected-gate2-repository")
             require(bool(REPOSITORY_ID.fullmatch(args.expected_gate2_repository)),
                     "--expected-gate2-repository must be owner/name")
+        if any(gate.startswith("github-") for gate in receipt_paths):
+            require(bool(args.expected_hosted_repository),
+                    "hosted gates require --expected-hosted-repository")
+            require(bool(REPOSITORY_ID.fullmatch(args.expected_hosted_repository)),
+                    "--expected-hosted-repository must be owner/name")
         missing = [gate for gate in REQUIRED_GATES if gate not in receipt_paths]
         if not args.allow_partial:
             require(not missing, "missing required receipts: " + ", ".join(missing))
@@ -882,14 +901,19 @@ def main() -> int:
         evidence_data: dict[str, dict[str, Any]] = {}
         sha_inputs: dict[str, Any] = {"receipts": {}, "remote_evidence": {}, "artifacts": {}}
         for gate, path in receipt_paths.items():
-            data, raw = check_receipt(path, gate, provenance, tree, args.expected_ref, args.expected_gate2_repository)
+            data, raw = check_receipt(
+                path, gate, provenance, tree, args.expected_ref,
+                args.expected_gate2_repository, args.expected_hosted_repository,
+            )
             checked[gate] = data
             receipt_raw[gate] = raw
             sha_inputs["receipts"][gate] = sha256_bytes(raw)
             if gate in evidence_paths:
                 evidence, evidence_digest = check_remote_evidence(
                     evidence_paths[gate], gate, data, provenance,
-                    expected_ref=args.expected_ref, expected_gate2_repository=args.expected_gate2_repository,
+                    expected_ref=args.expected_ref,
+                    expected_gate2_repository=args.expected_gate2_repository,
+                    expected_hosted_repository=args.expected_hosted_repository,
                     max_age_seconds=args.max_evidence_age_seconds,
                 )
                 evidence_data[gate] = evidence
@@ -947,6 +971,7 @@ def main() -> int:
             "trust_anchor_sha256": anchor_info["sha256"]["release-preflight.py"] if anchor_info else None,
             "expected_ref": args.expected_ref,
             "expected_gate2_repository": args.expected_gate2_repository,
+            "expected_hosted_repository": args.expected_hosted_repository,
             "artifact_digest": artifact_digest,
             "artifact_digest_bound": {gate: item["artifact_digest_bound"] for gate, item in artifact_digest.items()},
             "missing_receipts": missing,

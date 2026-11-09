@@ -20,6 +20,7 @@ SPEC.loader.exec_module(mod)
 
 PRIVATE_API = "https://forge.example.invalid/api/v1"
 PRIVATE_REPO = "example-org/private-source"
+HOSTED_REPO = "example-org/private-hosted"
 
 
 class FetchEvidenceTest(unittest.TestCase):
@@ -40,7 +41,7 @@ class FetchEvidenceTest(unittest.TestCase):
 
     def test_github_fixture_emits_deep_schema_and_artifact_digest(self) -> None:
         run = {
-            "id": 42, "repository": {"full_name": mod.GITHUB_REPO},
+            "id": 42, "repository": {"full_name": HOSTED_REPO, "private": True},
             "path": ".github/workflows/ci.yml@refs/heads/release/test", "name": "CI",
             "event": "push", "head_branch": "release/test", "run_attempt": 2,
             "head_sha": "a" * 40, "conclusion": "success", "status": "completed",
@@ -55,14 +56,26 @@ class FetchEvidenceTest(unittest.TestCase):
             if "/artifacts?" in url: return 200, {"total_count": 1, "artifacts": [artifact]}
             raise AssertionError(url)
         with mock.patch.object(mod, "get", side_effect=fake_get):
-            data = mod.github_evidence("github-linux", "42")
+            data = mod.github_evidence("github-linux", "42", HOSTED_REPO)
         self.assertEqual(data["schema"], 2)
-        self.assertEqual(data["repository"], mod.GITHUB_REPO)
+        self.assertEqual(data["repository"], HOSTED_REPO)
+        self.assertIs(data["repository_private"], True)
         self.assertEqual(data["workflow_path"], ".github/workflows/ci.yml")
         self.assertEqual(data["run_attempt"], 2)
         self.assertEqual(data["jobs_total_count"], 1)
         self.assertEqual(data["artifacts"][0]["digest"], "sha256:" + "b" * 64)
         self.assertTrue(data["fetched_at"].endswith("Z"))
+
+    def test_hosted_requires_runtime_repository_before_network(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            output = pathlib.Path(td) / "out.json"
+            with mock.patch.object(mod, "get") as get:
+                result = mod.main_from_args([
+                    "--gate", "github-linux", "--run-id", "42", "--output", str(output),
+                ])
+            self.assertEqual(result, 2)
+            get.assert_not_called()
+            self.assertFalse(output.exists())
 
     def test_gate2_requires_runtime_coordinates_before_network(self) -> None:
         with tempfile.TemporaryDirectory() as td:

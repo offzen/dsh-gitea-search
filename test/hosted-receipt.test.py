@@ -67,10 +67,10 @@ class HostedReceiptTest(unittest.TestCase):
             return "github-macos", "ci.yml", "macos-latest"
         return "github-linux", "ci.yml", "ubuntu-latest"
 
-    def writer_env(self, *, repository: str = "offzen/dsh-gitea-search", workflow: str | None = None,
+    def writer_env(self, *, repository: str = "example-org/private-hosted", workflow: str | None = None,
                    git_ref: str = "refs/heads/release/test", workflow_ref_ref: str | None = None,
                    dispatch_sha: str | None = None, run_attempt: str = "1",
-                   runner_environment: str = "github-hosted") -> dict[str, str]:
+                   runner_environment: str = "github-hosted", repository_visibility: str = "private") -> dict[str, str]:
         _, default_workflow, _ = self.platform_gate()
         workflow = workflow or default_workflow
         ref_for_workflow = git_ref if workflow_ref_ref is None else workflow_ref_ref
@@ -78,9 +78,10 @@ class HostedReceiptTest(unittest.TestCase):
             **os.environ,
             "GITHUB_ACTIONS": "true",
             "GITHUB_REPOSITORY": repository,
+            "GITHUB_REPOSITORY_VISIBILITY": repository_visibility,
             "GITHUB_RUN_ID": "12345",
             "GITHUB_RUN_ATTEMPT": run_attempt,
-            "GITHUB_WORKFLOW_REF": f"offzen/dsh-gitea-search/.github/workflows/{workflow}@{ref_for_workflow}",
+            "GITHUB_WORKFLOW_REF": f"{repository}/.github/workflows/{workflow}@{ref_for_workflow}",
             "GITHUB_EVENT_NAME": "workflow_dispatch",
             "GITHUB_REF": git_ref,
             "GTS_DISPATCH_EXACT_SHA": dispatch_sha if dispatch_sha is not None else self.sha,
@@ -91,7 +92,7 @@ class HostedReceiptTest(unittest.TestCase):
             "PYTHONDONTWRITEBYTECODE": "1",
         }
 
-    def run_writer(self, *, repository: str = "offzen/dsh-gitea-search", sha: str | None = None,
+    def run_writer(self, *, repository: str = "example-org/private-hosted", sha: str | None = None,
                    needs: dict[str, str] | None = None, counts: dict | None = None,
                    gate_started_at: str = "2026-11-07T00:00:00Z", env: dict[str, str] | None = None,
                    extra: list[str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -113,6 +114,8 @@ class HostedReceiptTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         data = json.loads((self.temp / "receipt.json").read_text(encoding="utf-8"))
         self.assertEqual(data["schema"], 3)
+        self.assertEqual(data["repository"], "example-org/private-hosted")
+        self.assertEqual(data["repository_visibility"], "private")
         self.assertEqual(data["commit"], self.sha)
         self.assertEqual(data["run_attempt"], 1)
         self.assertEqual(data["runner_hosted_environment"], "github-hosted")
@@ -124,10 +127,21 @@ class HostedReceiptTest(unittest.TestCase):
                          hashlib.sha256((self.repo / ".github/scripts/write-gate-receipt.py").read_bytes()).hexdigest())
         self.assertNotIn("linux-gate.sh", data["inputs_sha256"])
 
-    def test_rejects_wrong_repository(self) -> None:
-        result = self.run_writer(repository="offzen/orca-mcp")
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("repository identity mismatch", result.stderr)
+    def test_records_private_staging_repository_and_rejects_malformed_identity(self) -> None:
+        accepted = self.run_writer(repository="example-org/another-private-stage")
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        receipt = json.loads((self.temp / "receipt.json").read_text(encoding="utf-8"))
+        self.assertEqual(receipt["repository"], "example-org/another-private-stage")
+        rejected = self.run_writer(repository="not-owner-slash-repository")
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("owner/name", rejected.stderr)
+
+    def test_rejects_non_private_staging_repository(self) -> None:
+        for visibility in ("", "public", "internal"):
+            with self.subTest(visibility=visibility):
+                result = self.run_writer(env=self.writer_env(repository_visibility=visibility))
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("visibility must be private", result.stderr)
 
     def test_rejects_wrong_sha(self) -> None:
         result = self.run_writer(sha="0" * 40)

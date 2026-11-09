@@ -41,7 +41,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-GITHUB_REPO = "offzen/dsh-gitea-search"
 GATES = ("gate2-linux", "github-linux", "github-macos", "github-windows")
 EVIDENCE_SCHEMA = 2
 PER_PAGE = 100
@@ -112,25 +111,26 @@ def workflow_path_of(path: object) -> str | None:
     return path.split("@", 1)[0]
 
 
-def github_evidence(gate: str, run_id: str) -> dict:
+def github_evidence(gate: str, run_id: str, repository: str) -> dict:
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or ""
     headers = {"Accept": "application/vnd.github+json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    base = f"https://api.github.com/repos/{GITHUB_REPO}/actions/runs/{run_id}"
+    base = f"https://api.github.com/repos/{repository}/actions/runs/{run_id}"
     status, run = get(base, headers)
     if status != 200 or not isinstance(run, dict):
         err = run.get("error", "") if isinstance(run, dict) else ""
         raise blocked(f"run {run_id} -> HTTP {status} {str(err)[:160]}")
     jobs, jobs_total = paged(f"{base}/jobs", "jobs", headers, f"jobs for {run_id}")
     artifacts, artifacts_total = paged(f"{base}/artifacts", "artifacts", headers, f"artifacts for {run_id}")
-    repository = run.get("repository") if isinstance(run.get("repository"), dict) else {}
+    repository_data = run.get("repository") if isinstance(run.get("repository"), dict) else {}
     return {
         "schema": EVIDENCE_SCHEMA,
         "forge": "github",
         "gate": gate,
         "provider": "github-actions-hosted",
-        "repository": repository.get("full_name"),
+        "repository": repository_data.get("full_name"),
+        "repository_private": repository_data.get("private"),
         "workflow_path": workflow_path_of(run.get("path")),
         "workflow_name": run.get("name"),
         "event": run.get("event"),
@@ -239,27 +239,28 @@ def main_from_args(argv: list[str] | None = None) -> int:
     parser.add_argument("--gate", required=True, choices=GATES)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--forge-api-base", help="gate2 only: private forge API base (required; no default)")
-    parser.add_argument("--repository", help="gate2 only: owner/repository identity (required; no default)")
+    parser.add_argument("--repository", help="owner/repository identity (required for every gate; no default)")
     parser.add_argument("--output", required=True, type=pathlib.Path)
     args = parser.parse_args(argv)
     if not RUN_ID.fullmatch(args.run_id):
         print("FETCH_EVIDENCE_BLOCKED: --run-id must be a plain decimal number", file=sys.stderr)
         return 2
 
+    if not args.repository or not REPOSITORY.fullmatch(args.repository):
+        print("FETCH_EVIDENCE_BLOCKED: --repository must be owner/name", file=sys.stderr)
+        return 2
+
     if args.gate == "gate2-linux":
-        if not args.forge_api_base or not args.repository:
-            print("FETCH_EVIDENCE_BLOCKED: gate2-linux requires --forge-api-base and --repository", file=sys.stderr)
+        if not args.forge_api_base:
+            print("FETCH_EVIDENCE_BLOCKED: gate2-linux requires --forge-api-base", file=sys.stderr)
             return 2
         parsed = urllib.parse.urlsplit(args.forge_api_base.rstrip("/"))
         if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
             print("FETCH_EVIDENCE_BLOCKED: --forge-api-base must be an HTTPS URL without credentials, query, or fragment", file=sys.stderr)
             return 2
-        if not REPOSITORY.fullmatch(args.repository):
-            print("FETCH_EVIDENCE_BLOCKED: --repository must be owner/name", file=sys.stderr)
-            return 2
         evidence = gitea_evidence(args.gate, args.run_id, args.forge_api_base.rstrip("/"), args.repository)
     else:
-        evidence = github_evidence(args.gate, args.run_id)
+        evidence = github_evidence(args.gate, args.run_id, args.repository)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(evidence, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     print(

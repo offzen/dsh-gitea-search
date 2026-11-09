@@ -10,7 +10,8 @@ This tracked state is a snapshot taken when the candidate is frozen, not a live 
 |---|---|---|
 | Private canonical source | Authoritative development history | Exact coordinates and internal ref topology are supplied only by private runtime configuration |
 | Private prerelease mirror | Stages the exact reviewed candidate | Never acts as a reverse-synchronization source |
-| Public project | Public source and release surface | Public refs remain unchanged until a separately completed release decision |
+| Private GitHub hosted staging | Runs exact-P Linux/macOS/Windows clean-hosted gates | Its identity is an explicit verifier input; it is never a public release surface |
+| Public project | Public source and release surface | Public refs remain unchanged until strict preflight is verified and a separate release decision completes |
 | Private audit archive | Stores matrices, handoffs and operational evidence | Never acts as a release or tag source |
 
 The release baseline is a role, not a branch named `main`; private branch names and coordinates are intentionally omitted from this public tree.
@@ -58,9 +59,9 @@ Disposition:
 
 ## Release-evidence boundary
 
-A fully `verified` release preflight requires four schema-3 receipts, four schema-2 forge evidence documents, an exact expected ref, an external four-script trust anchor and digest-bound hosted artifacts. The fixed trust ceiling remains `same-party`.
+A fully `verified` release preflight requires four schema-3 receipts, four schema-2 forge evidence documents, an exact expected ref, explicit expected identities for both private gate2 and private GitHub hosted staging, an external four-script trust anchor and digest-bound hosted artifacts. The fixed trust ceiling remains `same-party`.
 
-The private prerelease path can verify ref identity, privacy, clean D/P topology, provenance and available forge Actions. Until fresh stable exact-P hosted platform evidence exists, remote/tag promotion remains **deferred**.
+The private prerelease and hosted-staging path records the repository where each receipt actually ran and requires both runner context and forge metadata to prove it is private; the external verifier, not candidate-controlled CI, decides whether it matches the approved private staging identity. Public refs are not a pre-release test bed. Until fresh stable exact-P hosted platform evidence exists and strict joint preflight is verified, remote/tag promotion remains **deferred**.
 
 ## Freeze and tag recommendation
 

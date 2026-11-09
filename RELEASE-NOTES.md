@@ -16,6 +16,7 @@
 - `verified` now requires four schema-3 receipts, deep forge evidence, exact
   workflow/ref/run identity, fresh complete job listings, GitHub-hosted runner
   signals, matching artifact digests, and an out-of-tree four-script trust anchor.
+- Clean-hosted Linux/macOS/Windows evidence is produced in an explicitly approved private GitHub staging repository. Receipts record the actual repository and the external verifier pins it with `--expected-hosted-repository`; public refs remain unchanged until strict preflight passes and publication is separately authorized.
 - GitHub artifact zips bind the exact receipt and test-count bytes to the digest
   returned by the forge. Gate2 remains explicitly same-party and has no forged
   artifact-digest claim when Gitea cannot supply one.

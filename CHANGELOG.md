@@ -31,6 +31,7 @@ not an independent attestation.
   their sha256 must match the forge record.
 
 ### Changed
+- Clean-hosted release evidence is collected from an explicitly approved private GitHub staging repository before publication. Receipt writers record the actual repository; `release-preflight.py --expected-hosted-repository` independently pins the accepted staging identity. Public refs remain unchanged until strict preflight is verified and publication is separately authorized.
 - `release-preflight.py` now defaults to `configured-unverified` unless evidence,
   external anchor, expected ref, and GitHub artifacts are complete. Relaxation
   switches can never produce `verified`.

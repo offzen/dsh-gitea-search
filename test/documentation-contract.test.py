@@ -14,7 +14,7 @@ class DocumentationContractTest(unittest.TestCase):
 
     def test_release_guide_names_current_contract(self) -> None:
         guide = self.read("docs/DEVELOPMENT-AND-RELEASE.md")
-        for value in ("schema 3", "schema 2", "--expected-ref", "--trust-anchor", "--artifact", "same-party"):
+        for value in ("schema 3", "schema 2", "--expected-ref", "--expected-hosted-repository", "--trust-anchor", "--artifact", "same-party"):
             with self.subTest(value=value):
                 self.assertIn(value, guide)
         self.assertNotIn("schema-1", guide)
@@ -35,8 +35,20 @@ class DocumentationContractTest(unittest.TestCase):
         self.assertNotIn("GITEA_BASE =", fetcher)
         self.assertNotIn("GITEA_REPO =", fetcher)
         self.assertIn("--expected-gate2-repository", preflight)
+        self.assertIn("--expected-hosted-repository", preflight)
         self.assertNotIn("GITEA_REPOSITORY =", preflight)
+        self.assertNotIn("GITHUB_REPOSITORY =", preflight)
+        self.assertNotIn("GITHUB_REPO =", fetcher)
         self.assertIn("intentionally supplied at runtime", state)
+
+    def test_private_hosted_before_publication_order_is_explicit(self) -> None:
+        guide = self.read("docs/DEVELOPMENT-AND-RELEASE.md")
+        state = self.read("PROJECT-STATE.md")
+        readme = self.read("README.md")
+        self.assertIn("public project is not a pre-release test bed", guide)
+        self.assertIn("private GitHub hosted-staging ref", guide)
+        self.assertIn("Public refs are not a pre-release test bed", state)
+        self.assertIn("私有 GitHub staging", readme)
 
     def test_windows_docs_do_not_overclaim_cmd_quoting(self) -> None:
         manual = self.read("MANUAL.md")

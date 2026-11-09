@@ -159,7 +159,7 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-or
 `dsh-gitea-search` 的 `v1.2.2` 稳定版候选提供原生 Windows 适配；它仍是目标版本而非已发布稳定版，正式发布依赖同一 exact P 的 canonical hosted evidence 与无放宽 strict joint preflight：
 - **原生 PE 执行入口**：通过标准 `pip install .` 生成原生 `Scripts\gts.exe` PE 二进制启动器，免管理员权限直接运行；
 - **防注入命令安全与环境自适配**：`.exe` / `.com` 直执行；批处理降级模式先拒绝 shell 元字符与换行，再执行参数定界；自动穿透系统 `PATH`、venv 与 Scoop；
-- **跨平台证据边界**：早期 Windows hosted 矩阵已取得历史绿灯；`v1.2.2` 候选的准确发布判据仍须在最终 exact P 上重新获取 fresh GitHub-hosted Linux/macOS/Windows 收据与 forge evidence，并通过 strict joint preflight，历史结果不可移用。
+- **跨平台证据边界**：早期 Windows hosted 矩阵已取得历史绿灯；`v1.2.2` 候选的准确发布判据仍须先在显式批准的私有 GitHub staging 上，为最终 exact P 重新获取 fresh GitHub-hosted Linux/macOS/Windows 收据与 forge evidence，并通过 strict joint preflight；只有随后独立批准，才可将逐字节相同的候选晋级到公开仓，历史结果不可移用。
 
 > 📖 **深入了解 Windows 平台支持**：
 > - 完整技术架构、跨平台安全护栏与技术细节详见 **[WINDOWS-PORT.md](WINDOWS-PORT.md)**；

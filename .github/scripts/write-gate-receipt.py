@@ -18,6 +18,7 @@ import subprocess
 import sys
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
+REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 ALLOWED = {
     "github-linux": ("Linux", {"ubuntu-latest", "ubuntu-24.04", "ubuntu-22.04"}),
     "github-macos": ("Darwin", {"macos-latest", "macos-14", "macos-15"}),
@@ -134,8 +135,11 @@ def main() -> int:
         if os.environ.get("GITHUB_ACTIONS") != "true":
             raise RuntimeError("receipt is not running in GitHub Actions")
         repository = os.environ.get("GITHUB_REPOSITORY", "")
-        if repository != "offzen/dsh-gitea-search":
-            raise RuntimeError("formal repository identity mismatch")
+        if not REPOSITORY.fullmatch(repository):
+            raise RuntimeError("GitHub repository identity must be owner/name")
+        repository_visibility = os.environ.get("GITHUB_REPOSITORY_VISIBILITY", "")
+        if repository_visibility != "private":
+            raise RuntimeError("hosted staging repository visibility must be private")
         run_id = os.environ.get("GITHUB_RUN_ID", "")
         run_attempt_raw = os.environ.get("GITHUB_RUN_ATTEMPT", "")
         workflow_ref = os.environ.get("GITHUB_WORKFLOW_REF", "")
@@ -187,6 +191,7 @@ def main() -> int:
             "runner_arch": runner_arch,
             "runner_label": args.runner_label,
             "repository": repository,
+            "repository_visibility": repository_visibility,
             "commit": actual,
             "tree": command("git", "--no-pager", "-c", "core.fsmonitor=", "rev-parse", "HEAD^{tree}"),
             "status": "success",

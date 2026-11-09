@@ -49,7 +49,11 @@ test('release preflight accepts only hosted clean Windows evidence', () => {
 });
 
 test('GitHub workflows emit exact-SHA receipts only after required hosted jobs', () => {
-  assert.match(receiptWriter, /formal repository identity mismatch/);
+  assert.match(receiptWriter, /GitHub repository identity must be owner\/name/);
+  assert.match(receiptWriter, /GITHUB_REPOSITORY_VISIBILITY/);
+  assert.match(receiptWriter, /visibility must be private/);
+  assert.doesNotMatch(receiptWriter, /offzen\/dsh-gitea-search/);
+  assert.match(preflight, /--expected-hosted-repository/);
   assert.match(receiptWriter, /provider": "github-actions-hosted/);
   assert.match(receiptWriter, /workflow_dispatch exact_sha does not match checkout/);
   assert.match(githubCi, /exact_sha:/);
