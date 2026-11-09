@@ -59,6 +59,32 @@ class DocumentationContractTest(unittest.TestCase):
         self.assertIn("--upgrade build jieba PyYAML", gate2)
         self.assertIn("Gitea does not provide that GitHub-only variable", self.read("docs/DEVELOPMENT-AND-RELEASE.md"))
 
+    def test_candidate_status_and_release_ref_stay_truthful(self) -> None:
+        readme = self.read("README.md")
+        changelog = self.read("CHANGELOG.md")
+        notes = self.read("RELEASE-NOTES.md")
+        guide = self.read("docs/DEVELOPMENT-AND-RELEASE.md")
+        state = self.read("PROJECT-STATE.md")
+        self.assertIn("[1.2.2] - Unreleased", changelog)
+        self.assertIn("v1.2.2%20candidate", readme)
+        self.assertIn("v1.2.2` 稳定版候选", readme)
+        self.assertNotIn("`dsh-gitea-search` 的稳定版 `v1.2.2`", readme)
+        self.assertIn("v1.2.2 candidate (Unreleased)", notes)
+        self.assertIn("--expected-ref refs/heads/release/<exact-p-candidate>", guide)
+        self.assertNotIn("--expected-ref refs/tags/v1.2.2", guide)
+        self.assertIn("snapshot taken when the candidate is frozen, not a live status page", state)
+
+    def test_documented_python_suite_count_matches_default_chain(self) -> None:
+        package = self.read("package.json")
+        notes = self.read("RELEASE-NOTES.md")
+        changelog = self.read("CHANGELOG.md")
+        command = __import__("json").loads(package)["scripts"]["test:preflight"]
+        suite_count = sum(part.strip().startswith("python3 test/") for part in command.split("&&"))
+        self.assertEqual(suite_count, 11)
+        for document in (notes, changelog):
+            self.assertIn(f"all {suite_count} Python contract/regression files", document)
+            self.assertNotIn("all ten Python", document)
+
     def test_user_docs_match_quickstart_and_kind_contracts(self) -> None:
         readme = self.read("README.md")
         manual = self.read("MANUAL.md")

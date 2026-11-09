@@ -1,6 +1,6 @@
 # Release Notes - DeepSeek Harness (DSH) Gitea Search
 
-## v1.2.2 — cross-platform search and fail-closed release evidence
+## v1.2.2 candidate (Unreleased) — cross-platform search and fail-closed release evidence
 
 > **Documentation and tag-provenance clarification.** The turn-count, token-volume,
 > and 85% saving figures retained in the v1.2.1 historical notes below were early,
@@ -27,7 +27,7 @@
   restore mirror-state diagnostics, and correctly classify process timeouts.
 - Trust statement: this raises the cost of false-green evidence but remains
   `trust_ceiling: same-party`; it is not an independent or unforgeable attestation.
-- The 1.2.2 chain connects all ten Python contract/regression files, including the
+- The 1.2.2 chain connects all 11 Python contract/regression files from the default `test:preflight` chain, including the
   dual-forge gate-context negative suite, to the default test/receipt chain, provisions
   PyYAML in gate2 and hosted full-suite jobs (including Windows W10), rejects skipped suites in
   the receipt counter, refreshes release/Windows docs, and removes

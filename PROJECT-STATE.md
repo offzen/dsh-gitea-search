@@ -2,6 +2,8 @@
 
 Snapshot date: 2026-11-09. This file is a publication-safe review surface for the local `release-integration/1.2.2` line derived from immutable baseline `52d05b6…`. Private forge coordinates, host-local evidence, detailed handoffs and operational ledgers remain outside the public release tree.
 
+This tracked state is a snapshot taken when the candidate is frozen, not a live status page. Final formal/release status for the same exact P is recorded outside the tracked tree by canonical receipts, remote evidence, strict preflight JSON and the release ledger; closing those gates does not require rewriting this snapshot.
+
 ## Repository roles
 
 | Repository/ref role | Current role | Rule |

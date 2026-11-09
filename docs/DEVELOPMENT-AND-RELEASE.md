@@ -62,11 +62,13 @@ The verifier rejects an in-tree anchor, symlinks, same-inode self-comparison, mi
 
 ## Read-only validation
 
+All four gates first close on the same exact candidate branch ref. Only after strict joint preflight is `verified` and a separate release decision is complete should an immutable tag be considered; an existing tag is never moved to satisfy this example.
+
 ```bash
 python3 /absolute/external-anchor/release-preflight.py \
   --content "$D" \
   --provenance "$P" \
-  --expected-ref refs/tags/v1.2.2 \
+  --expected-ref refs/heads/release/<exact-p-candidate> \
   --expected-gate2-repository "$PRIVATE_SOURCE_REPOSITORY" \
   --trust-anchor /absolute/external-anchor \
   --receipt gate2-linux=/absolute/receipts/gate2-linux.json \

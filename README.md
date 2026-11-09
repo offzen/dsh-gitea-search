@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/License-Apache--2.0-C21325)](LICENSE)
 [![CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml)
 [![Windows CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/windows-ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions)
-[![Version](https://img.shields.io/badge/Version-v1.2.2-blue)](RELEASE-NOTES.md)
+[![Version](https://img.shields.io/badge/Version-v1.2.2%20candidate-yellow)](RELEASE-NOTES.md)
 [![Archive](https://img.shields.io/badge/Archive-v0.1.1%20(Pure%20Node)-orange)](https://github.com/offzen/dsh-gitea-search/tree/legacy-0.1.x)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows%20(Native)-brightgreen)](MANUAL.md#3-多场景部署流程)
 [![Node](https://img.shields.io/badge/Node-%3E%3D20.11-success)](package.json)
@@ -156,10 +156,10 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-or
 
 ## Windows 原生跨平台支持
 
-`dsh-gitea-search` 的稳定版 `v1.2.2` 提供原生 Windows 适配；最终 exact-P hosted 发布证据仍须单独取得：
+`dsh-gitea-search` 的 `v1.2.2` 稳定版候选提供原生 Windows 适配；它仍是目标版本而非已发布稳定版，正式发布依赖同一 exact P 的 canonical hosted evidence 与无放宽 strict joint preflight：
 - **原生 PE 执行入口**：通过标准 `pip install .` 生成原生 `Scripts\gts.exe` PE 二进制启动器，免管理员权限直接运行；
 - **防注入命令安全与环境自适配**：`.exe` / `.com` 直执行；批处理降级模式先拒绝 shell 元字符与换行，再执行参数定界；自动穿透系统 `PATH`、venv 与 Scoop；
-- **跨平台证据边界**：早期 Windows hosted 矩阵已取得历史绿灯；稳定版 1.2.2 的准确发布判据仍须在最终 exact-P 上重新获取 fresh GitHub-hosted Linux/macOS/Windows 收据与 forge evidence，历史结果不可移用。
+- **跨平台证据边界**：早期 Windows hosted 矩阵已取得历史绿灯；`v1.2.2` 候选的准确发布判据仍须在最终 exact P 上重新获取 fresh GitHub-hosted Linux/macOS/Windows 收据与 forge evidence，并通过 strict joint preflight，历史结果不可移用。
 
 > 📖 **深入了解 Windows 平台支持**：
 > - 完整技术架构、跨平台安全护栏与技术细节详见 **[WINDOWS-PORT.md](WINDOWS-PORT.md)**；
