@@ -142,7 +142,7 @@ if [ "$INSTALL_DSH" = "1" ]; then
         python3 "$ROOT_DIR/scripts/profile-patch.py" \
             --file "$PROFILES_ROOT/$target/cordis.patch.yml" \
             --node "$NODE_BIN" --server "$ROOT_DIR/lib/server.mjs" --gts "$ROOT_DIR/bin/gts" \
-            --mirror "${GITEA_MIRROR_ROOT:-${GITEA_MIRROR_PATH:-${GITQ_MIRROR_ROOT:-$HOME/.local/share/dsh-gitea-search/mirror}}}" \
+            --mirror "${GITEA_MIRROR_ROOT:-${GITEA_MIRROR_PATH:-${GITQ_MIRROR_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/dsh-gitea-search/mirror}}}" \
             --owners "$OWNERS"
     done
     echo "✅ DSH profile 已更新；本脚本不会重启 DSH。"

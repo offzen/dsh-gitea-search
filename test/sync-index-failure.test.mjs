@@ -108,8 +108,10 @@ exit "${'$'}{R1_INDEX_RC:-42}"
   const controlStatus = fs.readFileSync(path.join(state, 'last_status'), 'utf8');
   assert.match(controlStatus, /(?:^|\s)index_status=ok(?:\s|$)/);
   assert.match(controlStatus, /(?:^|\s)index_rc=0(?:\s|$)/);
-  assert.notEqual(fs.readFileSync(lastOk, 'utf8'), before.content);
-  assert.notEqual(fs.statSync(lastOk).mtimeMs, before.mtimeMs);
+  assert.equal(fs.readFileSync(lastOk, 'utf8'), before.content,
+    'successful -r recovery must not claim global mirror freshness');
+  assert.equal(fs.statSync(lastOk).mtimeMs, before.mtimeMs);
+  assert.match(controlStatus, /(?:^|\s)sync_scope=partial(?:\s|$)/);
 });
 
 test('R2 sync passes global-prune trust only after complete successful enumeration', { skip: !POSIX }, (t) => {

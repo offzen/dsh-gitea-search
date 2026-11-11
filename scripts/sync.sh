@@ -126,38 +126,55 @@ log() { echo "$(date '+%F %T') [$HOST] $*" >> "$LOG"; }
 ENUM_SOURCE=""        # 本轮实际用的来源：api / ssh / cache / disk / (empty=未枚举)
 CACHE_STALE=0         # 1 = 用的是过期缓存救急
 _fetch_gitea_endpoint_repos() {
-  local ep="$1" page=1 n=0 out name has_wiki emitted=0
+  local ep="$1" page=1 n=0 out name has_wiki emitted=0 tmp
+  tmp=$(mktemp "$ROOT/.enum.api.XXXXXX") || return 1
   while :; do
     if [ -n "$API_TOKEN" ]; then
-      out=$(timeout 30 curl -fsS --connect-timeout 8 \
-          -H "Authorization: token $API_TOKEN" \
-          "$API_BASE/api/v1/$ep?limit=50&page=$page" 2>/dev/null) || return 1
+      out=$(printf 'Authorization: token %s\n' "$API_TOKEN" | \
+          timeout 30 curl -fsS --connect-timeout 8 -H @- \
+          "$API_BASE/api/v1/$ep?limit=50&page=$page" 2>/dev/null) || {
+        rm -f "$tmp"
+        return 1
+      }
     else
       out=$(timeout 30 curl -fsS --connect-timeout 8 \
-          "$API_BASE/api/v1/$ep?limit=50&page=$page" 2>/dev/null) || return 1
+          "$API_BASE/api/v1/$ep?limit=50&page=$page" 2>/dev/null) || {
+        rm -f "$tmp"
+        return 1
+      }
     fi
     n=$(printf '%s' "$out" | jq 'if type=="array" then length else 0 end' 2>/dev/null || echo 0)
     [ "${n:-0}" -eq 0 ] && break
     while IFS= read -r name; do
       [ -z "$name" ] && continue
-      printf '%s\n' "$name"
+      printf '%s\n' "$name" >> "$tmp"
       emitted=$((emitted + 1))
       has_wiki=$(printf '%s' "$out" | jq -r --arg n "$name" '.[] | select(.name==$n) | .has_wiki // false' | head -1)
-      [ "$has_wiki" = "true" ] && printf '%s.wiki\n' "$name"
+      [ "$has_wiki" = "true" ] && printf '%s.wiki\n' "$name" >> "$tmp"
     done < <(printf '%s' "$out" | jq -r '.[].name')
     [ "${n:-0}" -lt 50 ] && break
     page=$((page + 1))
   done
-  [ "$emitted" -gt 0 ]
+  if [ "$emitted" -gt 0 ]; then
+    cat "$tmp"
+    rm -f "$tmp"
+    return 0
+  fi
+  rm -f "$tmp"
+  return 1
 }
 list_from_gitea_api() {
   # 标准 Gitea 兼容：OWNER 既可能是 User（/users/$OWNER/repos），也可能是 Organization（/orgs/$OWNER/repos）。
   # .wiki 仓 API 不单独列出，按 repo 的 has_wiki 字段自动推导补齐。
   [ -n "$API_TOKEN" ] || [ "$ENUM" = "api" ] || return 1
   local got=""
-  got=$(_fetch_gitea_endpoint_repos "users/$OWNER/repos" 2>/dev/null) || true
+  if ! got=$(_fetch_gitea_endpoint_repos "users/$OWNER/repos" 2>/dev/null); then
+    got=""
+  fi
   if [ -z "$got" ]; then
-    got=$(_fetch_gitea_endpoint_repos "orgs/$OWNER/repos" 2>/dev/null) || true
+    if ! got=$(_fetch_gitea_endpoint_repos "orgs/$OWNER/repos" 2>/dev/null); then
+      got=""
+    fi
   fi
   [ -n "$got" ] || return 1
   printf '%s\n' "$got" | awk '!seen[$0]++'
@@ -276,11 +293,19 @@ converge_default_head() {
     return 1
   }
 
-  remote_head=$(GIT_TERMINAL_PROMPT=0 timeout 300 \
-      git --git-dir="$d" ls-remote --symref -- "$remote_name" HEAD 2>/dev/null) || {
-    echo "HEAD_UNVERIFIED_REMOTE_UNREACHABLE"
-    return 1
-  }
+  if [ -n "$API_TOKEN" ]; then
+    remote_head=$(GIT_TERMINAL_PROMPT=0 run_git_with_https_auth timeout 300 \
+        git --git-dir="$d" ls-remote --symref -- "$remote_name" HEAD 2>/dev/null) || {
+      echo "HEAD_UNVERIFIED_REMOTE_UNREACHABLE"
+      return 1
+    }
+  else
+    remote_head=$(GIT_TERMINAL_PROMPT=0 timeout 300 \
+        git --git-dir="$d" ls-remote --symref -- "$remote_name" HEAD 2>/dev/null) || {
+      echo "HEAD_UNVERIFIED_REMOTE_UNREACHABLE"
+      return 1
+    }
+  fi
 
   tab=$(printf '\t')
   while IFS= read -r line; do
@@ -339,6 +364,12 @@ converge_default_head() {
   }
 }
 
+run_git_with_https_auth() {
+  GIT_ASKPASS="$GITQ_ASKPASS" GIT_ASKPASS_REQUIRE=force \
+    GITQ_ASKPASS_USER="$GIT_USER" GITQ_ASKPASS_TOKEN="$API_TOKEN" \
+    "$@"
+}
+
 sync_one() {
   local r=$1
   # 注意：不要写 `local r=$1 d=$ROOT/$OWNER/$r.git` —— local/declare 会先把整行
@@ -358,8 +389,12 @@ sync_one() {
   fi
   if [ -d "$d" ]; then
     action=fetch
-    out=$(timeout 300 git --git-dir="$d" remote update --prune 2>&1) || rc=1
-    [ $rc = 1 ] && echo "FAIL fetch $r :: $(echo "$out" | tail -2 | tr '\n' ' ')"
+    if [ -n "$API_TOKEN" ]; then
+      out=$(run_git_with_https_auth timeout 300 git --git-dir="$d" remote update --prune 2>&1) || rc=1
+    else
+      out=$(timeout 300 git --git-dir="$d" remote update --prune 2>&1) || rc=1
+    fi
+    [ $rc = 1 ] && echo "FAIL fetch $r :: $(echo "${out//"$API_TOKEN"/[REDACTED]}" | tail -2 | tr '\n' ' ')"
   else
     action=clone
     # 通道（token OR ssh 通用性）：ssh 优先；ssh 失败且有 token 时，该仓改走 http(s)。
@@ -368,23 +403,25 @@ sync_one() {
     local hostpart="${API_BASE#*://}"
     src_ssh="$REMOTE:$OWNER/$r.git"
     if [ -n "$API_TOKEN" ]; then
-      src_https="$scheme://$GIT_USER:$API_TOKEN@$hostpart/$OWNER/$r.git"
+      src_https="$scheme://$GIT_USER@$hostpart/$OWNER/$r.git"
     else
       src_https="$scheme://$hostpart/$OWNER/$r.git"
     fi
-    if [ "$TRANSPORT" = https ]; then
+    if [ "$TRANSPORT" = https ] && [ -n "$API_TOKEN" ]; then
+      out=$(run_git_with_https_auth timeout 300 git clone --mirror -q "$src_https" "$d" 2>&1) || rc=1
+    elif [ "$TRANSPORT" = https ]; then
       out=$(timeout 300 git clone --mirror -q "$src_https" "$d" 2>&1) || rc=1
     elif [ "$TRANSPORT" = auto ] && [ -n "$API_TOKEN" ]; then
       # 先试 ssh（网内快）；失败再试 https（token 兜底）
       out=$(timeout 300 git clone --mirror -q "$src_ssh" "$d" 2>&1) || rc=1
       if [ $rc = 1 ] && [ ! -d "$d" ]; then
         log "INFO clone $r 经 ssh 失败，改走 https(token)"
-        out=$(timeout 300 git clone --mirror -q "$src_https" "$d" 2>&1) || rc=1
+        out=$(run_git_with_https_auth timeout 300 git clone --mirror -q "$src_https" "$d" 2>&1) || rc=1
       fi
     else
       out=$(timeout 300 git clone --mirror -q "$src_ssh" "$d" 2>&1) || rc=1
     fi
-    [ $rc = 1 ] && echo "FAIL clone $r :: $(echo "$out" | tail -2 | tr '\n' ' ')"
+    [ $rc = 1 ] && echo "FAIL clone $r :: $(echo "${out//"$API_TOKEN"/[REDACTED]}" | tail -2 | tr '\n' ' ')"
   fi
   if [ "$rc" -eq 0 ]; then
     if head_error=$(converge_default_head "$d"); then
@@ -396,23 +433,71 @@ sync_one() {
   fi
   return $rc
 }
-export -f converge_default_head sync_one
+export -f converge_default_head run_git_with_https_auth sync_one
 export ROOT OWNER REMOTE TRANSPORT API_TOKEN GIT_USER API_BASE
 # 传给子 shell 的 log（sync_one 里 https 回退会用）—— 它自己会 append 到 $LOG
 log() { echo "$(date '+%F %T') [$HOST] $*" >> "${GITQ_LOG:-$ROOT/sync.log}"; }
 export -f log
 export HOST GITQ_LOG
 
+GITQ_ASKPASS=$(mktemp "$ROOT/.git-askpass.XXXXXX") || {
+  echo "CREDENTIAL_HELPER_FAILED: 无法创建 Git askpass" >&2
+  exit 1
+}
+chmod 700 "$GITQ_ASKPASS" || {
+  rm -f "$GITQ_ASKPASS"
+  echo "CREDENTIAL_HELPER_FAILED: 无法保护 Git askpass" >&2
+  exit 1
+}
+printf '%s\n' '#!/bin/sh' \
+  'case "$1" in' \
+  '  *Username*) printf "%s\\n" "$GITQ_ASKPASS_USER" ;;' \
+  '  *) printf "%s\\n" "$GITQ_ASKPASS_TOKEN" ;;' \
+  'esac' > "$GITQ_ASKPASS" || {
+  rm -f "$GITQ_ASKPASS"
+  echo "CREDENTIAL_HELPER_FAILED: 无法写入 Git askpass" >&2
+  exit 1
+}
+export GITQ_ASKPASS
+trap 'rm -f "$GITQ_ASKPASS"' EXIT
+
+case "$JOBS" in
+  ''|*[!0-9]*|0)
+    echo "CONFIG_ERROR: GITQ_JOBS/-j 必须是正整数" >&2
+    exit 2
+    ;;
+esac
+
 say "== 同步 $REMOTE:$OWNER —— ${#repos[@]} 个仓，并发 $JOBS，目标 $ROOT/$OWNER =="
 start=$(date +%s)
 fail=0
+sync_status=ok
 # 2026-10-08：临时文件改 mktemp + trap —— 原先固定写 $ROOT/.sync.out，
 # cron 一旦重叠（无锁时真发生过）两轮会互相覆盖这个文件，ok/fail 计数与日志都会串。
-OUT=$(mktemp "$ROOT/.sync.out.XXXXXX")
-trap 'rm -f "$OUT"' EXIT
-printf '%s\n' "${repos[@]+"${repos[@]}"}" | xargs -P "$JOBS" -I{} bash -c 'sync_one "$@"' _ {} > "$OUT" 2>&1
-fail=$(grep -c '^FAIL' "$OUT" 2>/dev/null || true)
-ok=$(grep -c '^ok' "$OUT" 2>/dev/null || true)
+OUT=$(mktemp "$ROOT/.sync.out.XXXXXX") || {
+  echo "SYNC_EXECUTOR_FAILED: 无法创建同步临时文件" >&2
+  exit 1
+}
+[ -n "$OUT" ] && [ -f "$OUT" ] || {
+  echo "SYNC_EXECUTOR_FAILED: 同步临时文件无效" >&2
+  exit 1
+}
+trap 'rm -f "$OUT" "$GITQ_ASKPASS"' EXIT
+xargs_rc=0
+printf '%s\n' "${repos[@]+"${repos[@]}"}" | xargs -P "$JOBS" -I{} bash -c 'sync_one "$@"' _ {} > "$OUT" 2>&1 || xargs_rc=$?
+fail=$(grep -c '^FAIL[[:space:]]' "$OUT" 2>/dev/null || true)
+ok=$(grep -c '^ok[[:space:]]' "$OUT" 2>/dev/null || true)
+accounted=$((ok + fail))
+if [ "$accounted" -ne "${#repos[@]}" ]; then
+  sync_status=unaccounted
+  unaccounted=$(( ${#repos[@]} - ok ))
+  [ "$unaccounted" -gt 0 ] || unaccounted=1
+  [ "$fail" -ge "$unaccounted" ] || fail=$unaccounted
+  echo "SYNC_ACCOUNTING_FAILED: expected=${#repos[@]} ok=$ok accounted=$accounted" >&2
+elif [ "$xargs_rc" -ne 0 ] && [ "$xargs_rc" -ne 123 ]; then
+  sync_status=executor_failed
+  echo "SYNC_EXECUTOR_FAILED: xargs rc=$xargs_rc" >&2
+fi
 
 # 防御：正常绝不会出现 $ROOT/$OWNER/.git（那是仓名解析成空的症状），出现就报警
 if [ -d "$ROOT/$OWNER/.git" ]; then
@@ -437,7 +522,7 @@ if [ -f "$INDEXER" ]; then
   INDEX_ARGS=(--build)
   # 只有权威完整枚举且每仓 fetch/HEAD 验证全成功，才允许索引器做全局 stale-repo prune。
   # -r 局部同步、cache/disk 降级或部分仓失败都必须显式 fail closed。
-  if [ ${#ONLY[@]} -gt 0 ] || [ "$DEGRADED" -ne 0 ] || [ "$fail" -gt 0 ]; then
+  if [ ${#ONLY[@]} -gt 0 ] || [ "$DEGRADED" -ne 0 ] || [ "$fail" -gt 0 ] || [ "$sync_status" != ok ]; then
     INDEX_ARGS+=(--no-global-prune)
   fi
   python3 "$INDEXER" "${INDEX_ARGS[@]}" >/dev/null 2>&1
@@ -453,6 +538,8 @@ else
 fi
 
 dur=$(( $(date +%s) - start ))
+sync_scope=full
+[ ${#ONLY[@]} -gt 0 ] && sync_scope=partial
 date '+%F %T' > "$ROOT/last_sync"
 # 机器可读状态（供巡检/排障）：last_status 每轮都写；state/last_ok 只在镜像与索引都成功时刷新，
 # 巡检按它断言新鲜度 ⇒「同步静默停摆/一直失败」能被及时发现。
@@ -464,10 +551,10 @@ else
   last_ok_age_h="none"   # 本机还没有过成功的 last_ok（首轮），别把 systime() 当年龄
 fi
 [ -z "$last_ok_age_h" ] && last_ok_age_h="unknown"
-printf 'time=%s host=%s ok=%d fail=%d total=%d dur=%ds degraded=%d enum_source=%s cache_stale=%d transport=%s last_ok_age_h=%s index_status=%s index_rc=%d\n' \
+printf 'time=%s host=%s ok=%d fail=%d total=%d dur=%ds degraded=%d enum_source=%s cache_stale=%d transport=%s sync_scope=%s sync_status=%s last_ok_age_h=%s index_status=%s index_rc=%d\n' \
     "$(date '+%F %T')" "$HOST" "$ok" "$fail" "${#repos[@]}" "$dur" "$DEGRADED" \
-    "${ENUM_SOURCE:-none}" "$CACHE_STALE" "$TRANSPORT" "$last_ok_age_h" "$index_status" "$index_rc" > "$ROOT/state/last_status"
-[ "$fail" -eq 0 ] && [ "$index_status" != failed ] && date '+%F %T' > "$ROOT/state/last_ok"
+    "${ENUM_SOURCE:-none}" "$CACHE_STALE" "$TRANSPORT" "$sync_scope" "$sync_status" "$last_ok_age_h" "$index_status" "$index_rc" > "$ROOT/state/last_status"
+[ "$sync_scope" = full ] && [ "$fail" -eq 0 ] && [ "$sync_status" = ok ] && [ "$index_status" != failed ] && date '+%F %T' > "$ROOT/state/last_ok"
 summary="完成：成功 $ok，失败 $fail，用时 ${dur}s（${#repos[@]} 个仓，枚举源=${ENUM_SOURCE:-none}）"
 if [ "$DEGRADED" = 1 ]; then
   case "${ENUM_SOURCE:-}" in
@@ -487,7 +574,7 @@ if [ "$DEGRADED" = 1 ]; then
   logger -t gitea-mirror "枚举降级：Gitea 仓枚举失败，本轮按本地目录同步，新仓可能未被发现" 2>/dev/null || true
 fi
 
-if [ "$fail" -gt 0 ] || [ "$index_status" = failed ]; then
+if [ "$fail" -gt 0 ] || [ "$sync_status" != ok ] || [ "$index_status" = failed ]; then
   exit 1
 fi
 exit 0

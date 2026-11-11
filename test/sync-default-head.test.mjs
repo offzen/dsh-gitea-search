@@ -146,7 +146,9 @@ test('C4 sync follows a validated upstream default branch change from main to tr
   const missingMain = spawnSync(REAL_GIT, ['--git-dir', fx.bare, 'show-ref', '--verify', '--quiet', 'refs/heads/main'], { env: fx.gitEnv });
   assert.equal(missingMain.status, 1);
   assert.equal(fs.existsSync(path.join(fx.bare, 'HEAD.lock')), false);
-  assert.equal(fs.existsSync(path.join(fx.mirror, 'state', 'last_ok')), true);
+  assert.equal(fs.existsSync(path.join(fx.mirror, 'state', 'last_ok')), false,
+    'successful -r validates the selected repo but cannot claim global mirror freshness');
+  assert.match(fs.readFileSync(path.join(fx.mirror, 'state', 'last_status'), 'utf8'), /(?:^|\s)sync_scope=partial(?:\s|$)/);
 });
 
 test('C4 sync fails closed when remote HEAD discovery becomes unreachable after fetch', { skip: !POSIX }, (t) => {
