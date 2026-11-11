@@ -1,6 +1,6 @@
 # CODE-INDEX —— dsh-gitea-search 代码正册
 
-> 规则：本仓所有可执行脚本、源码模块、自动化测试与 CI gate 均登记于此；生成缓存与构建输出不属于源码资产。状态截至 2026-11-08。这里记录覆盖范围和最近已知证据，**不把历史 rc 的运行结果当作当前候选的 exact-P 收据**。
+> 规则：本仓所有可执行脚本、源码模块、自动化测试与 CI gate 均登记于此；生成缓存与构建输出不属于源码资产。状态截至 2026-11-12。这里记录覆盖范围和最近已知证据，**不把历史 rc 的运行结果当作当前候选的 exact-P 收据**。
 
 ## 1. CLI 与 MCP 入口
 
@@ -57,8 +57,11 @@
 | `test/linux-gate-receipt-path.test.mjs` | gate2 receipt 必须位于 tracked checkout 外 |
 | `test/linux-gate-static.test.mjs` | Linux gate 静态合同与 Windows hosted 边界 |
 | `test/macos-setup.test.mjs` | macOS installer profile 与 Bash 3 兼容 |
-| `test/mirror-state.test.mjs` | 成功/失败同步时间与 stale 解释 |
-| `test/next-actions.test.mjs` | MCP/CLI 失败分类与下一步 |
+| `test/first-run.test.mjs` | effective sync 配置、失败退出、R1 索引失败 CLI 归因与 onboarding 回归 |
+| `test/mirror-state.test.mjs` | 镜像/索引成功与失败状态、时间、stale 解释及 Python/Node parity |
+| `test/next-actions.test.mjs` | MCP/CLI 失败分类、R1 `INDEX_UPDATE_FAILED` 与 C2 `GIT_SEARCH_FAILED` 归因，以及 v1.2.3 C1 查询/控制选项分隔与无副作用回归 |
+| `test/git-error-not-zero-hit.test.mjs` | C2 真实 Git fixture：clean no-hit、invalid ERE、坏仓+部分命中与 MCP 错误传播 |
+| `test/sync-index-failure.test.mjs` | R1 真实 `sync.sh` fixture：fetch 成功 + indexer rc=42、状态字段、`last_ok` 保持与成功恢复 |
 | `test/posix-path.test.mjs` | POSIX 反斜杠路径与 CR 语义 |
 | `test/probe-stdio.test.mjs` | MCP stdio 探针成功与错误路径 |
 | `test/profile-patch.test.mjs` | profile 幂等、备份、check mode |

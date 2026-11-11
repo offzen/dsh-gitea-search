@@ -26,6 +26,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -171,45 +172,75 @@ def fnmatch_any(name, pat):
     return pl in nl
 
 
+def _git_error(stage, rc, message):
+    text = str(message or "").strip() or f"git {stage} failed"
+    return {"stage": stage, "rc": rc, "message": text[:500]}
+
+
 def refs_of(gitdir, all_refs=False):
     prefix = "refs/" if all_refs else "refs/heads/"
-    p = subprocess.run(
-        GN + [f"--git-dir={gitdir}", "for-each-ref", "--format=%(refname:short)", prefix],
-        capture_output=True, text=True,
-    )
-    return [l for l in p.stdout.splitlines() if l.strip()]
+    try:
+        p = subprocess.run(
+            GN + [f"--git-dir={gitdir}", "for-each-ref", "--format=%(refname:short)", prefix],
+            capture_output=True, text=True,
+        )
+    except OSError as exc:
+        return [], _git_error("refs", None, exc)
+    if p.returncode != 0:
+        return [], _git_error("refs", p.returncode, p.stderr)
+    return [l for l in p.stdout.splitlines() if l.strip()], None
 
 
-def _stream(cmd, cap):
-    """跑命令，逐行读，达到 cap 就停并杀掉进程。返回 (lines, capped)"""
-    try:
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    except Exception:
-        return [], False
-    lines, capped = [], False
-    try:
-        for raw in p.stdout:
-            # 逐行读取时行终止符可能是 "\n"(LF) 或 "\r\n"(CRLF)，两种都要剥除。
-            # 注意不能用 rstrip("\r\n")：那会把行内容尾部的其它 CR 一并吃掉
-            # （"abc\r\r\n" → "abc"），使 JSON 字段内容静默改变。这里只剥终止符本身。
-            s = raw.decode("utf-8", "replace")
-            if s.endswith("\n"):
-                s = s[:-1]
-            if s.endswith("\r"):
-                s = s[:-1]
-            lines.append(s)
-            if len(lines) >= cap:
-                capped = True
+def _stream(cmd, cap, stage, ok_rcs=(0,)):
+    """逐行读取 stdout；返回 (lines, capped, error)，并保留 Git 的退出语义。"""
+    with tempfile.TemporaryFile() as stderr_file:
+        try:
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=stderr_file)
+        except OSError as exc:
+            return [], False, _git_error("spawn", None, exc)
+
+        lines, capped, killed = [], False, False
+        read_error = None
+        try:
+            for raw in p.stdout:
+                # 逐行读取时行终止符可能是 "\n"(LF) 或 "\r\n"(CRLF)，两种都要剥除。
+                # 注意不能用 rstrip("\r\n")：那会把行内容尾部的其它 CR 一并吃掉。
+                s = raw.decode("utf-8", "replace")
+                if s.endswith("\n"):
+                    s = s[:-1]
+                if s.endswith("\r"):
+                    s = s[:-1]
+                lines.append(s)
+                if len(lines) >= cap:
+                    capped = True
+                    if p.poll() is None:
+                        p.kill()
+                        killed = True
+                    break
+        except (OSError, ValueError) as exc:
+            read_error = exc
+        finally:
+            if p.stdout is not None:
+                p.stdout.close()
+
+        wait_error = None
+        try:
+            p.wait(timeout=5)
+        except subprocess.TimeoutExpired as exc:
+            wait_error = exc
+            if p.poll() is None:
                 p.kill()
-                break
-        p.stdout.close()
-    except Exception:
-        pass
-    try:
-        p.wait(timeout=5)
-    except Exception:
-        p.kill()
-    return lines, capped
+            p.wait()
+
+        stderr_file.seek(0)
+        stderr = stderr_file.read().decode("utf-8", "replace")
+        if read_error is not None:
+            return lines, capped, _git_error(stage, p.returncode, read_error)
+        if wait_error is not None:
+            return lines, capped, _git_error(stage, p.returncode, wait_error)
+        if not killed and p.returncode not in ok_rcs:
+            return lines, capped, _git_error(stage, p.returncode, stderr)
+        return lines, capped, None
 
 
 def split_grep(line, ref):
@@ -222,13 +253,21 @@ def split_grep(line, ref):
 
 def search_repo(repo, a, and_words=None):
     """返回 (records, capped, error)；repo 是 canonical owner/repo。"""
-    gitdir = mirror_dir(repo)
-    rl = refs_of(gitdir, a.all_refs)
+    owner, name = repo.split("/", 1)
+    gitdir = os.path.join(ROOT, owner, name + ".git")
+    rl, error = refs_of(gitdir, a.all_refs)
+    if error:
+        return [], False, error
     if a.branch:
         want = a.branch.split(",")
         if any(w.upper() == "HEAD" for w in want):
-            p = subprocess.run(GN + [f"--git-dir={gitdir}", "symbolic-ref", "--short", "HEAD"],
-                               capture_output=True, text=True)
+            try:
+                p = subprocess.run(GN + [f"--git-dir={gitdir}", "symbolic-ref", "--short", "HEAD"],
+                                   capture_output=True, text=True)
+            except OSError as exc:
+                return [], False, _git_error("symbolic-ref", None, exc)
+            if p.returncode not in (0, 1):
+                return [], False, _git_error("symbolic-ref", p.returncode, p.stderr)
             head = p.stdout.strip()
             want = [w for w in want if w.upper() != "HEAD"] + ([head] if head else [])
         rl = [r for r in rl if any(fnmatch_any(r, w) for w in want)]
@@ -259,8 +298,10 @@ def search_repo(repo, a, and_words=None):
                 if a.word:
                     cmd.append("-w")
                 cmd += pattern_args + [ref]
-                out, cap = _stream(cmd, 500000)
+                out, cap, error = _stream(cmd, 500000, "grep", ok_rcs=(0, 1))
                 capped = capped or cap
+                if error:
+                    return recs, capped, error
                 recs.append((repo, ref, "", "", str(len(out))))
                 continue
             cmd = GN + [f"--git-dir={gitdir}", "grep", "-n", "-I", "--no-color"]
@@ -272,14 +313,19 @@ def search_repo(repo, a, and_words=None):
             if a.files:
                 cmd.append("-l")
             cmd += pattern_args + [ref]
-            out, cap = _stream(cmd, per_cap)
+            out, cap, error = _stream(cmd, per_cap, "grep", ok_rcs=(0, 1))
             capped = capped or cap
+            if error:
+                return recs, capped, error
             for line in out:
                 path, lineno, text = split_grep(line, ref)
                 recs.append((repo, ref, path, lineno, text))
         elif a.mode == "path":
             cmd = GN + [f"--git-dir={gitdir}", "ls-tree", "-r", "--name-only", ref]
-            out, _ = _stream(cmd, 200000)
+            out, cap, error = _stream(cmd, 200000, "ls-tree")
+            capped = capped or cap
+            if error:
+                return recs, capped, error
             if a.regex:
                 try:
                     rx = re.compile(a.pattern, 0 if a.case_sensitive else re.I)
@@ -296,7 +342,10 @@ def search_repo(repo, a, and_words=None):
         else:  # message
             cmd = GN + [f"--git-dir={gitdir}", "log", "--all", "--no-color",
                         "--date=short", "--format=%h\t%ad\t%s"]
-            out, _ = _stream(cmd, 200000)
+            out, cap, error = _stream(cmd, 200000, "log")
+            capped = capped or cap
+            if error:
+                return recs, capped, error
             try:
                 rx = re.compile(a.pattern, 0 if a.case_sensitive else re.I)
             except re.error as e:
@@ -365,7 +414,9 @@ def fmt_text(recs, a, stats):
         foot.append(f"（已截断显示到 {a.max} 行；用 -r <仓名> 或更精确的模式收窄）")
     if stats["capped"]:
         foot.append("（有仓触顶，总数是下界）")
-    if total == 0 and a.mode == "content":
+    if stats.get("errors"):
+        foot.append(f"（GIT_SEARCH_FAILED: {stats['repos_failed']} 个仓搜索失败；上述结果可能不完整）")
+    elif total == 0 and a.mode == "content":
         foot.append("（提示：若需跨行多词组合或中文分词检索文档/历史会话，请用 `gts -D \"<关键词>\"` 或 MCP `search_gitea_docs`）")
     out.append("")
     out.extend(foot)
@@ -394,9 +445,12 @@ def fmt_json(recs, a, stats):
         "match_mode": "line_and_fallback" if stats.get("fallback_and") else ("regex" if a.regex else "literal"),
         "total": len(results),
         "truncated": len(results) > a.max or stats["capped"],
-        "repos_scanned": stats["repos_total"],
+        "complete": not stats["errors"],
+        "repos_scanned": stats["repos_total"] - stats["repos_failed"],
+        "repos_failed": stats["repos_failed"],
         "repos_hit": stats["repos_hit"],
         "mirror_last_sync": stats["last_sync"],
+        "errors": stats["errors"],
         "results": results[: a.max],
     }
     return json.dumps(payload, ensure_ascii=False, indent=1)
@@ -526,8 +580,18 @@ def main():
             # sync.sh does not read JSON or CLI options. Pass the resolved values,
             # rather than letting it fall back to another directory/owner.
             sync_env = dict(os.environ, GITEA_MIRROR_ROOT=ROOT, GITEA_OWNERS=OWNER)
-            sync_result = subprocess.run([bash_bin, SYNC, "-q"], check=False, env=sync_env)
+            sync_result = subprocess.run(
+                [bash_bin, SYNC, "-q"], check=False, env=sync_env,
+                stderr=subprocess.PIPE, text=True, errors="replace",
+            )
+            sync_stderr = sync_result.stderr or ""
+            if sync_stderr:
+                print(sync_stderr, end="" if sync_stderr.endswith("\n") else "\n", file=sys.stderr)
             if sync_result.returncode != 0:
+                index_failure = re.search(r"(?:^|\n)INDEX_UPDATE_FAILED:[^\n]*\brc=(\d+)\b", sync_stderr)
+                if index_failure:
+                    die(f"INDEX_UPDATE_FAILED: 索引更新失败 rc={index_failure[1]}",
+                        code=sync_result.returncode or 1)
                 die(f"SYNC_FAILED: 同步脚本退出码 {sync_result.returncode}", code=sync_result.returncode or 1)
         except Exception as e:
             die(f"执行同步失败：{e}（Windows 环境建议通过 PowerShell 执行 scripts\\setup-windows.ps1 或 git 镜像拉取）")
@@ -652,28 +716,39 @@ def main():
         die("没有匹配的仓（--repos 看看有哪些）", 1)
 
     t0 = time.time()
-    recs, capped = [], False
+    recs, errors, capped = [], [], False
     fallback_and = False
-    with ThreadPoolExecutor(max_workers=a.jobs) as ex:
-        for rr, cap, err in ex.map(lambda r: search_repo(r, a), repos):
-            if err:
-                print(f"gitq: {err}", file=sys.stderr)
+
+    def collect(results):
+        nonlocal capped
+        for repo, (rr, cap, error) in zip(repos, results):
             recs.extend(rr)
             capped = capped or cap
+            if error:
+                item = {"repo": repo, **error}
+                errors.append(item)
+                rc = "unknown" if item["rc"] is None else item["rc"]
+                print(f"GIT_SEARCH_FAILED: {repo}: {item['stage']} rc={rc}: {item['message']}",
+                      file=sys.stderr)
 
-    # 当 content 模式（非正则）传入多词短语且精确字面量 0 命中时，自动回退为「同行多词 AND」检索
-    if not recs and a.mode == "content" and not a.regex:
+    with ThreadPoolExecutor(max_workers=a.jobs) as ex:
+        collect(ex.map(lambda r: search_repo(r, a), repos))
+
+    # 只有完整的首轮干净 0 命中才执行同行多词回退；失败仓不能被第二轮结果掩盖。
+    if not recs and not errors and a.mode == "content" and not a.regex:
         words = [w for w in re.split(r"\s+", a.pattern.strip()) if w]
         if len(words) >= 2:
             fallback_and = True
             with ThreadPoolExecutor(max_workers=a.jobs) as ex:
-                for rr, cap, err in ex.map(lambda r: search_repo(r, a, and_words=words), repos):
-                    recs.extend(rr)
-                    capped = capped or cap
+                collect(ex.map(lambda r: search_repo(r, a, and_words=words), repos))
 
+    errors.sort(key=lambda item: (item["repo"], item["stage"], item["rc"] is None,
+                                  item["rc"] if item["rc"] is not None else 0))
     stats = {
         "repos_total": len(repos),
         "repos_hit": len({r[0] for r in recs}),
+        "repos_failed": len({error["repo"] for error in errors}),
+        "errors": errors,
         "elapsed": time.time() - t0,
         "capped": capped,
         "fallback_and": fallback_and,
@@ -683,7 +758,7 @@ def main():
         print(fmt_json(recs, a, stats))
     else:
         print(fmt_text(recs, a, stats))
-    sys.exit(0 if recs else 1)
+    sys.exit(2 if errors else (0 if recs else 1))
 
 
 if __name__ == "__main__":

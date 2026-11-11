@@ -12,6 +12,9 @@
 | MCP 工具前缀不是协议固定格式。 | `docs/TOOL-NAMING.md` 区分裸名、宿主注册名与 GUI 名。 | 所有 MCP 宿主；具体调用名仍以实时工具表为准。 |
 | FTS 文档搜索覆盖默认分支，不等于 bare mirror 全部 refs。 | `docs/BOUNDARIES.md`、`docs/USAGE.md` 与 `lib/server.mjs` 的 scope/fallback。 | 当前 indexer；实现可配置 ref scope 后失效。 |
 | `verified` 不等于独立可信。 | `scripts/release-preflight.py` 固定 `TRUST_CEILING="same-party"`，并要求 receipts/evidence/artifacts/external anchor/exact ref。 | 当前 release contract；只有引入真正独立签名/attestation 才可抬高。 |
+| MCP 把查询字符串放到 argv 尾部并不自动使它成为“数据”；`argparse` 仍会把 `--sync` / `--reindex` 等识别为控制选项。 | `lib/server.mjs` 的 `buildSearchArgs` / `buildDocsArgs` 在查询前加入 `--`，值参数使用 `--name=value`；`test/next-actions.test.mjs` 的 C1 sentinel fixture 证明旧 argv 会执行 sync，而新 argv 不产生 marker/state。 | v1.2.3 的 Node→Python `gts` 调用边界；若 CLI parser 或 transport 不再使用 argparse/argv，需重审。 |
+| bare mirror fetch 成功不等于搜索面同步成功；索引失败必须拥有独立状态与错误归因。 | `scripts/sync.sh` 写入 `index_status/index_rc`，仅在 fetch 与 index 都成功时刷新 `last_ok`；`test/sync-index-failure.test.mjs` 用成功 fake git + indexer rc=42 证明失败可见、退出非零且旧 `last_ok` 内容/mtime 不变；`test/mirror-state.test.mjs` 固定 Python/Node 解释一致。 | v1.2.3 R1 的 `sync.sh → gts → MCP` 链；若同步与索引被拆成独立事务/API，需重新定义整体成功与 partial-success 契约。 |
+| `git grep` 的 rc=1 才是 no-match；refs/log/ls-tree 的非零和 grep 的 rc≥2 都是“不可信结果”，不能归并成全库 0 命中。 | `bin/gts` 的 `_stream(..., ok_rcs=(0, 1))` 只用于 grep；`test/git-error-not-zero-hit.test.mjs` 对照断言 clean no-hit rc=1、invalid ERE/Git failure rc=2，并由 MCP 归因 `GIT_SEARCH_FAILED`。 | v1.2.3 C2 的 Git-backed content/path/message 搜索；若 Git CLI 退出合同或底层搜索引擎改变，需重审各 stage 的允许 rc。 |
 
 ## 反直觉事实
 
@@ -25,6 +28,9 @@
 8. **preflight shell exit 0 不等于 `verified`。** `configured-unverified` 会返回完整诊断并正常退出；调用方必须解析 JSON 的 `status` 与 `blocked_reasons`。证据：`scripts/release-preflight.py` 的返回合同及其测试。
 9. **tracked tree 之外的本地 `node_modules` / `__pycache__` 不是发布冗余，但 exact-P gate 会在开始时拒绝非白名单 untracked/ignored 面。** 正式范围应以 `git ls-tree P` 判断；见 `scripts/ci/linux-gate.sh` 与 `release-preflight.py`。
 10. **文档改动也会让旧 P 失效。** D/P 合同绑定整个 tracked tree；任何手册、索引或 release guide 修订都必须形成新 D 和 provenance-only P，再跑 exact-P gates。
+11. **在真实 checkout 跑“隔离 E2E”仍可能改项目根。** 当前 `scripts/run-e2e-test.sh` 会调用 `quickstart-local.sh`，并在结尾删除项目根 `config.json`；v1.2.3 修复 C9 前必须用 disposable copy。证据：`scripts/run-e2e-test.sh` 的 quickstart/cleanup 路径；C1/R1 验收均在 `/tmp` 副本得到 31/31，原 checkout 仅保留预期改动。
+12. **能跑 Python preflight 的解释器不一定能跑 E2E。** preflight 的 `test/profile-yaml.test.py` 需要 PyYAML，而 E2E 的 `gts --reindex` 又由 `lib/indexer.py` 对缺失 jieba fail closed；因此两层应各用满足自身声明依赖的隔离环境，不能仅凭其中一层通过复用解释器。证据：`CONTRIBUTING.md` 的 `jieba PyYAML` 依赖合同、`test/dependency-missing.test.py` 与 `scripts/run-e2e-test.sh` 的真实 `--reindex` 路径。适用于当前分离的 Node/Python/E2E 测试链；若统一测试环境并机械安装全依赖后失效。
+13. **捕获子进程 stderr 不等于把它接到 `PIPE` 就结束。** 若父进程只逐行读 stdout 而不并发 drain stderr，大量错误输出可能填满 pipe 并死锁；C2 用临时文件收 stderr，等 child 结束后再有界读取。证据：`bin/gts:_stream` 与 `test/git-error-not-zero-hit.test.mjs` 的 Git failure 路径。适用于当前同步 stdout 流式消费；若改成 `communicate()` 或异步双流读取，需重审。
 
 ## 固定动作序列
 

@@ -1,12 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { EventEmitter } from 'node:events';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { failureResult } from '../lib/next-actions.mjs';
 
 for (const [raw, context, expected] of [
   [{ code: 2, err: 'CONFIG_ERROR: owners missing' }, 'search', 'CONFIG_ERROR'],
+  [{ code: 2, err: 'GIT_SEARCH_FAILED: fixture/demo grep rc=128' }, 'search', 'GIT_SEARCH_FAILED'],
+  [{ code: 1, err: 'INDEX_UPDATE_FAILED: rc=42; SYNC_FAILED: exit=1' }, 'search', 'INDEX_UPDATE_FAILED'],
   [{ code: -1, err: 'spawn ENOENT' }, 'repos', 'CLI_START_FAILED'],
   [{ code: -1, err: 'EACCES' }, 'search', 'CLI_START_FAILED'],
   [{ code: null, timedOut: true }, 'search', 'PROCESS_TIMEOUT'],
@@ -45,6 +50,107 @@ function sliceFn(name) {
   }
   throw new Error(`找不到函数 ${name}`);
 }
+
+// ── v1.2.3 C1：MCP 传给 argparse 的查询必须与控制选项机械分隔 ─────────────────────
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const PY = process.platform === 'win32' ? 'python' : 'python3';
+
+function loadArgBuilders() {
+  const body = [
+    sliceFn('buildSearchArgs'),
+    sliceFn('buildListReposArgs'),
+    sliceFn('buildDocsArgs'),
+    'return { buildSearchArgs, buildListReposArgs, buildDocsArgs };',
+  ].join('\n');
+  // eslint-disable-next-line no-new-func
+  return new Function(body)();
+}
+
+test('C1 MCP argv builders bind option values and terminate options before queries', () => {
+  const { buildSearchArgs, buildListReposArgs, buildDocsArgs } = loadArgBuilders();
+  const search = buildSearchArgs({
+    query: '--reindex', mode: 'message', regex: true, case_sensitive: true,
+    files_only: true, repo: '--sync', branch: '--doctor', sync: true,
+  }, 7);
+  assert.deepEqual(search, [
+    '--json', '-n', '7', '-m', '-E', '-s', '-l',
+    '--repo=--sync', '--branch=--doctor', '--sync', '--', '--reindex',
+  ]);
+  assert.equal(search.filter((v) => v === '--sync').length, 1);
+  assert.deepEqual(
+    buildDocsArgs({ query: '--reindex', repo: '--sync', kind: '--doctor' }, 4),
+    ['-D', '--json', '-n', '4', '--repo=--sync', '--kind=--doctor', '--', '--reindex'],
+  );
+  assert.deepEqual(
+    buildListReposArgs({ filter: '--sync' }),
+    ['--repos', '--json', '--repo=--sync'],
+  );
+});
+
+function c1Fixture(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gts-c1-argv-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const app = path.join(dir, 'app');
+  fs.mkdirSync(path.join(app, 'bin'), { recursive: true });
+  fs.mkdirSync(path.join(app, 'scripts'));
+  fs.copyFileSync(path.join(ROOT, 'bin', 'gts'), path.join(app, 'bin', 'gts'));
+  fs.cpSync(path.join(ROOT, 'lib'), path.join(app, 'lib'), { recursive: true });
+  const marker = path.join(dir, 'SYNC-RAN');
+  fs.writeFileSync(
+    path.join(app, 'scripts', 'sync.sh'),
+    '#!/bin/sh\nprintf "sync\\n" >> "$C1_SYNC_MARKER"\n',
+  );
+  const mirror = path.join(dir, 'mirror');
+  const bare = path.join(mirror, 'fixture', 'demo.git');
+  fs.mkdirSync(path.dirname(bare), { recursive: true });
+  const init = spawnSync('git', ['init', '--bare', bare], { encoding: 'utf8' });
+  assert.equal(init.status, 0, init.stderr);
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home);
+  const env = { ...process.env, HOME: home, USERPROFILE: home, C1_SYNC_MARKER: marker };
+  for (const key of Object.keys(env)) {
+    if (/^(GITEA_|GITQ_|GTS_)/.test(key)) delete env[key];
+  }
+  return {
+    gts: path.join(app, 'bin', 'gts'), marker, mirror, env,
+    state: path.join(mirror, 'state'),
+  };
+}
+
+function runC1(fx, args) {
+  return spawnSync(PY, [
+    fx.gts, '--mirror-root', fx.mirror, '--owners', 'fixture', ...args,
+  ], { encoding: 'utf8', env: fx.env, timeout: 15_000 });
+}
+
+test('C1 real gts treats option-looking MCP queries only as data', { skip: process.platform === 'win32' }, (t) => {
+  const fx = c1Fixture(t);
+  const { buildSearchArgs } = loadArgBuilders();
+  for (const query of [
+    '--sync', '--reindex', '--help', '--doctor', '--read', '-D', '--repos',
+    '-x', '--', '--mirror-root=/x',
+  ]) {
+    const result = runC1(fx, buildSearchArgs({ query }, 5));
+    assert.equal(result.status, 1, `${query}: ${result.stderr}`); // clean zero-hit search
+    assert.equal(JSON.parse(result.stdout).pattern, query);
+    assert.equal(fs.existsSync(fx.marker), false, `${query} must not run sync.sh`);
+    assert.equal(fs.existsSync(fx.state), false, `${query} must not create sync state`);
+  }
+});
+
+test('C1 explicit sync remains control, while the legacy argv shape proves the regression', { skip: process.platform === 'win32' }, (t) => {
+  const fx = c1Fixture(t);
+  const { buildSearchArgs } = loadArgBuilders();
+  const explicit = runC1(fx, buildSearchArgs({ query: 'needle', sync: true }, 5));
+  assert.equal(explicit.status, 1, explicit.stderr);
+  assert.equal(fs.readFileSync(fx.marker, 'utf8'), 'sync\n');
+
+  fs.rmSync(fx.marker);
+  const legacy = runC1(fx, ['--json', '-n', '5', '--sync']);
+  assert.equal(legacy.status, 2, legacy.stderr);
+  assert.equal(fs.readFileSync(fx.marker, 'utf8'), 'sync\n');
+});
+
 // eslint-disable-next-line no-new-func
 const carry = new Function(`${sliceFn('carry')}; return carry;`)();
 const runCarry = (p, timeoutMs) => new Promise((resolve) => carry(p, timeoutMs, resolve));
@@ -130,7 +236,7 @@ test('B8 真实子进程：sleep 超过 timeout 被杀并报告 timedOut', async
 test('B8 server.mjs 各调用点把 timedOut 传给 failureResult（超时不会被当成「输出无法解析」）', () => {
   const normalized = SERVER_SRC.replace(/\r\n/g, '\n');
   const calls = normalized.match(/NEXT\.failureResult\(\{[^}]*\}/g) || [];
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 4);
   for (const call of calls) assert.match(call, /timedOut/, call);
 });
 

@@ -14,6 +14,7 @@ for (const [name, files, expected] of [
   ['manual mirror', {}, 'unrecorded'],
   ['attempt is not success', { last_sync: '2026-11-01 12:00:00' }, 'unknown'],
   ['failed attempt after old success', { last_sync: '2026-11-05T12:00:00Z', 'state/last_ok': '2026-11-01 12:00:00', 'state/last_status': 'ok=1 fail=2 total=3' }, 'failed'],
+  ['index failure after successful fetch', { last_sync: '2026-11-05T12:00:00Z', 'state/last_ok': '2026-11-01 12:00:00', 'state/last_status': 'ok=1 fail=0 total=1 index_status=failed index_rc=42' }, 'failed'],
   ['successful sync', { last_sync: '2026-11-05T12:00:00+08:00', 'state/last_ok': '2026-11-05T12:00:00+08:00', 'state/last_status': 'fail=0' }, 'success'],
   ['corrupt date', { last_sync: '2026-02-30 12:00:00' }, 'invalid'],
   ['corrupt record', { 'state/last_status': 'nonsense' }, 'invalid'],

@@ -49,8 +49,10 @@ def read_sync_state(root):
     try:
         raw = (Path(root) / "state/last_status").read_text(encoding="utf-8")
         fail = re.search(r"(?:^|\s)fail=(\d+)(?:\s|$)", raw)
+        index_status = re.search(r"(?:^|\s)index_status=(\w+)(?:\s|$)", raw)
         if fail:
-            status = "failed" if int(fail[1]) else "success"
+            index_failed = index_status and index_status[1] == "failed"
+            status = "failed" if int(fail[1]) or index_failed else "success"
         else:
             errors.append("state/last_status")
     except FileNotFoundError:

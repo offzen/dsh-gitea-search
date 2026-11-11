@@ -22,14 +22,14 @@ function fixture(t) {
   return { dir, env };
 }
 
-function syncCli(dir, env, args, syncExit = 0) {
+function syncCli(dir, env, args, syncExit = 0, syncStderr = '') {
   const capture = path.join(dir, 'sync-env.json');
   const code = `
 import json, pathlib, runpy, subprocess, sys
 from unittest.mock import patch
 def sync(command, **kwargs):
     pathlib.Path(${JSON.stringify(capture)}).write_text(json.dumps({'command': command, 'env': kwargs.get('env')}), encoding='utf-8')
-    return subprocess.CompletedProcess(command, ${syncExit})
+    return subprocess.CompletedProcess(command, ${syncExit}, stdout='', stderr=${JSON.stringify(syncStderr)})
 sys.argv = [${JSON.stringify(path.join(ROOT, 'bin', 'gts'))}, *json.loads(${JSON.stringify(JSON.stringify(args))})]
 with patch('subprocess.run', side_effect=sync):
     runpy.run_path(sys.argv[0], run_name='__main__')
@@ -69,6 +69,19 @@ test('--sync preserves a failed child exit and stops the search', (t) => {
   assert.equal(result.status, 7, result.stderr);
   assert.ok(captured);
   assert.match(result.stderr, /SYNC_FAILED/);
+  assert.equal(result.stdout, '');
+});
+
+test('--sync attributes an indexer failure before generic sync failure', (t) => {
+  const { dir, env } = fixture(t);
+  const { result, captured } = syncCli(
+    dir, env, ['--owners', 'selected', '--sync', '--repos', '--json'], 1,
+    'INDEX_UPDATE_FAILED: 索引更新失败 rc=42\n',
+  );
+  assert.equal(result.status, 1, result.stderr);
+  assert.ok(captured);
+  assert.match(result.stderr, /INDEX_UPDATE_FAILED:.*rc=42/);
+  assert.doesNotMatch(result.stderr, /SYNC_FAILED/);
   assert.equal(result.stdout, '');
 });
 

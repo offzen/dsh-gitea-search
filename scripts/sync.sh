@@ -332,9 +332,29 @@ else
   cat "$OUT"
 fi
 
+# 增量刷新 SQLite FTS5 索引（文档与导出会话全文检索）。索引结果属于整轮成功契约，
+# 必须先于 last_status/last_ok 确定，不能把「fetch 成功、索引失败」记成完整成功。
+index_status=skipped
+index_rc=0
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+INDEXER="$SCRIPT_DIR/../lib/indexer.py"
+if [ -f "$INDEXER" ]; then
+  index_status=ok
+  python3 "$INDEXER" --build >/dev/null 2>&1
+  index_rc=$?
+  if [ "$index_rc" -ne 0 ]; then
+    index_status=failed
+    index_error="INDEX_UPDATE_FAILED: 索引更新失败 rc=$index_rc"
+    echo "$index_error" >&2
+    log "$index_error"
+  fi
+else
+  log "WARN 未找到索引核心 $INDEXER，本轮跳过增量索引"
+fi
+
 dur=$(( $(date +%s) - start ))
 date '+%F %T' > "$ROOT/last_sync"
-# 机器可读状态（供巡检/排障）：last_status 每轮都写；state/last_ok 只在本轮全成功时刷新，
+# 机器可读状态（供巡检/排障）：last_status 每轮都写；state/last_ok 只在镜像与索引都成功时刷新，
 # 巡检按它断言新鲜度 ⇒「同步静默停摆/一直失败」能被及时发现。
 mkdir -p "$ROOT/state"
 mtime=$(stat -c %Y "$ROOT/state/last_ok" 2>/dev/null || stat -f %m "$ROOT/state/last_ok" 2>/dev/null || echo 0)
@@ -344,10 +364,10 @@ else
   last_ok_age_h="none"   # 本机还没有过成功的 last_ok（首轮），别把 systime() 当年龄
 fi
 [ -z "$last_ok_age_h" ] && last_ok_age_h="unknown"
-printf 'time=%s host=%s ok=%d fail=%d total=%d dur=%ds degraded=%d enum_source=%s cache_stale=%d transport=%s last_ok_age_h=%s\n' \
+printf 'time=%s host=%s ok=%d fail=%d total=%d dur=%ds degraded=%d enum_source=%s cache_stale=%d transport=%s last_ok_age_h=%s index_status=%s index_rc=%d\n' \
     "$(date '+%F %T')" "$HOST" "$ok" "$fail" "${#repos[@]}" "$dur" "$DEGRADED" \
-    "${ENUM_SOURCE:-none}" "$CACHE_STALE" "$TRANSPORT" "$last_ok_age_h" > "$ROOT/state/last_status"
-[ "$fail" -eq 0 ] && date '+%F %T' > "$ROOT/state/last_ok"
+    "${ENUM_SOURCE:-none}" "$CACHE_STALE" "$TRANSPORT" "$last_ok_age_h" "$index_status" "$index_rc" > "$ROOT/state/last_status"
+[ "$fail" -eq 0 ] && [ "$index_status" != failed ] && date '+%F %T' > "$ROOT/state/last_ok"
 summary="完成：成功 $ok，失败 $fail，用时 ${dur}s（${#repos[@]} 个仓，枚举源=${ENUM_SOURCE:-none}）"
 if [ "$DEGRADED" = 1 ]; then
   case "${ENUM_SOURCE:-}" in
@@ -367,18 +387,7 @@ if [ "$DEGRADED" = 1 ]; then
   logger -t gitea-mirror "枚举降级：Gitea 仓枚举失败，本轮按本地目录同步，新仓可能未被发现" 2>/dev/null || true
 fi
 
-# 增量刷新 SQLite FTS5 索引（文档与导出会话全文检索）
-# 注意：索引核心在 ../lib/indexer.py（本脚本在 scripts/ 下），不是同目录。
-# 早先写成 "$(dirname ...)/indexer.py" 指向不存在的 scripts/indexer.py，
-# 使 [ -x ] 恒假 —— 自动增量索引从未执行过（已由 e2e 断言复现）。
-# 用 -f 而非 -x 判定：git checkout 不带可执行位时同样要能跑，反正下面用 python3 调用。
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-INDEXER="$SCRIPT_DIR/../lib/indexer.py"
-if [ -f "$INDEXER" ]; then
-  python3 "$INDEXER" --build >/dev/null 2>&1 || true
-else
-  log "WARN 未找到索引核心 $INDEXER，本轮跳过增量索引"
+if [ "$fail" -gt 0 ] || [ "$index_status" = failed ]; then
+  exit 1
 fi
-
-[ "$fail" -gt 0 ] && exit 1
 exit 0
