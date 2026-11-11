@@ -961,6 +961,25 @@ def _match_repo_any(repo_id, pats):
     return False
 
 
+def _repo_pattern_to_sql_like(pattern):
+    """把 repo glob 转成带反斜杠转义的 SQL LIKE；字面 %/_ 不得扩大范围。"""
+    parts = []
+    for ch in pattern:
+        if ch == "\\":
+            parts.append("\\\\")
+        elif ch == "%":
+            parts.append("\\%")
+        elif ch == "_":
+            parts.append("\\_")
+        elif ch == "*":
+            parts.append("%")
+        elif ch == "?":
+            parts.append("_")
+        else:
+            parts.append(ch)
+    return "".join(parts)
+
+
 def build_fts_query(raw_query):
     """
     将用户输入转化为安全的 FTS5 MATCH 表达式与用于摘要高亮的词项列表：
@@ -1297,16 +1316,17 @@ def search_fts(mirror_root, query, repo=None, limit=20, kind=None):
             like_clauses = []
             for rp in repo_pats:
                 # 完整 owner/repo 匹配完整身份；旧裸名只匹配 basename（最后一个 / 之后）。
-                sql_pat = rp.replace("*", "%").replace("?", "_")
+                # 仅显式 * / ? 是 glob；仓名中的字面 % / _ 必须转义，不能成为 SQL wildcard。
+                sql_pat = _repo_pattern_to_sql_like(rp)
                 if "/" in rp:
                     if not sql_pat.startswith("%"):
                         sql_pat = "%" + sql_pat
                     if not sql_pat.endswith("%"):
                         sql_pat = sql_pat + "%"
-                    like_clauses.append("docs_fts.repo LIKE ?")
+                    like_clauses.append("docs_fts.repo LIKE ? ESCAPE '\\'")
                 else:
                     sql_pat = "%/" + sql_pat + "%"
-                    like_clauses.append("docs_fts.repo LIKE ?")
+                    like_clauses.append("docs_fts.repo LIKE ? ESCAPE '\\'")
                 while "%%" in sql_pat:
                     sql_pat = sql_pat.replace("%%", "%")
                 params.append(sql_pat)
@@ -1345,11 +1365,12 @@ def search_fts(mirror_root, query, repo=None, limit=20, kind=None):
     seen_blobs = set()
     q_tokens = [t for t in qtok if t]
     for r, ref, p, title, snip, rank, blob_sha, kind_v, mtime_v, is_backup in rows:
-        # 内容级去重：同一 blob_sha 只保留首次（即排序最靠前、通常非 backup）的一条
+        # 内容级去重只在同一仓内折叠副本；相同 blob 出现在不同仓时仍须保留仓身份。
         if blob_sha:
-            if blob_sha in seen_blobs:
+            blob_key = (r, blob_sha)
+            if blob_key in seen_blobs:
                 continue
-            seen_blobs.add(blob_sha)
+            seen_blobs.add(blob_key)
         results.append({
             "repo": r,
             "ref": ref,

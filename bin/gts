@@ -340,7 +340,7 @@ def search_repo(repo, a, and_words=None):
             if len(hits) > per_cap:
                 capped = True
         else:  # message
-            cmd = GN + [f"--git-dir={gitdir}", "log", "--all", "--no-color",
+            cmd = GN + [f"--git-dir={gitdir}", "log", ref, "--no-color",
                         "--date=short", "--format=%h\t%ad\t%s"]
             out, cap, error = _stream(cmd, 200000, "log")
             capped = capped or cap
