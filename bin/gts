@@ -563,6 +563,8 @@ def main():
     SYNC = os.path.join(os.path.dirname(_CUR_DIR), "scripts", "sync.sh")
     if a.show_effective_config:
         print(json.dumps(effective, ensure_ascii=False, indent=2))
+        for warning in effective.get("warnings", []):
+            print("CONFIG_WARNING: " + warning, file=sys.stderr)
         if not effective["valid"]:
             print("CONFIG_ERROR: " + "; ".join(effective["errors"]), file=sys.stderr)
         return

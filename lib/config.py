@@ -7,6 +7,31 @@ import os
 from pathlib import Path
 
 PLACEHOLDER_OWNERS = {"myorg", "example-org", "your-org", "your-owner"}
+_SUPPORTED_TOP_LEVEL_KEYS = {"gitea", "storage", "mirror_root", "owners"}
+_SUPPORTED_SECTION_KEYS = {"gitea": {"owners"}, "storage": {"mirror_root"}}
+
+
+def _safe_config_key(path):
+    return path if path and all(ch.isalnum() or ch in "_.-" for ch in path) else "<invalid-key-name>"
+
+
+def _config_warnings(data):
+    """Report ignored config key paths without ever echoing their values."""
+    if not isinstance(data, dict):
+        return []
+    paths = []
+    for key, value in data.items():
+        if key not in _SUPPORTED_TOP_LEVEL_KEYS:
+            paths.append(str(key))
+            continue
+        if key in _SUPPORTED_SECTION_KEYS and isinstance(value, dict):
+            for child in value:
+                if child not in _SUPPORTED_SECTION_KEYS[key]:
+                    paths.append(f"{key}.{child}")
+    return [
+        f'config: key "{_safe_config_key(path)}" is not supported in v1.2.3 and is ignored'
+        for path in sorted(paths)
+    ]
 
 
 def _platform_default_root():
@@ -180,6 +205,7 @@ def resolve_config(cli_root=None, cli_owners=None, config_path=None, project_dir
         "config_path": loaded_path,
         "valid": not errors,
         "errors": errors,
+        "warnings": _config_warnings(cfg),
     }
 
 

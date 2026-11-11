@@ -1363,6 +1363,7 @@ def search_fts(mirror_root, query, repo=None, limit=20, kind=None):
 
     results = []
     seen_blobs = set()
+    has_more_seen = False
     q_tokens = [t for t in qtok if t]
     for r, ref, p, title, snip, rank, blob_sha, kind_v, mtime_v, is_backup in rows:
         # 内容级去重只在同一仓内折叠副本；相同 blob 出现在不同仓时仍须保留仓身份。
@@ -1371,6 +1372,10 @@ def search_fts(mirror_root, query, repo=None, limit=20, kind=None):
             if blob_key in seen_blobs:
                 continue
             seen_blobs.add(blob_key)
+        if len(results) >= limit:
+            # 只需在既有 candidate window 内确认存在下一条唯一结果；不改变 legacy total/page。
+            has_more_seen = True
+            break
         results.append({
             "repo": r,
             "ref": ref,
@@ -1382,8 +1387,6 @@ def search_fts(mirror_root, query, repo=None, limit=20, kind=None):
             "kind": kind_v,
             "is_backup": bool(is_backup),
         })
-        if len(results) >= limit:
-            break
 
     conn.close()
     judgment = evaluate_perf_budget(
@@ -1392,8 +1395,18 @@ def search_fts(mirror_root, query, repo=None, limit=20, kind=None):
         {"query": raw_query[:64], "hits": len(results), "repo": repo or "", "kind": kind or ""},
     )
     record_perf_event(mirror_root, judgment)
+    candidate_window_saturated = len(rows) >= fetch_n
+    if has_more_seen:
+        total_relation, has_more = "gt", True
+    elif candidate_window_saturated:
+        total_relation, has_more = "gte", None
+    else:
+        total_relation, has_more = "eq", False
     return {
         "total": len(results),
+        "returned": len(results),
+        "has_more": has_more,
+        "total_relation": total_relation,
         "results": results,
         "perf": {
             "status": judgment["status"],

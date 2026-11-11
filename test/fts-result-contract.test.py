@@ -69,6 +69,40 @@ class FtsResultContractTest(unittest.TestCase):
         self.assertEqual(len(result["results"]), 2, "dedupe must keep scanning available candidates")
         self.assertEqual({row["repo"] for row in result["results"]}, {"team/a", "team/b"})
 
+    def test_r3_pagination_metadata_is_truthful_without_redefining_total(self):
+        body = "PaginationTruthSentinel"
+        for index in range(3):
+            self.insert_doc("team/page", f"UNIQUE-{index}.md", body, f"unique-{index}")
+        self.conn.close()
+
+        limited = indexer.search_fts(self.root, "PaginationTruthSentinel", limit=1)
+        complete = indexer.search_fts(self.root, "PaginationTruthSentinel", limit=10)
+
+        self.assertEqual(limited["total"], 1, "legacy total remains returned page length")
+        self.assertEqual(limited["returned"], 1)
+        self.assertIs(limited["has_more"], True)
+        self.assertEqual(limited["total_relation"], "gt")
+        self.assertEqual(complete["total"], 3)
+        self.assertEqual(complete["returned"], 3)
+        self.assertIs(complete["has_more"], False)
+        self.assertEqual(complete["total_relation"], "eq")
+
+    def test_r3_saturated_dedupe_window_reports_unknown_more(self):
+        body = "PaginationUncertainSentinel"
+        for index in range(25):
+            self.insert_doc(
+                "team/page", f"backup/{index:02d}.md", body, "same-blob",
+                mtime=2000000100 - index,
+            )
+        self.conn.close()
+
+        result = indexer.search_fts(self.root, "PaginationUncertainSentinel", limit=1)
+
+        self.assertEqual(result["total"], 1)
+        self.assertEqual(result["returned"], 1)
+        self.assertIsNone(result["has_more"])
+        self.assertEqual(result["total_relation"], "gte")
+
     def test_c7_repo_filter_treats_underscore_and_percent_as_literals(self):
         body = "LiteralRepoFilterSentinel"
         for index, repo in enumerate((

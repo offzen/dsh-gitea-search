@@ -267,23 +267,15 @@ $env:GITEA_OWNERS = "my-org"
 ```json
 {
   "gitea": {
-    "url": "https://git.example.com",
-    "token": "your_readonly_token_here",
     "owners": ["my-org", "core-team"]
   },
   "storage": {
     "mirror_root": "/srv/gitea-mirror"
-  },
-  "search": {
-    "max_results": 200,
-    "max_line_bytes": 2000,
-    "max_search_bytes": 131072,
-    "max_read_bytes": 60000
   }
 }
 ```
 
-运行时 resolver 当前只消费 `storage.mirror_root` 与 `gitea.owners`（也兼容顶层 `mirror_root` / `owners`）；`gitea.url`、`gitea.token`、`storage.db_path` 与 `search.*` 示例键当前不会被 resolver 或 `sync.sh` 读取。同步 URL、token、枚举/传输策略与输出护栏须使用 §5.2 的环境变量。缺少 owner 或 owner 为 `myorg` 等占位值时，正式 CLI/MCP 操作会 fail closed。环境变量优先级高于配置文件；若项目根遗留了 demo 或旧部署的 `config.json`，未设置相应 env 的 CLI、cron 或宿主进程可能解析到它。可用 `gts --show-effective-config` 核对实际来源。
+运行时 resolver 当前只消费 `storage.mirror_root` 与 `gitea.owners`（也兼容顶层 `mirror_root` / `owners`）。同步 URL、token、枚举/传输策略与输出护栏须使用 §5.2 的环境变量；旧配置中的其它键仍保持兼容读取，但会由 `gts --show-effective-config` 在 stderr 按 key path 提示“未支持并已忽略”，不会输出配置值。缺少 owner 或 owner 为 `myorg` 等占位值时，正式 CLI/MCP 操作会 fail closed。环境变量优先级高于配置文件；若项目根遗留了 demo 或旧部署的 `config.json`，未设置相应 env 的 CLI、cron 或宿主进程可能解析到它。可用 `gts --show-effective-config` 核对实际来源。
 
 ### 5.2 环境变量对照表
 

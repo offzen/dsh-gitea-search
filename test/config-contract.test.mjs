@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -81,6 +81,54 @@ test('Node and Python resolve the same explicit config fixture', () => {
   assert.deepEqual(js.owners, py.owners);
   assert.deepEqual(js.sources, py.sources);
   assert.equal(js.valid, py.valid);
+});
+
+test('R5 example config contains only resolver-effective keys', () => {
+  const example = JSON.parse(readFileSync(path.join(ROOT, 'config.example.json'), 'utf8'));
+  assert.deepEqual(Object.keys(example).sort(), ['gitea', 'storage']);
+  assert.deepEqual(Object.keys(example.gitea).sort(), ['owners']);
+  assert.deepEqual(Object.keys(example.storage).sort(), ['mirror_root']);
+});
+
+test('R5 Node and Python report ignored key paths without leaking values', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'gts-config-r5-'));
+  const home = path.join(dir, 'home');
+  mkdirSync(home);
+  const configPath = path.join(dir, 'config.json');
+  const canary = ['R5', 'VALUE', 'CANARY'].join('-');
+  writeFileSync(configPath, JSON.stringify({
+    gitea: { owners: ['fixture'], url: `https://${canary}.invalid`, token: canary },
+    storage: { mirror_root: path.join(dir, 'mirror'), db_path: `${canary}/db` },
+    search: { max_results: 5 },
+    extra: canary,
+  }));
+  const env = cleanEnv({ HOME: home, USERPROFILE: home });
+  const py = resolveWith(env, { config_path: configPath });
+  assert.equal(py.valid, true);
+  assert.deepEqual(py.warnings, [
+    'config: key "extra" is not supported in v1.2.3 and is ignored',
+    'config: key "gitea.token" is not supported in v1.2.3 and is ignored',
+    'config: key "gitea.url" is not supported in v1.2.3 and is ignored',
+    'config: key "search" is not supported in v1.2.3 and is ignored',
+    'config: key "storage.db_path" is not supported in v1.2.3 and is ignored',
+  ]);
+  assert.doesNotMatch(py.warnings.join('\n'), new RegExp(canary));
+
+  const nodeCode = [
+    `import { resolveConfig } from ${JSON.stringify(NODE_CONFIG.href)}`,
+    `console.log(JSON.stringify(resolveConfig({ configPath: ${JSON.stringify(configPath)} })))`,
+  ].join(';');
+  const node = spawnSync(process.execPath, ['--input-type=module', '-e', nodeCode], { encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home } });
+  assert.equal(node.status, 0, node.stderr);
+  assert.deepEqual(JSON.parse(node.stdout).warnings, py.warnings);
+
+  const gts = spawnSync(PY, [path.join(ROOT, 'bin', 'gts'), '--config', configPath, '--show-effective-config'], {
+    encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home },
+  });
+  assert.equal(gts.status, 0, gts.stderr);
+  assert.doesNotThrow(() => JSON.parse(gts.stdout));
+  assert.match(gts.stderr, /gitea\.token/);
+  assert.doesNotMatch(`${gts.stdout}\n${gts.stderr}`, new RegExp(canary));
 });
 
 test('missing and placeholder owners fail closed', () => {
