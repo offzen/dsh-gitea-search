@@ -8,6 +8,7 @@ indexer.py — gitea 镜像文档/会话 SQLite FTS5 全文索引构建与检索
 """
 
 import argparse
+import contextlib
 import fnmatch
 import json
 import os
@@ -602,24 +603,44 @@ def get_head_ref_and_sha(gitdir):
     return "HEAD", None
 
 
+class IndexReadError(RuntimeError):
+    """A repository could not be read completely enough to update its index."""
+
+
 def get_tree_entries(gitdir, ref, valid_exts):
     """
     通过 git ls-tree -r 一次性取回该分支下所有文件的 (path, blob_sha)
     输出格式: <mode> <type> <object> <file>
     """
-    p = subprocess.run(
-        GN + [f"--git-dir={gitdir}", "ls-tree", "-r", ref],
-        capture_output=True, text=True
-    )
+    try:
+        p = subprocess.run(
+            GN + [f"--git-dir={gitdir}", "ls-tree", "-r", "-z", ref],
+            capture_output=True
+        )
+    except Exception as exc:
+        raise IndexReadError(
+            f"INDEX_READ_FAILED: tree repo={os.path.basename(gitdir)} ref={ref} "
+            f"error={type(exc).__name__}"
+        ) from exc
     if p.returncode != 0:
-        return {}
-    
+        raise IndexReadError(
+            f"INDEX_READ_FAILED: tree repo={os.path.basename(gitdir)} ref={ref} "
+            f"rc={p.returncode}"
+        )
+
     entries = {}
-    for line in p.stdout.splitlines():
-        parts = line.split(maxsplit=3)
-        if len(parts) == 4 and parts[1] == "blob":
-            blob_sha = parts[2]
-            fpath = parts[3]
+    for record in p.stdout.split(b"\0"):
+        if not record:
+            continue
+        metadata, sep, path_bytes = record.partition(b"\t")
+        parts = metadata.split()
+        if not sep or len(parts) != 3:
+            raise IndexReadError(
+                f"INDEX_READ_FAILED: malformed tree repo={os.path.basename(gitdir)} ref={ref}"
+            )
+        if parts[1] == b"blob":
+            blob_sha = parts[2].decode("ascii")
+            fpath = path_bytes.decode("utf-8", "replace")
             ext = os.path.splitext(fpath)[1].lower()
             if ext in valid_exts:
                 entries[fpath] = blob_sha
@@ -816,21 +837,22 @@ def index_repo(conn, gitdir, repo_id, exts, verbose=False, force=False):
 
     added_or_updated = 0
     deleted = 0
+    savepoint = "index_repo"
+    conn.execute(f"SAVEPOINT {savepoint}")
+    try:
+        # 1. 处理新增或修改（惰性常驻 batch 读取器 + 按批写入同一仓事务）
+        if to_update:
+            head_mtime = get_head_commit_time(gitdir, ref)
+            has_body_raw_col = "body_raw" in {
+                r[1] for r in conn.execute("PRAGMA table_info(docs_fts)")
+            }
+            reader = BlobReader(gitdir)
+            batch = []
+            BATCH_SIZE = 200
 
-    # 1. 处理新增或修改（惰性常驻 batch 读取器 + 按批合并事务，消除逐文件 COMMIT 风暴）
-    if to_update:
-        head_mtime = get_head_commit_time(gitdir, ref)
-        has_body_raw_col = "body_raw" in {
-            r[1] for r in conn.execute("PRAGMA table_info(docs_fts)")
-        }
-        reader = BlobReader(gitdir)
-        batch = []
-        BATCH_SIZE = 200
-
-        def _flush_batch(items):
-            if not items:
-                return 0
-            with conn:
+            def _flush_batch(items):
+                if not items:
+                    return 0
                 for fpath, blob_sha, title_idx, body_idx, kind, content in items:
                     old_row = conn.execute(
                         "SELECT rowid FROM doc_rowid WHERE repo=? AND ref=? AND path=?",
@@ -857,29 +879,30 @@ def index_repo(conn, gitdir, repo_id, exts, verbose=False, force=False):
                         INSERT OR REPLACE INTO file_blobs(repo, ref, path, blob_sha, updated_at)
                         VALUES (?, ?, ?, ?, ?)
                     """, (repo, ref, fpath, blob_sha, now))
-            return len(items)
+                return len(items)
 
-        try:
-            for fpath, blob_sha in to_update:
-                content = reader.read(blob_sha)
-                if content is None:
-                    continue
-                title = extract_title(fpath, content)
-                kind = classify_kind(fpath)
-                title_idx = pretokenize(title)
-                body_idx = pretokenize(content)
-                batch.append((fpath, blob_sha, title_idx, body_idx, kind, content))
-                if len(batch) >= BATCH_SIZE:
+            try:
+                for fpath, blob_sha in to_update:
+                    content = reader.read(blob_sha)
+                    if content is None:
+                        raise IndexReadError(
+                            f"INDEX_READ_FAILED: blob repo={repo} ref={ref} path={fpath}"
+                        )
+                    title = extract_title(fpath, content)
+                    kind = classify_kind(fpath)
+                    title_idx = pretokenize(title)
+                    body_idx = pretokenize(content)
+                    batch.append((fpath, blob_sha, title_idx, body_idx, kind, content))
+                    if len(batch) >= BATCH_SIZE:
+                        added_or_updated += _flush_batch(batch)
+                        batch.clear()
+                if batch:
                     added_or_updated += _flush_batch(batch)
                     batch.clear()
-            if batch:
-                added_or_updated += _flush_batch(batch)
-                batch.clear()
-        finally:
-            reader.close()
+            finally:
+                reader.close()
 
-    # 2. 处理已删除文件、默认分支改名残留及记录该仓最新 head_commit（单事务原子提交）
-    with conn:
+        # 2. 处理已删除文件、默认分支改名残留及记录该仓最新 head_commit
         for dpath in deleted_paths:
             old_row = conn.execute(
                 "SELECT rowid FROM doc_rowid WHERE repo=? AND ref=? AND path=?",
@@ -906,6 +929,12 @@ def index_repo(conn, gitdir, repo_id, exts, verbose=False, force=False):
                 "INSERT OR REPLACE INTO repo_heads(repo, ref, head_commit, updated_at) VALUES (?, ?, ?, ?)",
                 (repo, ref, head_commit, now)
             )
+        conn.execute(f"RELEASE {savepoint}")
+    except BaseException:
+        with contextlib.suppress(sqlite3.Error):
+            conn.execute(f"ROLLBACK TO {savepoint}")
+            conn.execute(f"RELEASE {savepoint}")
+        raise
 
     if verbose and (added_or_updated > 0 or deleted > 0):
         print(f"[{repo}] 变更: +{added_or_updated}, -{deleted}, 未变: {unchanged}")
@@ -966,7 +995,60 @@ def build_fts_query(raw_query):
     return ' AND '.join(fts_parts), clean_tokens
 
 
-def build_index(mirror_root, owners=None, repo_filter=None, exts=DEFAULT_EXTS, full=False, verbose=True):
+def _delete_indexed_repo(conn, repo_id):
+    """Atomically remove every indexed row belonging to one vanished repository."""
+    savepoint = "prune_repo"
+    conn.execute(f"SAVEPOINT {savepoint}")
+    try:
+        rowids = conn.execute(
+            "SELECT rowid FROM doc_rowid WHERE repo=?", (repo_id,)
+        ).fetchall()
+        conn.executemany(
+            "DELETE FROM docs_fts WHERE rowid=?", rowids
+        )
+        conn.execute("DELETE FROM doc_rowid WHERE repo=?", (repo_id,))
+        conn.execute("DELETE FROM file_blobs WHERE repo=?", (repo_id,))
+        conn.execute("DELETE FROM repo_heads WHERE repo=?", (repo_id,))
+        conn.execute(f"RELEASE {savepoint}")
+        return len(rowids)
+    except BaseException:
+        with contextlib.suppress(sqlite3.Error):
+            conn.execute(f"ROLLBACK TO {savepoint}")
+            conn.execute(f"RELEASE {savepoint}")
+        raise
+
+
+def _prune_vanished_repos(conn, mirror_root, owners, seen_repo_ids, verbose=False):
+    """Prune vanished repos after a complete, unfiltered, trusted enumeration."""
+    owner_scope = set(owners)
+    indexed_repo_ids = {
+        row[0] for row in conn.execute("""
+            SELECT repo FROM doc_rowid
+            UNION
+            SELECT repo FROM file_blobs
+            UNION
+            SELECT repo FROM repo_heads
+        """)
+    }
+    pruned_repos = 0
+    pruned_docs = 0
+    for repo_id in sorted(indexed_repo_ids - seen_repo_ids):
+        owner, sep, repo_name = repo_id.partition("/")
+        if not sep or owner not in owner_scope:
+            continue
+        # A path that appeared after enumeration, or an incomplete/broken mirror
+        # entry, is not proof that the repository was deliberately removed.
+        if os.path.lexists(os.path.join(mirror_root, owner, repo_name + ".git")):
+            continue
+        pruned_docs += _delete_indexed_repo(conn, repo_id)
+        pruned_repos += 1
+        if verbose:
+            print(f"[{repo_id}] 已清理不再存在的仓库索引")
+    return pruned_repos, pruned_docs
+
+
+def build_index(mirror_root, owners=None, repo_filter=None, exts=DEFAULT_EXTS, full=False,
+                verbose=True, allow_global_prune=True):
     # 缺 jieba 时默认 fail-closed：若无分词直接建库，中文会被当作整段连续字符写入 FTS5，
     # 且 repo_heads 仍会记录最新 commit sha，后续即使补装 jieba 增量索引也会因 sha 未变而跳过，
     # 造成持久化“伪空索引”。仅当显式设 GITQ_ALLOW_NO_JIEBA=1 时才允许降级建英文索引。
@@ -979,7 +1061,7 @@ def build_index(mirror_root, owners=None, repo_filter=None, exts=DEFAULT_EXTS, f
     db_path = get_db_path(mirror_root)
     
     with IndexLock(mirror_root):
-        if full and not repo_filter:
+        if full and allow_global_prune and not repo_filter:
             for suffix in ("", "-wal", "-shm"):
                 p = db_path + suffix
                 if os.path.exists(p):
@@ -1035,13 +1117,21 @@ def build_index(mirror_root, owners=None, repo_filter=None, exts=DEFAULT_EXTS, f
         total_del = 0
         total_same = 0
         total_repos_scanned = 0
+        prune_trusted = bool(allow_global_prune) and not repo_filter
+        seen_repo_ids = set()
 
         with IoTracker(op_name) as tracker:
             for owner in owners:
                 mirror_dir = os.path.join(mirror_root, owner)
                 if not os.path.isdir(mirror_dir):
+                    prune_trusted = False
                     continue
-                all_r = list_repos(mirror_dir)
+                try:
+                    all_r = list_repos(mirror_dir)
+                except Exception:
+                    conn.close()
+                    raise
+                seen_repo_ids.update(f"{owner}/{r}" for r in all_r)
                 if repo_filter:
                     pats = [p for p in repo_filter.split(",") if p.strip()]
                     repos = [r for r in all_r if _match_repo_any(f"{owner}/{r}", pats)]
@@ -1052,10 +1142,25 @@ def build_index(mirror_root, owners=None, repo_filter=None, exts=DEFAULT_EXTS, f
                 for r in repos:
                     repo_id = f"{owner}/{r}"
                     gitdir = os.path.join(mirror_dir, r + ".git")
-                    mod, dele, same = index_repo(conn, gitdir, repo_id, exts, verbose=verbose, force=full)
+                    try:
+                        mod, dele, same = index_repo(
+                            conn, gitdir, repo_id, exts, verbose=verbose, force=full
+                        )
+                    except Exception:
+                        conn.close()
+                        raise
                     total_mod += mod
                     total_del += dele
                     total_same += same
+
+            if prune_trusted:
+                try:
+                    _prune_vanished_repos(
+                        conn, mirror_root, owners, seen_repo_ids, verbose=verbose
+                    )
+                except Exception:
+                    conn.close()
+                    raise
 
         dur = time.time() - t0
         judgment = evaluate_perf_budget(
@@ -1586,6 +1691,10 @@ def main():
     parser = argparse.ArgumentParser(description="gitea 全文文档/会话 SQLite FTS5 索引工具")
     parser.add_argument("--build", action="store_true", help="构建或增量更新索引")
     parser.add_argument("--full", action="store_true", help="强制全量重新构建")
+    parser.add_argument(
+        "--no-global-prune", action="store_true",
+        help="本轮枚举不完整或仅同步部分仓时，禁止清理未见仓库",
+    )
     parser.add_argument("--stats", action="store_true", help="查看索引库状态统计")
     parser.add_argument("--perf-stats", action="store_true", help="查看性能与磁盘 I/O 监测统计")
     parser.add_argument("--doctor", action="store_true", help="运行索引与宿主 DSH 会话健康及 I/O 诊断")
@@ -1648,7 +1757,10 @@ def main():
         return
 
     if args.build or len(sys.argv) == 1:
-        build_index(mirror_root, owners=owners, repo_filter=args.repo, full=args.full, verbose=True)
+        build_index(
+            mirror_root, owners=owners, repo_filter=args.repo, full=args.full,
+            verbose=True, allow_global_prune=not args.no_global_prune,
+        )
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@
 | 路径 | 用途 | 负载/写操作 |
 |---|---|---|
 | `lib/config.py` / `lib/config.mjs` | Python/Node effective-config resolver；缺失或畸形显式配置 fail closed | 轻量文件读取 |
-| `lib/indexer.py` | SQLite FTS5/jieba 索引与查询 | build/reindex 写 SQLite |
+| `lib/indexer.py` | SQLite FTS5/jieba 索引与查询；R2 仅在完整可信构建后按仓原子清理已消失 mirror 的四表记录 | build/reindex 写 SQLite |
 | `lib/mirror_state.py` / `lib/mirror-state.mjs` | Python/Node 镜像同步状态解释，区分成功与失败尝试 | 读取 state 元数据 |
 | `lib/next-actions.mjs` | 将 MCP/CLI 失败归因并生成结构化下一步 | 只读解释 |
 | `lib/server.mjs` | 四工具 MCP stdio server、CLI 进程管理与输出护栏 | 长驻时启动 CLI；`sync:true` 可写镜像 |
@@ -40,7 +40,7 @@
 | `scripts/release-preflight.py` | 只读核验 D/P、四收据、深证据、artifact、external anchor 和 exact ref | 只读 Git/JSON；不 push/tag/dispatch |
 | `scripts/run-e2e-test.sh` | 31 项隔离全链路验收 | 临时 bare repos/SQLite |
 | `scripts/run-realdata-test.sh` | 真实镜像验收 | 可能增量写索引；高负载 |
-| `scripts/sync.sh` | Gitea bare mirror 同步与索引刷新 | 网络与磁盘写入 |
+| `scripts/sync.sh` | Gitea bare mirror 同步、经远端 symref+OID 验证的默认分支 `HEAD` 收敛，以及带完整/局部/降级 trust 信号的索引刷新 | 网络与磁盘写入 |
 | `scripts/quickstart-local.sh` | 创建合成 Zero-Gitea demo 仓并建索引；不导入已有本地仓 | 写目标目录及项目根 `config.json` |
 | `scripts/respawn-mcp.sh` | 重启单个 MCP 子进程 | 影响运行进程 |
 | `scripts/dsh-session-health.mjs` | 会话健康检查/迁移 | `--fix` 可写会话/SQLite |
@@ -61,7 +61,8 @@
 | `test/mirror-state.test.mjs` | 镜像/索引成功与失败状态、时间、stale 解释及 Python/Node parity |
 | `test/next-actions.test.mjs` | MCP/CLI 失败分类、R1 `INDEX_UPDATE_FAILED` 与 C2 `GIT_SEARCH_FAILED` 归因，以及 v1.2.3 C1 查询/控制选项分隔与无副作用回归 |
 | `test/git-error-not-zero-hit.test.mjs` | C2 真实 Git fixture：clean no-hit、invalid ERE、坏仓+部分命中与 MCP 错误传播 |
-| `test/sync-index-failure.test.mjs` | R1 真实 `sync.sh` fixture：fetch 成功 + indexer rc=42、状态字段、`last_ok` 保持与成功恢复 |
+| `test/sync-index-failure.test.mjs` | R1 索引失败传播；R2 验证权威完整同步才允许 global prune，`-r`/降级/部分失败必须传 `--no-global-prune` |
+| `test/sync-default-head.test.mjs` | C4 real-Git fixture：多分支 `main→trunk` 收敛、post-fetch 不可达、既有/新建空 remote fail closed、固定 marker 与凭据 canary 不泄漏 |
 | `test/posix-path.test.mjs` | POSIX 反斜杠路径与 CR 语义 |
 | `test/probe-stdio.test.mjs` | MCP stdio 探针成功与错误路径 |
 | `test/profile-patch.test.mjs` | profile 幂等、备份、check mode |
@@ -81,6 +82,7 @@
 | `test/workflow-contract.test.py` | workflow needs/jobs/artifact/writer 静态对齐 |
 | `test/linux-gate-context.test.py` | Gitea/GitHub workflow identity 正向与缺标记、冲突 ref、event payload 漂移负向合同 |
 | `test/dependency-missing.test.py` | jieba 缺失时的 CJK fail-closed 与显式 override |
+| `test/owner-qualified-repos.test.py` | owner-qualified 身份、legacy rebuild、C3 读取原子性，以及 R2 trusted/partial/degraded stale-repo prune 合同 |
 | `test/profile-yaml.test.py` | YAML round-trip、控制字符和缩进回归；依赖 PyYAML，缺失时门禁失败，gate2/hosted receipt jobs 显式安装该依赖 |
 | `test/repo-zero-hit.test.py` | 显式未知 repo 的结构化零命中 |
 | `test/documentation-contract.test.py` | release guide、formal state、用户 onboarding/quickstart、内容分区、贡献指南与 Windows 安全文档静态契约 |

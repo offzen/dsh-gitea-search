@@ -255,12 +255,96 @@ fi
 mkdir -p "$ROOT/$OWNER"
 
 # ── 2) 单仓同步 ──────────────────────────────────────────────────────────────
+# fetch/clone 成功后，以远端明确声明且已抓取到本地的默认分支收敛 bare mirror HEAD。
+# 只输出固定错误码，避免把可能含凭据的 remote URL / Git stderr 带进日志。
+converge_default_head() {
+  local d=$1 remotes remote_name="" remote_count=0 name
+  local remote_head tab line field value target="" remote_oid="" local_oid
+  local sym_count=0 oid_count=0 invalid=0 oid_len remote_oid_lc local_oid_lc
+
+  remotes=$(git --git-dir="$d" remote 2>/dev/null) || {
+    echo "HEAD_UNVERIFIED_REMOTE_LIST"
+    return 1
+  }
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    remote_count=$((remote_count + 1))
+    remote_name=$name
+  done <<< "$remotes"
+  [ "$remote_count" -eq 1 ] || {
+    echo "HEAD_UNVERIFIED_REMOTE_COUNT"
+    return 1
+  }
+
+  remote_head=$(GIT_TERMINAL_PROMPT=0 timeout 300 \
+      git --git-dir="$d" ls-remote --symref -- "$remote_name" HEAD 2>/dev/null) || {
+    echo "HEAD_UNVERIFIED_REMOTE_UNREACHABLE"
+    return 1
+  }
+
+  tab=$(printf '\t')
+  while IFS= read -r line; do
+    case "$line" in
+      *"$tab"*) ;;
+      *) continue ;;
+    esac
+    field=${line%%"$tab"*}
+    value=${line#*"$tab"}
+    [ "$value" = HEAD ] || continue
+    case "$field" in
+      "ref: refs/heads/"*)
+        sym_count=$((sym_count + 1))
+        target=${field#ref: }
+        ;;
+      *)
+        case "$field" in
+          *[!0123456789abcdefABCDEF]*) invalid=1 ;;
+          *)
+            oid_len=${#field}
+            if [ "$oid_len" -eq 40 ] || [ "$oid_len" -eq 64 ]; then
+              oid_count=$((oid_count + 1))
+              remote_oid=$field
+            else
+              invalid=1
+            fi
+            ;;
+        esac
+        ;;
+    esac
+  done <<< "$remote_head"
+
+  if [ "$invalid" -ne 0 ] || [ "$sym_count" -ne 1 ] || [ "$oid_count" -ne 1 ] || [ -z "$target" ]; then
+    echo "HEAD_UNVERIFIED_REMOTE_HEAD"
+    return 1
+  fi
+  git check-ref-format "$target" >/dev/null 2>&1 || {
+    echo "HEAD_UNVERIFIED_REMOTE_HEAD"
+    return 1
+  }
+
+  local_oid=$(git --git-dir="$d" show-ref --verify --hash "$target" 2>/dev/null) || {
+    echo "HEAD_UNVERIFIED_LOCAL_REF"
+    return 1
+  }
+  remote_oid_lc=$(printf '%s' "$remote_oid" | tr 'ABCDEF' 'abcdef')
+  local_oid_lc=$(printf '%s' "$local_oid" | tr 'ABCDEF' 'abcdef')
+  [ "$local_oid_lc" = "$remote_oid_lc" ] || {
+    echo "HEAD_UNVERIFIED_LOCAL_REF"
+    return 1
+  }
+
+  git --git-dir="$d" symbolic-ref HEAD "$target" >/dev/null 2>&1 || {
+    echo "HEAD_UNVERIFIED_UPDATE"
+    return 1
+  }
+}
+
 sync_one() {
   local r=$1
   # 注意：不要写 `local r=$1 d=$ROOT/$OWNER/$r.git` —— local/declare 会先把整行
   # 参数展开再赋值，$r 取到的是外层（未定义）的值，目录名会变成裸 ".git"（踩过）。
   local d="$ROOT/$OWNER/$r.git"
-  local out rc=0 low lc cand
+  local out rc=0 low lc cand action head_error
   [ -z "$r" ] && { echo "FAIL 空仓名"; return 1; }
   if [ ! -d "$d" ]; then
     # 2026-10-14：历史镜像目录可能是大小写变体（API 给规范名，磁盘是早期按别的方式建的，
@@ -273,9 +357,11 @@ sync_one() {
     done
   fi
   if [ -d "$d" ]; then
+    action=fetch
     out=$(timeout 300 git --git-dir="$d" remote update --prune 2>&1) || rc=1
-    [ $rc = 1 ] && echo "FAIL fetch $r :: $(echo "$out" | tail -2 | tr '\n' ' ')" || echo "ok   fetch $r"
+    [ $rc = 1 ] && echo "FAIL fetch $r :: $(echo "$out" | tail -2 | tr '\n' ' ')"
   else
+    action=clone
     # 通道（token OR ssh 通用性）：ssh 优先；ssh 失败且有 token 时，该仓改走 http(s)。
     local scheme="${API_BASE%%://*}"
     [ "$scheme" = "$API_BASE" ] && scheme="https"
@@ -298,11 +384,19 @@ sync_one() {
     else
       out=$(timeout 300 git clone --mirror -q "$src_ssh" "$d" 2>&1) || rc=1
     fi
-    [ $rc = 1 ] && echo "FAIL clone $r :: $(echo "$out" | tail -2 | tr '\n' ' ')" || echo "ok   clone $r"
+    [ $rc = 1 ] && echo "FAIL clone $r :: $(echo "$out" | tail -2 | tr '\n' ' ')"
+  fi
+  if [ "$rc" -eq 0 ]; then
+    if head_error=$(converge_default_head "$d"); then
+      echo "ok   $action $r"
+    else
+      echo "FAIL head $r :: $head_error"
+      rc=1
+    fi
   fi
   return $rc
 }
-export -f sync_one
+export -f converge_default_head sync_one
 export ROOT OWNER REMOTE TRANSPORT API_TOKEN GIT_USER API_BASE
 # 传给子 shell 的 log（sync_one 里 https 回退会用）—— 它自己会 append 到 $LOG
 log() { echo "$(date '+%F %T') [$HOST] $*" >> "${GITQ_LOG:-$ROOT/sync.log}"; }
@@ -340,7 +434,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 INDEXER="$SCRIPT_DIR/../lib/indexer.py"
 if [ -f "$INDEXER" ]; then
   index_status=ok
-  python3 "$INDEXER" --build >/dev/null 2>&1
+  INDEX_ARGS=(--build)
+  # 只有权威完整枚举且每仓 fetch/HEAD 验证全成功，才允许索引器做全局 stale-repo prune。
+  # -r 局部同步、cache/disk 降级或部分仓失败都必须显式 fail closed。
+  if [ ${#ONLY[@]} -gt 0 ] || [ "$DEGRADED" -ne 0 ] || [ "$fail" -gt 0 ]; then
+    INDEX_ARGS+=(--no-global-prune)
+  fi
+  python3 "$INDEXER" "${INDEX_ARGS[@]}" >/dev/null 2>&1
   index_rc=$?
   if [ "$index_rc" -ne 0 ]; then
     index_status=failed
