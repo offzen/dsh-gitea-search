@@ -61,7 +61,7 @@ not an independent attestation.
 - CLI configuration, MCP configuration, empty-owner semantics, malformed config
   handling, explicit `GTS_BIN`, safe PATH resolution, Windows cmd/batch argument
   rejection, timeout attribution, and the early `mirror_state` import.
-- The default release `test:preflight`/receipt chain now executes all 11 Python contract/regression files,
+- The default release `test:preflight`/receipt chain now executes all 12 Python contract/regression files,
   including gate-context, dependency-missing, profile-YAML, unknown-repository and
   documentation guards. All receipt jobs provision PyYAML; missing optional test
   dependencies fail the measured suite instead of silently skipping coverage. Release/manual/Windows/index documentation now matches 1.2.2 contracts,

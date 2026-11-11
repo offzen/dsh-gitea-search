@@ -58,10 +58,11 @@ class CollectCountsTest(unittest.TestCase):
                 self.assertIn(text, mod.validate_node(value) or "")
 
     def test_release_suite_inventory_includes_product_regressions(self) -> None:
-        self.assertEqual(len(mod.PYTHON_SUITES), 11)
+        self.assertEqual(len(mod.PYTHON_SUITES), 12)
         for suite in (
             "test/dependency-missing.test.py",
             "test/owner-qualified-repos.test.py",
+            "test/fts-result-contract.test.py",
             "test/profile-yaml.test.py",
             "test/repo-zero-hit.test.py",
             "test/workflow-contract.test.py",
@@ -87,7 +88,7 @@ class CollectCountsTest(unittest.TestCase):
 
     def test_main_writes_schema2_full_shape(self) -> None:
         node = {"total": 74, "pass": 70, "fail": 0, "cancelled": 0, "skipped": 4, "todo": 0}
-        python = [{"suite": f"suite-{i}", "ran": True, "ok": True, "tests": i + 1} for i in range(11)]
+        python = [{"suite": f"suite-{i}", "ran": True, "ok": True, "tests": i + 1} for i in range(12)]
         with tempfile.TemporaryDirectory() as td, \
              mock.patch.object(mod, "node_counts", return_value=(node, "tap", True)), \
              mock.patch.object(mod, "python_suites", return_value=(python, True)), \
@@ -97,7 +98,7 @@ class CollectCountsTest(unittest.TestCase):
             data = json.loads((pathlib.Path(td) / "counts.json").read_text())
         self.assertEqual(data["schema"], 2)
         self.assertEqual(data["node_skipped"], 4)
-        self.assertEqual(data["python_suites"], 11)
+        self.assertEqual(data["python_suites"], 12)
         self.assertEqual(data["e2e"], {"pass": 31, "fail": 0})
 
     def test_main_refuses_unparseable_zero_suite(self) -> None:

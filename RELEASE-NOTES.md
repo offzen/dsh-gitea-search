@@ -28,7 +28,7 @@
   restore mirror-state diagnostics, and correctly classify process timeouts.
 - Trust statement: this raises the cost of false-green evidence but remains
   `trust_ceiling: same-party`; it is not an independent or unforgeable attestation.
-- The 1.2.2 chain connects all 11 Python contract/regression files from the default `test:preflight` chain, including the
+- The 1.2.2 chain connects all 12 Python contract/regression files from the default `test:preflight` chain, including the
   dual-forge gate-context negative suite, to the default test/receipt chain, provisions
   PyYAML in gate2 and hosted full-suite jobs (including Windows W10), rejects skipped suites in
   the receipt counter, refreshes release/Windows docs, and removes

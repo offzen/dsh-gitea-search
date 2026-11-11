@@ -83,6 +83,7 @@
 | `test/linux-gate-context.test.py` | Gitea/GitHub workflow identity 正向与缺标记、冲突 ref、event payload 漂移负向合同 |
 | `test/dependency-missing.test.py` | jieba 缺失时的 CJK fail-closed 与显式 override |
 | `test/owner-qualified-repos.test.py` | owner-qualified 身份、legacy rebuild、C3 读取原子性，以及 R2 trusted/partial/degraded stale-repo prune 合同 |
+| `test/fts-result-contract.test.py` | C6 跨仓 blob 可见性、C7 repo filter 字面匹配与 R3 分页真值合同 |
 | `test/profile-yaml.test.py` | YAML round-trip、控制字符和缩进回归；依赖 PyYAML，缺失时门禁失败，gate2/hosted receipt jobs 显式安装该依赖 |
 | `test/repo-zero-hit.test.py` | 显式未知 repo 的结构化零命中 |
 | `test/documentation-contract.test.py` | release guide、formal state、用户 onboarding/quickstart、内容分区、贡献指南与 Windows 安全文档静态契约 |

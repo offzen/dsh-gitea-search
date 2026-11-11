@@ -71,6 +71,7 @@ PYTHON_SUITES = (
     "test/linux-gate-context.test.py",
     "test/dependency-missing.test.py",
     "test/owner-qualified-repos.test.py",
+    "test/fts-result-contract.test.py",
     "test/profile-yaml.test.py",
     "test/repo-zero-hit.test.py",
     "test/documentation-contract.test.py",

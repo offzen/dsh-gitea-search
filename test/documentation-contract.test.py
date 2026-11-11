@@ -92,7 +92,7 @@ class DocumentationContractTest(unittest.TestCase):
         changelog = self.read("CHANGELOG.md")
         command = __import__("json").loads(package)["scripts"]["test:preflight"]
         suite_count = sum(part.strip().startswith("python3 test/") for part in command.split("&&"))
-        self.assertEqual(suite_count, 11)
+        self.assertEqual(suite_count, 12)
         for document in (notes, changelog):
             self.assertIn(f"all {suite_count} Python contract/regression files", document)
             self.assertNotIn("all ten Python", document)

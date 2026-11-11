@@ -22,7 +22,7 @@
   ],
   "scripts": {
     "test": "node --test",
-    "test:preflight": "python3 test/release-preflight.test.py && python3 test/hosted-receipt.test.py && python3 test/collect-test-counts.test.py && python3 test/fetch-remote-evidence.test.py && python3 test/workflow-contract.test.py && python3 test/linux-gate-context.test.py && python3 test/dependency-missing.test.py && python3 test/owner-qualified-repos.test.py && python3 test/profile-yaml.test.py && python3 test/repo-zero-hit.test.py && python3 test/documentation-contract.test.py",
+    "test:preflight": "python3 test/release-preflight.test.py && python3 test/hosted-receipt.test.py && python3 test/collect-test-counts.test.py && python3 test/fetch-remote-evidence.test.py && python3 test/workflow-contract.test.py && python3 test/linux-gate-context.test.py && python3 test/dependency-missing.test.py && python3 test/owner-qualified-repos.test.py && python3 test/fts-result-contract.test.py && python3 test/profile-yaml.test.py && python3 test/repo-zero-hit.test.py && python3 test/documentation-contract.test.py",
     "test:e2e": "bash scripts/run-e2e-test.sh",
     "test:all": "node --test && npm run test:preflight && bash scripts/run-e2e-test.sh"
   },
