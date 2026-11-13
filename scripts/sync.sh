@@ -98,7 +98,7 @@ _fill_repos() { repos=(); while IFS= read -r _lr; do [ -n "$_lr" ] && repos+=("$
 if ! command -v timeout >/dev/null 2>&1; then
   timeout() {
     local secs="$1"; shift
-    "$@" &
+    "$@" <&0 &
     local pid=$!
     (
       trap 'kill -TERM "$spid" 2>/dev/null || true; exit 0' TERM INT

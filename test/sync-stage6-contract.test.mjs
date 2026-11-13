@@ -23,6 +23,24 @@ test('sync.sh braces shell variables before non-ASCII text for Bash 3.2', () => 
   );
 });
 
+test('fallback timeout preserves stdin and child exit status', { skip: !POSIX }, () => {
+  const sync = fs.readFileSync(path.join(ROOT, 'scripts', 'sync.sh'), 'utf8');
+  const fallback = sync.match(/^  timeout\(\) \{[\s\S]*?^  \}/m);
+  assert.ok(fallback, 'extract the real fallback without running sync.sh side effects');
+  for (const [command, expectedStatus, expectedOutput] of [
+    ["timeout 30 cat <<< 'direct-ok'", 0, 'direct-ok\n'],
+    ["printf 'pipe-ok\\n' | timeout 30 cat", 0, 'pipe-ok\n'],
+    ["timeout 30 /bin/bash -c 'exit 7'", 7, ''],
+  ]) {
+    const result = spawnSync('/bin/bash', ['--noprofile', '--norc', '-c',
+      `set -uo pipefail\n${fallback[0]}\n${command}`], {
+      encoding: 'utf8', timeout: 5_000,
+    });
+    assert.equal(result.status, expectedStatus, `${command}: ${result.stderr}`);
+    assert.equal(result.stdout, expectedOutput, command);
+  }
+});
+
 function baseFixture(t, label) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `gts-${label}-`));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));

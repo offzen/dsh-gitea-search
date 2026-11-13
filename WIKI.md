@@ -21,6 +21,10 @@
 | “本轮没看到仓库”只有在范围与枚举都可信时才是删除证据；局部同步、cache/disk 降级、任一仓 fetch/HEAD 失败或 C3 读取失败都不能授权全局 prune。 | `lib/indexer.py` 只在 unfiltered、所有 owner 可枚举且全仓索引成功后比较 `seen_repo_ids`；`scripts/sync.sh` 对 `-r`、`DEGRADED!=0`、`fail>0` 显式传 `--no-global-prune`；`R2StaleRepositoryPruneTests` 与 `test/sync-index-failure.test.mjs` 固定 trusted/partial/degraded 对照。 | v1.2.3 R2 的磁盘镜像→SQLite 派生索引；若未来同步器能原子提供权威远端 manifest、删除本地 mirror 或引入多 owner 编排，需重新定义 trust token 与 owner scope。 |
 | macOS 自带 Bash 3.2 在 `set -u` 下会把未加花括号、紧邻 UTF-8 文字的变量引用误解析为更长变量名，报出形如 `JOBS�: unbound variable`；这不是变量未赋值。 | `scripts/sync.sh` 对这类引用统一使用 `${name}`；`test/sync-stage6-contract.test.mjs` 用静态回归门拒绝 `\$name` 直接邻接非 ASCII 字节，并与真实 sync fixtures 一起通过。 | 当前由 Bash 3.2 解释的 UTF-8 shell 脚本；若最低 macOS shell 升级且实测解析合同改变，静态门可重审，但花括号写法仍兼容。 |
 
+## 软 timeout 的 stdin 合同
+
+后台启动命令默认的 stdin 行为不能当作透明 timeout：Bash 3.2 会丢失管道和直接重定向的 stdin，Bash 5.2 的管道行为不同但直接重定向仍会丢失。`scripts/sync.sh` 显式使用 `"$@" <&0 &` 保留调用方 fd 0；watcher 仍独立使用 `</dev/null`。`test/sync-stage6-contract.test.mjs` 从真实源码提取函数，验证 here-string、管道和子进程 rc=7，不执行同步脚本的其他副作用。范围限非交互 Bash fallback；调用方若不应消费输入，需自行隔离 stdin。该功能修复不补录旧 CI 缺失的历史遥测，也不证明旧失败的精确归因。
+
 ## 反直觉事实
 
 1. **Node 能运行 `.mjs`，不代表 Windows `spawn(path.mjs)` 能运行。** 脚本需通过 `process.execPath` 启动；见 `scripts/launch-spec.mjs` 与 `test/launch-spec.test.mjs`。
