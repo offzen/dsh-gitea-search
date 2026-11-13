@@ -14,8 +14,11 @@ exact-commit platform evidence, and a separate release decision. Consult the
 corresponding exact-commit evidence and release record for the final status.
 
 ### Fixed
-- Separate published v1.2.2 status from the v1.2.3 candidate in release docs and
-  documentation contracts; align npm, Python, lockfile and MCP version metadata.
+- Align npm, Python, lockfile and MCP version metadata to v1.2.3; distinguish
+  version content, historical evidence and live publication status in release
+  documentation and its contracts.
+- Connect all 12 Python contract/regression files to the default test and receipt
+  chains, including the FTS result-contract suite added after v1.2.2.
 - Propagate sync/index failures and preserve last-success state; fail closed on
   incomplete Git tree/blob reads and prune vanished repositories only after a
   complete trusted build.
@@ -81,7 +84,7 @@ not an independent attestation.
 - CLI configuration, MCP configuration, empty-owner semantics, malformed config
   handling, explicit `GTS_BIN`, safe PATH resolution, Windows cmd/batch argument
   rejection, timeout attribution, and the early `mirror_state` import.
-- The default release `test:preflight`/receipt chain now executes all 12 Python contract/regression files,
+- The default release `test:preflight`/receipt chain now executes all 11 Python contract/regression files,
   including gate-context, dependency-missing, profile-YAML, unknown-repository and
   documentation guards. All receipt jobs provision PyYAML; missing optional test
   dependencies fail the measured suite instead of silently skipping coverage. Release/manual/Windows/index documentation now matches 1.2.2 contracts,

@@ -548,13 +548,16 @@ if [ "$(node -p 'process.platform')" = "win32" ]; then
   echo "  ↷ [SKIP] quickstart-local.sh：POSIX 本地启动器，由 Linux E2E 覆盖"
 else
 QUICK_DIR="$MIRROR_ROOT/mock-quickstart-verify"
+# A temporary mirror alone does not isolate the caller's source-root config.
+QUICK_CONFIG_DIR="$(mktemp -d "$MIRROR_ROOT/mock-quickstart-config.XXXXXX")"
+QUICK_CONFIG="$QUICK_CONFIG_DIR/config.json"
 rm -rf "$QUICK_DIR"
-bash "$ROOT_DIR/scripts/quickstart-local.sh" "$QUICK_DIR" >/dev/null 2>&1
-CONFIG_TEST=$(node - "$MCP_BIN" << 'EOF'
+GITEA_SEARCH_CONFIG="$QUICK_CONFIG" bash "$ROOT_DIR/scripts/quickstart-local.sh" "$QUICK_DIR" >/dev/null 2>&1
+CONFIG_TEST=$(node - "$MCP_BIN" "$QUICK_CONFIG" << 'EOF'
 import { spawn } from 'node:child_process';
 const cmd = process.argv[2];
 const ext = cmd.toLowerCase().match(/\.(?:m?js|cjs)$/);
-const p = spawn(ext ? process.execPath : cmd, ext ? [cmd] : [], { stdio: ['pipe', 'pipe', 'pipe'], env: { PATH: process.env.PATH, HOME: process.env.HOME }, windowsHide: true });
+const p = spawn(ext ? process.execPath : cmd, ext ? [cmd] : [], { stdio: ['pipe', 'pipe', 'pipe'], env: { PATH: process.env.PATH, HOME: process.env.HOME, GITEA_SEARCH_CONFIG: process.argv[3] }, windowsHide: true });
 let buf = Buffer.alloc(0);
 const waiters = new Map();
 p.stdout.on('data', (d) => {
@@ -586,7 +589,6 @@ if (txt.includes('Demo Project') || txt.includes('demo-project')) {
 }
 EOF
 )
-rm -f "$ROOT_DIR/config.json"
 assert_ok "config.json 自动解析与 quickstart-local.sh (无 Gitea 服务本地模式)" "[ \"\$CONFIG_TEST\" = 'CONFIG_JSON_AUTO_LOAD_OK' ]"
 fi
 

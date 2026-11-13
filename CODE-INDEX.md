@@ -1,6 +1,6 @@
 # CODE-INDEX —— dsh-gitea-search 代码正册
 
-> 规则：本仓所有可执行脚本、源码模块、自动化测试与 CI gate 均登记于此；生成缓存与构建输出不属于源码资产。状态截至 2026-11-12。这里记录覆盖范围和最近已知证据，**不把历史 rc 的运行结果当作当前候选的 exact-P 收据**。
+> 规则：本仓所有可执行脚本、源码模块、自动化测试与 CI gate 均登记于此；生成缓存与构建输出不属于源码资产。本页记录 v1.2.3 树的资产与测试契约；历史运行结果另列，**不把旧提交的证据当作最终 exact-P 的收据**。
 
 ## 1. CLI 与 MCP 入口
 
@@ -41,7 +41,7 @@
 | `scripts/run-e2e-test.sh` | 31 项隔离全链路验收 | 临时 bare repos/SQLite |
 | `scripts/run-realdata-test.sh` | 真实镜像验收 | 可能增量写索引；高负载 |
 | `scripts/sync.sh` | Gitea bare mirror 同步、经远端 symref+OID 验证的默认分支 `HEAD` 收敛，以及带完整/局部/降级 trust 信号的索引刷新 | 网络与磁盘写入 |
-| `scripts/quickstart-local.sh` | 创建合成 Zero-Gitea demo 仓并建索引；不导入已有本地仓 | 写目标目录及项目根 `config.json` |
+| `scripts/quickstart-local.sh` | 创建合成 Zero-Gitea demo 仓并建索引；不导入已有本地仓；拒绝覆盖调用方配置 | 写目标目录及新建显式/默认配置；相同配置重跑不改文件 |
 | `scripts/respawn-mcp.sh` | 重启单个 MCP 子进程 | 影响运行进程 |
 | `scripts/dsh-session-health.mjs` | 会话健康检查/迁移 | `--fix` 可写会话/SQLite |
 | `scripts/session-export-incremental.py` | 增量导出会话 Markdown | 写导出目录 |
@@ -58,8 +58,14 @@
 | `test/linux-gate-static.test.mjs` | Linux gate 静态合同与 Windows hosted 边界 |
 | `test/macos-setup.test.mjs` | macOS installer profile 与 Bash 3 兼容 |
 | `test/first-run.test.mjs` | effective sync 配置、失败退出、R1 索引失败 CLI 归因与 onboarding 回归 |
+| `test/quickstart-config-preservation.test.mjs` | C9 quickstart 配置拒绝覆盖、幂等、软链接/竞态与真实 E2E quickstart 块成功/失败保留合同 |
 | `test/mirror-state.test.mjs` | 镜像/索引成功与失败状态、时间、stale 解释及 Python/Node parity |
 | `test/next-actions.test.mjs` | MCP/CLI 失败分类、R1 `INDEX_UPDATE_FAILED` 与 C2 `GIT_SEARCH_FAILED` 归因，以及 v1.2.3 C1 查询/控制选项分隔与无副作用回归 |
+| `test/fts-pagination-metadata.test.mjs` | MCP 转交 returned/has-more 元数据、跨平台 fake CLI 输出合同 |
+| `test/message-branch-scope.test.mjs` | C8 提交信息按指定分支检索 |
+| `test/owner-qualified-repos.test.mjs` | MCP 仓库枚举与跨 owner 同名读取判定 |
+| `test/read-window-byte-continuity.test.mjs` | C5 完整行字节窗口与可继续 offset、超长行进度 |
+| `test/setup-xdg-default.test.mjs` | D4 Linux 安装与 profile 的 XDG 镜像默认值 |
 | `test/git-error-not-zero-hit.test.mjs` | C2 真实 Git fixture：clean no-hit、invalid ERE、坏仓+部分命中与 MCP 错误传播 |
 | `test/sync-index-failure.test.mjs` | R1 索引失败传播；R2 验证权威完整同步才允许 global prune，`-r`/降级/部分失败必须传 `--no-global-prune` |
 | `test/sync-stage6-contract.test.mjs` | D1/D2/D3/D5 同步合同、macOS Bash 3.2 UTF-8 变量静态门，以及真实 fallback timeout 的直接/管道 stdin 与子进程退出码回归 |
@@ -108,11 +114,18 @@
 | `extras/dsh-skill/gitea-search/SKILL.md` | 可选 Agent 检索指导；installer 不自动安装 |
 | `docs/DEVELOPMENT-AND-RELEASE.md` | D/P、schema-3 receipt、schema-2 evidence 与发布状态机正本 |
 | `docs/POST-INSTALL.md` | 安装后闭环验收：首次同步、索引、独立 MCP、宿主工具表、真实调用、可选 skill 与回滚 |
-| `PROJECT-STATE.md` | 当前版本、ref、树清理和候选判定的简明快照 |
+| `PROJECT-STATE.md` | v1.2.3 版本/证据边界与历史 v1.2.2 集成快照 |
 | `WIKI.md` | 有证据、带范围和失效条件的耐久陷阱 |
 
-## 7. 当前证据边界
+## 7. 测试契约与历史证据边界
 
-- rc7 原始 P（`e20b37c…`）曾在 2026-11-07 本地跑过 Node 125、Python 合约 35、E2E 31/31；该证据只绑定旧 exact P。本次 hygiene 修改在未冻结新 D/P 前测得 Node 125（121 pass/4 Windows-only skip）、Python 9 套件（49 tests）、E2E 31/31；冻结后还须在 exact P 重验。
-- 先前私有候选的 gate2 因 runner 缺少 hosted-only workflow identity 变量而红；兼容修订必须产生新的 D/P 与新候选。新 P 的本地测试、私有 gate2 与 hosted evidence 必须分别记录，不得复用旧 P 的 receipt。
-- 没有 fresh GitHub-hosted Linux/macOS/Windows schema-3 证据时，release preflight 只能是 `configured-unverified`；信任上限始终是 `same-party`。
+### v1.2.3 验证契约
+
+- 默认链为 Node 自动发现、12 套 Python 合约/回归文件与 31 项 E2E；具体 Python 清单以 `package.json` 和 `scripts/collect-test-counts.py` 为准。结构清单不是任何 SHA 的通过证明。
+- 所有 tracked 修订完成后，针对最终 D/P 独立验证本地、私有 gate2 和 hosted 平台并收集对应收据；不得跨 SHA 借用结果。
+- 只有 exact-P 的 receipts、evidence、artifacts、external anchor 与 strict joint preflight 均匹配，才能写 `verified`；信任上限始终为 `same-party`。
+
+### 历史 rc7 / hygiene 记录
+
+- rc7 原始 P（`e20b37c…`）曾在 2026-11-07 本地跑过 Node 125、Python 合约 35、E2E 31/31；当时后续 hygiene 树在冻结前测得 Node 125（121 pass/4 Windows-only skip）、Python 9 套件（49 tests）、E2E 31/31。这些数字只描述各自历史测试面，不是 v1.2.3 的测试规模或最终收据。
+- 当时私有候选的 gate2 因 runner 缺少 hosted-only workflow identity 变量而红。该修订阶段要求新 D/P 和重新取证，不能据此断言后来提交仍红或已经通过。

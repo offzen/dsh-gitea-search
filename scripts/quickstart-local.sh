@@ -8,6 +8,80 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 TARGET_DIR="${1:-/tmp/local-git-mirror}"
 OWNER="local"
 MIRROR_PATH="${TARGET_DIR}/${OWNER}"
+# Reuse the resolver's explicit-config path; direct first runs keep the project default.
+CONFIG_FILE="${GITEA_SEARCH_CONFIG:-${PROJECT_DIR}/config.json}"
+
+config_publish() {
+  python3 - "$1" "$CONFIG_FILE" "$TARGET_DIR" "$OWNER" << 'PY'
+import json
+import os
+import stat
+import sys
+
+mode, path, mirror, owner = sys.argv[1:5]
+body = (json.dumps({"mirror_root": mirror, "owners": [owner]}, indent=2) + "\n").encode("utf-8")
+
+def refuse(reason):
+    print(f"ERROR: refusing to overwrite existing config: {path} ({reason})", file=sys.stderr)
+    print("Set GITEA_SEARCH_CONFIG to a new path; the existing config is left untouched.", file=sys.stderr)
+    sys.exit(2)
+
+def existing_same():
+    try:
+        current = os.lstat(path)
+    except FileNotFoundError:
+        return False
+    if not stat.S_ISREG(current.st_mode):
+        refuse("symlink or non-regular file")
+    # Do not follow a symlink swapped in after lstat, or block on a raced FIFO.
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        fd = os.open(path, flags)
+        with os.fdopen(fd, "rb") as handle:
+            opened = os.fstat(handle.fileno())
+            if (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino):
+                refuse("config changed concurrently")
+            same = handle.read(len(body) + 1) == body
+    except OSError:
+        refuse("unreadable or changed concurrently")
+    if not same:
+        refuse("different content")
+    return True
+
+try:
+    if mode == "check":
+        if not existing_same() and not os.path.isdir(os.path.dirname(path) or "."):
+            raise OSError("config directory does not exist")
+    else:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            fd = os.open(path, flags, 0o600)
+        except FileExistsError:
+            if not existing_same():
+                refuse("config changed concurrently")
+            print(f"OK: config.json already up to date (unchanged): {path}")
+        else:
+            created = os.fstat(fd)
+            try:
+                with os.fdopen(fd, "wb") as handle:
+                    handle.write(body)
+            except Exception:
+                try:
+                    current = os.lstat(path)
+                    if (current.st_dev, current.st_ino) == (created.st_dev, created.st_ino):
+                        os.unlink(path)
+                except OSError:
+                    pass
+                raise
+            print(f"OK: config.json saved: {path}")
+except OSError as error:
+    print(f"ERROR: config handling failed: {error}", file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+# Refuse conflicting caller configuration before creating or updating a mirror.
+config_publish check
 
 echo "=================================================="
 echo " dsh-gitea-search Local Mode (Zero-Gitea Quickstart)"
@@ -42,15 +116,8 @@ fi
 
 date -u +"%Y-%m-%dT%H:%M:%SZ" > "${TARGET_DIR}/last_sync"
 
-CONFIG_FILE="${PROJECT_DIR}/config.json"
 echo "[2/4] Generating config.json ..."
-cat << JSON > "${CONFIG_FILE}"
-{
-  "mirror_root": "${TARGET_DIR}",
-  "owners": ["${OWNER}"]
-}
-JSON
-echo "OK: config.json saved: ${CONFIG_FILE}"
+config_publish create
 
 echo "[3/4] Building FTS5 index ..."
 env GITEA_MIRROR_ROOT="${TARGET_DIR}" GITQ_MIRROR_ROOT="${TARGET_DIR}" GITEA_OWNERS="${OWNER}" GITQ_OWNER="${OWNER}" python3 "${PROJECT_DIR}/lib/indexer.py" --build
@@ -58,19 +125,21 @@ env GITEA_MIRROR_ROOT="${TARGET_DIR}" GITQ_MIRROR_ROOT="${TARGET_DIR}" GITEA_OWN
 echo "[4/4] Local mode ready!"
 echo "--------------------------------------------------"
 echo "MCP Configuration:"
-cat << MCP
-{
-  "mcpServers": {
-    "gitea-search": {
-      "command": "node",
-      "args": ["${PROJECT_DIR}/lib/server.mjs"],
-      "cwd": "${PROJECT_DIR}",
-      "env": {
-        "GITEA_MIRROR_ROOT": "${TARGET_DIR}",
-        "GITEA_OWNERS": "${OWNER}"
-      }
-    }
-  }
-}
-MCP
+python3 - "$PROJECT_DIR" "$CONFIG_FILE" "$TARGET_DIR" "$OWNER" << 'PY'
+import json
+import os
+import sys
+
+project, config, mirror, owner = sys.argv[1:5]
+print(json.dumps({"mcpServers": {"gitea-search": {
+    "command": "node",
+    "args": [os.path.join(project, "lib", "server.mjs")],
+    "cwd": project,
+    "env": {
+        "GITEA_SEARCH_CONFIG": os.path.abspath(config),
+        "GITEA_MIRROR_ROOT": os.path.abspath(mirror),
+        "GITEA_OWNERS": owner,
+    },
+}}}, indent=2))
+PY
 echo "--------------------------------------------------"

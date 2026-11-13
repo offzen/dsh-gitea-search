@@ -83,7 +83,10 @@ class DocumentationContractTest(unittest.TestCase):
         self.assertIn("[1.2.2] - 2026-11-11", changelog)
         self.assertNotIn("[1.2.2] - Unreleased", changelog)
         self.assertNotIn("No public stable `v1.2.2` tag or Release exists", changelog)
-        self.assertIn("Version-v1.2.3%20candidate-yellow", readme)
+        self.assertIn("Version-v1.2.3-blue", readme)
+        self.assertIn("正式发布状态以对应 Release 记录为准", readme)
+        self.assertNotIn("Version-v1.2.3%20candidate", readme)
+        self.assertNotIn("未发布候选", readme)
         self.assertIn("v1.2.2` 已于 2026-11-11 正式发布", readme)
         self.assertNotIn("它仍是目标版本而非已发布稳定版", readme)
         self.assertIn("## v1.2.3 — correctness and release-state documentation", notes)
@@ -94,7 +97,11 @@ class DocumentationContractTest(unittest.TestCase):
         self.assertNotIn("--expected-ref refs/tags/v1.2.2", guide)
         self.assertIn("Historical snapshot", state)
         self.assertIn("v1.2.2 was released on 2026-11-11", state)
-        self.assertIn("v1.2.3 candidate", state)
+        self.assertIn("# Project state — v1.2.3 (tracked snapshot)", state)
+        self.assertIn("The npm, MCP and Python version identities are `1.2.3`", state)
+        self.assertIn("Historical archive boundary", state)
+        self.assertIn("Historical v1.2.2 candidate snapshot (2026-11-09)", state)
+        self.assertNotIn("v1.2.3 candidate metadata", state)
         self.assertIn("snapshot taken when the candidate is frozen, not a live status page", state)
 
     def test_documented_python_suite_count_matches_default_chain(self) -> None:
@@ -104,9 +111,14 @@ class DocumentationContractTest(unittest.TestCase):
         command = __import__("json").loads(package)["scripts"]["test:preflight"]
         suite_count = sum(part.strip().startswith("python3 test/") for part in command.split("&&"))
         self.assertEqual(suite_count, 12)
-        for document in (notes, changelog):
-            self.assertIn(f"all {suite_count} Python contract/regression files", document)
+        for document, heading in ((notes, "## v1.2.2 stable"), (changelog, "## [1.2.2] - 2026-11-11")):
+            current, historical = document.split(heading, 1)
+            self.assertIn(f"all {suite_count} Python contract/regression files", current)
+            self.assertIn("all 11 Python contract/regression files", historical)
+            self.assertNotIn("all 12 Python contract/regression files", historical)
             self.assertNotIn("all ten Python", document)
+        self.assertIn("十二个显式 Python", self.read("MANUAL.md"))
+        self.assertIn("12 套 Python", self.read("CODE-INDEX.md"))
 
     def test_user_docs_match_quickstart_and_kind_contracts(self) -> None:
         readme = self.read("README.md")
@@ -124,6 +136,25 @@ class DocumentationContractTest(unittest.TestCase):
         self.assertIn("安装器有意不自动复制", post_install)
         self.assertIn("npm run test:all", contributing)
         self.assertIn("PyYAML", contributing)
+
+    def test_release_documents_separate_historical_and_live_state(self) -> None:
+        readme = self.read("README.md")
+        state = self.read("PROJECT-STATE.md")
+        windows = self.read("WINDOWS-PORT.md")
+        index = self.read("CODE-INDEX.md")
+        wiki = self.read("WIKI.md")
+        for document in (readme, state):
+            self.assertNotIn("v1.2.3 candidate;", document)
+            self.assertNotIn("当前 `v1.2.3` 是未发布候选", document)
+        self.assertIn("不是 v1.2.3 的实时验收结果", windows)
+        self.assertNotIn("稳定版 1.2.2 exact-P", windows)
+        self.assertIn("历史 rc7 / hygiene 记录", index)
+        self.assertNotIn("本次 hygiene 修改", index)
+        self.assertIn("不再写删项目根配置", wiki)
+        self.assertIn("GITEA_SEARCH_CONFIG", wiki)
+        self.assertIn("test/quickstart-config-preservation.test.mjs", wiki)
+        self.assertIn("已有不同配置、软链接或非普通文件会被拒绝且保持不动", readme)
+        self.assertNotIn("并在结尾删除项目根", wiki)
 
 
 if __name__ == "__main__":

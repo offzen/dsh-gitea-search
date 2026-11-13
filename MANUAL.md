@@ -405,7 +405,7 @@ bash scripts/run-realdata-test.sh /srv/gitea-mirror
 ```bash
 npm test          # 单元测试：node --test 自动递归发现 test/*.test.mjs（Node 20/22/24 通用）
 npm run test:e2e  # 端到端：31 项合成回归断言（Linux / macOS）
-npm run test:all  # 两者都跑（CI 使用的完整组合）
+npm run test:all  # Node + 全部 Python 合约/回归 + E2E（完整默认链）
 ```
 
 > ⚠️ **两个测试集此前是割裂的**：v1.2.2 早期候选的 `npm test` 只跑 3 个 Windows 用例文件，
@@ -424,7 +424,7 @@ npm run test:all  # 两者都跑（CI 使用的完整组合）
 
 ### 9.4 候选维护与发布前核对
 
-默认 `npm run test:all` 由三层组成：Node 自动发现、十一个显式 Python 合约/回归文件（含双 forge gate-context 负向合同）、31 项 E2E。`scripts/collect-test-counts.py` 在 receipt job 内重新执行同一测试面并生成 schema-2 计数；不要用“外层 job 绿”代替实测计数。`test/profile-yaml.test.py` 需要 PyYAML；若缺少该依赖，默认测试及 receipt counter 必须失败而不是跳过；gate2/hosted receipt jobs 显式安装 PyYAML 后执行完整断言。
+默认 `npm run test:all` 由三层组成：Node 自动发现、十二个显式 Python 合约/回归文件（含双 forge gate-context 负向合同；清单以 `package.json` 为准）、31 项 E2E。完整 E2E 应在一次性源码副本和测试 mirror 运行；C9 配置保护已使用独立 `GITEA_SEARCH_CONFIG`，不再写删调用方根配置，但不据此承诺其他测试写入适合生产目录。`scripts/collect-test-counts.py` 在 receipt job 内重新执行同一测试面并生成 schema-2 计数；不要用“外层 job 绿”代替实测计数。`test/profile-yaml.test.py` 需要 PyYAML；若缺少该依赖，默认测试及 receipt counter 必须失败而不是跳过；gate2/hosted receipt jobs 显式安装 PyYAML 后执行完整断言。
 
 多 owner 部署中，仓库的规范身份是 `owner/repo`。枚举与搜索结果始终返回完整身份；读取时裸仓名仅在所有配置 owner 中唯一时兼容，同名仓会返回 `AMBIGUOUS_REPO`，不得依赖 owner 顺序。旧 FTS 索引没有保存 owner，不能可靠就地迁移；升级后若看到 `INDEX_REBUILD_REQUIRED`，应在确认镜像根与 owners 后执行 `gts --reindex --full`。全量重建完成前，搜索和增量更新会 fail closed，避免继续返回混淆数据。
 

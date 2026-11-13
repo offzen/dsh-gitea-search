@@ -16,13 +16,16 @@ const windowsCi = fs.readFileSync(new URL('../.github/workflows/windows-ci.yml',
 const packageGate = fs.readFileSync(new URL('../scripts/test-python-package.py', import.meta.url), 'utf8');
 const provenance = JSON.parse(fs.readFileSync(new URL('../PROVENANCE.json', import.meta.url), 'utf8'));
 
-test('1.2.3 candidate metadata is aligned without claiming release', () => {
+test('1.2.3 metadata and snapshot wording do not assert live release state', () => {
   assert.equal(pkg.version, '1.2.3');
   assert.equal(lock.version, '1.2.3');
   assert.equal(lock.packages[''].version, '1.2.3');
   assert.match(pyproject, /version = "1.2.3"/);
   assert.match(server, /version: '1.2.3'/);
-  assert.match(readme, /Version-v1.2.3%20candidate-yellow/);
+  assert.match(readme, /Version-v1.2.3-blue/);
+  assert.match(readme, /正式发布状态以对应 Release 记录为准/);
+  assert.match(readme, /版本号本身不证明工作树已通过发布门禁/);
+  assert.doesNotMatch(readme, /Version-v1\.2\.3%20candidate|当前 `v1\.2\.3` 是未发布候选|仍为未发布候选/);
 });
 
 test('candidate provenance is frozen to an exact content commit', () => {

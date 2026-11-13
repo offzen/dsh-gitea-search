@@ -1,13 +1,23 @@
-# Project state — v1.2.3 candidate; v1.2.2 released
+# Project state — v1.2.3 (tracked snapshot)
+
+This tracked snapshot describes v1.2.3 version content, not live publication status.
+The npm, MCP and Python version identities are `1.2.3`. Publication status is
+established by the release record; qualification is established by matching
+exact-SHA provenance, receipts and strict joint preflight. Historical evidence
+does not validate later tracked edits.
 
 The public stable v1.2.2 was released on 2026-11-11 at commit
-`fa1ebfa8d68643a101ab26ab05f60eb4bdcf1f58`. v1.2.3 candidate metadata
-is under development; this tracked tree is not a release announcement or proof
-of fresh exact-SHA hosted gates. The review below is a **Historical snapshot**
-from 2026-11-09: its deferred-promotion statements describe that earlier
-v1.2.2 candidate, not the current state of the published v1.2.2 release.
+`fa1ebfa8d68643a101ab26ab05f60eb4bdcf1f58`. The review below is a
+**Historical snapshot** of the earlier v1.2.2 integration work, not a live
+v1.2.3 status page or the final v1.2.2 release result.
 
 ## Historical v1.2.2 candidate snapshot (2026-11-09)
+
+> **Historical archive boundary:** Everything below records the earlier v1.2.2
+> integration context and its follow-up notes. The `1.2.2` identity, `0/3` receipts,
+> deferred promotion and stage-local non-goals are historical statements; none
+> establishes v1.2.3 status. References to "current", "new P" or "this scope"
+> below refer to that recorded context, not this document review.
 
 Snapshot date: 2026-11-09. This file is a publication-safe review surface for the local `release-integration/1.2.2` line derived from immutable baseline `52d05b6…`. Private forge coordinates, host-local evidence, detailed handoffs and operational ledgers remain outside the public release tree.
 

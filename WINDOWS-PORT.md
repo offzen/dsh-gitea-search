@@ -1,6 +1,6 @@
 # Windows 平台原生支持技术规范与移植架构
 
-> **适用版本**：`dsh-gitea-search` v1.2.2-rc / v1.2.2+  
+> **适用版本**：`dsh-gitea-search` v1.2.3（含 v1.2.2 原生适配历史）
 > **项目主页**：https://github.com/offzen/dsh-gitea-search  
 > **开源协议**：Apache-2.0
 
@@ -106,9 +106,9 @@ Windows 中文控制台默认代码页为 CP936 (GBK)，英文控制台常为 CP
 
 ## 四、Windows CI 验证矩阵
 
-下表区分**历史平台证据**与**当前候选要求**。任何历史 rc3/rc4、vtWSL 或 self-hosted 结果都不能替代稳定版 1.2.2 exact-P 的 GitHub-hosted schema-3 receipt；没有 fresh exact-P evidence 时，当前候选状态必须写成 `configured-unverified`：
+下表前六行是 **v1.2.2 移植阶段的历史平台记录**，后三行是发布门禁要求，不是 v1.2.3 的实时验收结果。历史 rc3/rc4、vtWSL、self-hosted 或其他提交的结果均不能替代最终 v1.2.3 exact-P 的 GitHub-hosted schema-3 receipt；缺少该 exact-P 证据时不能声称 `verified`，具体状态须读取严格预检结果：
 
-| 判据任务 | 验证目标 | 运行环境 | 验证结果 |
+| 判据任务 | 验证目标 | 运行环境 | 历史结果 / exact-P 要求 |
 |---|---|---|---|
 | **W5: PE Binary** | 验证 `pip install .` 产出真实 PE 二进制，`Get-Item` 验证 `4D 5A` (MZ) 头；排除自我递归死循环 | Win Server 2022 / Py 3.12 | ✅ **SUCCESS** |
 | **W6: PowerShell AST** | `setup-windows.ps1` 经 PowerShell 官方 AST Parser 语法解析，验证参数契约与 0 语法警告 | Win Server 2022 / Pwsh 7+ | ✅ **SUCCESS** |
@@ -116,9 +116,9 @@ Windows 中文控制台默认代码页为 CP936 (GBK)，英文控制台常为 CP
 | **W8: Injection Defense** | 测试 `cmd.exe` 参数转义往返一致性与 `& \| < > ^` 注入拦截 | Py 3.11/3.12 × Node 20/22 | ✅ **4/4 矩阵全绿** |
 | **W9: CRLF & Git Grep** | 在真实 bare 仓库与 CRLF 换行环境下验证路径形态与换行清洗 | Win Server 2022 | ✅ **SUCCESS** |
 | **平台单测集** | 覆盖 Windows 可执行分类、引号转义、路径归一化等 21 项测试断言 | Win Server 2022 | ✅ **21 / 21 PASS (0 fail, 0 skip)** |
-| **Packaging** | 隔离 venv 安装 wheel/sdist，PE launcher 完成 help/config/indexer smoke | GitHub-hosted Windows / Python 3.12 | **当前 exact-P 必须 fresh rerun；历史 native/hosted 仅作回归线索** |
-| **Installer** | PowerShell 5.1/7 `-WhatIf` 与隔离 profile 矩阵：Auto fail-closed、desktop/web/headless/all、幂等和显式 `-DshHome` | GitHub-hosted Windows | **当前 exact-P 必须 fresh rerun** |
-| **W10: Git Bash E2E** | Git for Windows Bash 执行平台适用 unit/E2E；POSIX-only 判据显式 skip | GitHub-hosted Windows / Git Bash | **当前 exact-P 必须 fresh rerun；receipt 必须依赖该 job 成功** |
+| **Packaging** | 隔离 venv 安装 wheel/sdist，PE launcher 完成 help/config/indexer smoke | GitHub-hosted Windows / Python 3.12 | **发布提交须有本 SHA 的完整验收；历史结果不转借** |
+| **Installer** | PowerShell 5.1/7 `-WhatIf` 与隔离 profile 矩阵：Auto fail-closed、desktop/web/headless/all、幂等和显式 `-DshHome` | GitHub-hosted Windows | **发布提交须有本 SHA 的完整验收** |
+| **W10: Git Bash E2E** | Git for Windows Bash 执行平台适用 unit/E2E；POSIX-only 判据显式 skip | GitHub-hosted Windows / Git Bash | **本 SHA 的 receipt 必须依赖该 job 成功** |
 
 ---
 

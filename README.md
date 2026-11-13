@@ -3,14 +3,14 @@
 [![License](https://img.shields.io/badge/License-Apache--2.0-C21325)](LICENSE)
 [![CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml)
 [![Windows CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/windows-ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions)
-[![Version](https://img.shields.io/badge/Version-v1.2.3%20candidate-yellow)](RELEASE-NOTES.md)
+[![Version](https://img.shields.io/badge/Version-v1.2.3-blue)](RELEASE-NOTES.md)
 [![Archive](https://img.shields.io/badge/Archive-v0.1.1%20(Pure%20Node)-orange)](https://github.com/offzen/dsh-gitea-search/tree/legacy-0.1.x)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows%20(Native)-brightgreen)](MANUAL.md#3-多场景部署流程)
 [![Node](https://img.shields.io/badge/Node-%3E%3D20.11-success)](package.json)
 
-> 最新公开稳定版 `v1.2.2` 已于 2026-11-11 正式发布；本分支的 `v1.2.3` 仍为未发布候选。此处的版本号不表示本树已通过 exact-SHA 发布门禁。
+> 本仓库文档描述 `v1.2.3` 的版本内容；正式发布状态以对应 Release 记录为准，验收结论以同一 exact-SHA 的 provenance、收据与严格预检为准。版本号本身不证明工作树已通过发布门禁。历史稳定版 `v1.2.2` 已于 2026-11-11 正式发布。
 
-给 DeepSeek Harness (DSH) 及任意支持 Model Context Protocol (MCP) 的 Agent 装上**跨仓极速检索能力**：一条命令将 Gitea 上全部仓库镜像到本地，Agent 用一次工具调用即可毫秒级搜遍所有代码、文档、配置文件与历史排障记录——不用逐个 clone、不把大文件塞进上下文、彻底消除大模型在海量信息翻找中的高额开销。
+给 DeepSeek Harness (DSH) 及任意支持 Model Context Protocol (MCP) 的 Agent 装上**跨仓极速检索能力**：一条命令将 Gitea 上全部仓库镜像到本地，Agent 用一次工具调用即可定位已同步镜像中的代码，或默认分支索引中的文档、配置与历史排障记录——不用逐个 clone、不把大文件塞进上下文、彻底消除大模型在海量信息翻找中的高额开销。
 
 > SPDX-License-Identifier: Apache-2.0 · 早期纯 Node.js 版本完整保留在 [`legacy-0.1.x`](https://github.com/offzen/dsh-gitea-search/tree/legacy-0.1.x) 分支。
 
@@ -54,7 +54,7 @@ git clone https://github.com/offzen/dsh-gitea-search.git && cd dsh-gitea-search
 bash scripts/quickstart-local.sh /tmp/dsh-gitea-search-demo
 ```
 
-该脚本还会在当前源码 checkout 根目录写入 `config.json`，并打印通用 MCP 客户端的 `mcpServers` JSON 示例。DSH 使用 `cordis.patch.yml`，请改用下方 DSH 配置模板；演示结束后若不再使用该配置，请删除生成的 `config.json`。
+该脚本默认在当前源码 checkout 根目录**新建** `config.json`；也可用 `GITEA_SEARCH_CONFIG` 指定已有父目录下的新配置路径。已有不同配置、软链接或非普通文件会被拒绝且保持不动；同一镜像参数生成的完全相同普通配置可无写入重跑。脚本还会打印通用 MCP 客户端的 `mcpServers` JSON 示例。DSH 使用 `cordis.patch.yml`，请改用下方 DSH 配置模板；演示结束后仅在确认不再需要时删除本次生成的配置，不要删除已有调用方配置。
 
 首次接入真实 Gitea 请使用下方平台安装流程；安装后按 [`docs/POST-INSTALL.md`](docs/POST-INSTALL.md) 完成首次同步、索引检查、独立 MCP 探针、宿主重载和实际工具调用。
 
@@ -164,10 +164,10 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-or
 
 ## Windows 原生跨平台支持
 
-`dsh-gitea-search` 的稳定版 `v1.2.2` 已提供原生 Windows 适配；`v1.2.2` 已于 2026-11-11 正式发布。当前 `v1.2.3` 是未发布候选，以下能力介绍不代表此新树已有跨平台 exact-SHA 发布收据：
+`v1.2.3` 保留并完善自 `v1.2.2` 引入的原生 Windows 适配。以下是实现能力说明；具体发布提交的跨平台验证状态以其 exact-SHA 证据为准：
 - **原生 PE 执行入口**：通过标准 `pip install .` 生成原生 `Scripts\gts.exe` PE 二进制启动器，免管理员权限直接运行；
 - **防注入命令安全与环境自适配**：`.exe` / `.com` 直执行；批处理降级模式先拒绝 shell 元字符与换行，再执行参数定界；自动穿透系统 `PATH`、venv 与 Scoop；
-- **跨平台证据边界**：`v1.2.2` 的发布是已完成的历史事实；`v1.2.3` 的历史候选曾有 macOS/Ubuntu 成功记录，但任何 R4 文档或版本变更都会形成新树，旧记录（以及尚未确认的 Windows 最终状态）均不能替代在私有 GitHub staging 获取新 exact P 的 Linux/macOS/Windows 收据与 strict joint preflight。公开晋级另需独立发布决定。
+- **跨平台证据边界**：历史提交的成功或未完结记录均只属于各自 exact SHA，不说明后续树的状态。任何代码、版本或文档改动都需重新冻结 D/P，在明确批准的私有 GitHub staging 获取新 exact P 的 Linux/macOS/Windows 收据并完成 strict joint preflight；正式发布仍需独立决定。
 
 > 📖 **深入了解 Windows 平台支持**：
 > - 完整技术架构、跨平台安全护栏与技术细节详见 **[WINDOWS-PORT.md](WINDOWS-PORT.md)**；
@@ -177,7 +177,7 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-or
 
 ## 文档导航
 
-- **[PROJECT-STATE.md](PROJECT-STATE.md)** —— 当前版本边界与历史 2026-11-09 候选快照、仓库角色及 tag 判定
+- **[PROJECT-STATE.md](PROJECT-STATE.md)** —— v1.2.3 版本内容与证据规则、历史 v1.2.2 快照和仓库角色
 - **[docs/POST-INSTALL.md](docs/POST-INSTALL.md)** —— 安装后的完整闭环：只读预检、首次同步、索引、独立 MCP、宿主工具表、实际搜索、回滚与可选 Agent skill
 - **[docs/BOUNDARIES.md](docs/BOUNDARIES.md)** —— 能力覆盖范围与明确不支持事项
 - **[docs/USAGE.md](docs/USAGE.md)** —— 四个工具参数速查、真实检索场景示范与防爆窗调用范例（**推荐首读**）
@@ -186,7 +186,7 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-or
 - **[docs/DEVELOPMENT-AND-RELEASE.md](docs/DEVELOPMENT-AND-RELEASE.md)** —— gate2/Linux 与 GitHub hosted clean-platform 门禁、D/P 候选及 exact-SHA receipt 契约
 - **[MANUAL.md](MANUAL.md)** —— 生产级高可用部署、Cron 定时同步、四层安全护栏机制、参数全表与故障排查手册
 - **[CHANGELOG.md](CHANGELOG.md)** / **[RELEASE-NOTES.md](RELEASE-NOTES.md)** —— 版本演进记录
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** —— 开发者贡献与双向同步准则
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** —— 开发者贡献、测试与独立发布准则
 
 ---
 
