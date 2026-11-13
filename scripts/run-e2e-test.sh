@@ -430,10 +430,12 @@ else:
     bash_exe, sync_arg = "bash", sync_sh
 
 class MockGiteaHandler(http.server.BaseHTTPRequestHandler):
+    requests = []
     def log_message(self, fmt, *args):
         pass
     def do_GET(self):
         auth = self.headers.get("Authorization", "")
+        self.requests.append((self.path, auth == "token test-gitea-token"))
         if auth != "token test-gitea-token":
             self.send_response(401)
             self.end_headers()
@@ -461,10 +463,10 @@ with socketserver.TCPServer(("127.0.0.1", 0), MockGiteaHandler) as httpd:
     t.start()
     env1 = {**os.environ, "GITEA_MIRROR_ROOT": mirror_root, "GITEA_URL": f"http://127.0.0.1:{port}", "GITEA_TOKEN": "test-gitea-token", "GITEA_OWNERS": "user-owner", "GITQ_ENUM": "api"}
     out1 = subprocess.check_output([bash_exe, sync_arg, "--list-only"], env=env1, text=True).strip().splitlines()
-    assert out1 == ["user-repo", "user-repo.wiki"], f"unexpected user repos: {out1}"
+    assert out1 == ["user-repo", "user-repo.wiki"], f"unexpected user repos: {out1}; mock requests (path, auth_ok): {MockGiteaHandler.requests}"
     env2 = {**os.environ, "GITEA_MIRROR_ROOT": mirror_root, "GITEA_URL": f"http://127.0.0.1:{port}", "GITEA_TOKEN": "test-gitea-token", "GITEA_OWNERS": "org-owner", "GITQ_ENUM": "api"}
     out2 = subprocess.check_output([bash_exe, sync_arg, "--list-only"], env=env2, text=True).strip().splitlines()
-    assert out2 == ["org-repo", "org-docs", "org-docs.wiki"], f"unexpected org repos: {out2}"
+    assert out2 == ["org-repo", "org-docs", "org-docs.wiki"], f"unexpected org repos: {out2}; mock requests (path, auth_ok): {MockGiteaHandler.requests}"
     httpd.shutdown()
 
 print("GITEA_API_SYNC_OK")

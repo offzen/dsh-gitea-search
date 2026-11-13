@@ -13,17 +13,19 @@ async function callDocs(t, relation, hasMore) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const mirror = path.join(dir, 'mirror');
   fs.mkdirSync(path.join(mirror, 'fixture'), { recursive: true });
-  const gts = path.join(dir, 'gts');
-  fs.writeFileSync(gts, `#!/bin/sh
-printf '%s\n' '${JSON.stringify({
+  const payloadFile = path.join(dir, 'payload.json');
+  fs.writeFileSync(payloadFile, JSON.stringify({
     total: 1,
     returned: 1,
     has_more: hasMore,
     total_relation: relation,
     results: [{ repo: 'fixture/demo', ref: 'main', path: 'README.md', title: 'README', snippet: 'hit' }],
     perf: { status: 'OK', elapsed_ms: 1 },
-  })}'
-`, { mode: 0o755 });
+  }) + '\n');
+  const isWin = process.platform === 'win32';
+  const gts = path.join(dir, isWin ? 'gts.cmd' : 'gts');
+  if (isWin) fs.writeFileSync(gts, '@echo off\r\ntype "%~dp0payload.json"\r\n');
+  else fs.writeFileSync(gts, '#!/bin/sh\ncat "$(dirname "$0")/payload.json"\n', { mode: 0o755 });
   const env = {
     ...process.env,
     HOME: path.join(dir, 'home'),

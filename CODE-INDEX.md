@@ -62,6 +62,7 @@
 | `test/next-actions.test.mjs` | MCP/CLI 失败分类、R1 `INDEX_UPDATE_FAILED` 与 C2 `GIT_SEARCH_FAILED` 归因，以及 v1.2.3 C1 查询/控制选项分隔与无副作用回归 |
 | `test/git-error-not-zero-hit.test.mjs` | C2 真实 Git fixture：clean no-hit、invalid ERE、坏仓+部分命中与 MCP 错误传播 |
 | `test/sync-index-failure.test.mjs` | R1 索引失败传播；R2 验证权威完整同步才允许 global prune，`-r`/降级/部分失败必须传 `--no-global-prune` |
+| `test/sync-stage6-contract.test.mjs` | D1/D2/D3/D5 同步合同，以及 macOS Bash 3.2 下变量邻接 UTF-8 文本必须使用花括号的静态回归门 |
 | `test/sync-default-head.test.mjs` | C4 real-Git fixture：多分支 `main→trunk` 收敛、post-fetch 不可达、既有/新建空 remote fail closed、固定 marker 与凭据 canary 不泄漏 |
 | `test/posix-path.test.mjs` | POSIX 反斜杠路径与 CR 语义 |
 | `test/probe-stdio.test.mjs` | MCP stdio 探针成功与错误路径 |

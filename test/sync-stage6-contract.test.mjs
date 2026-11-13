@@ -14,6 +14,15 @@ function writeExecutable(file, content) {
   fs.writeFileSync(file, content, { mode: 0o755 });
 }
 
+test('sync.sh braces shell variables before non-ASCII text for Bash 3.2', () => {
+  const sync = fs.readFileSync(path.join(ROOT, 'scripts', 'sync.sh'), 'utf8');
+  assert.doesNotMatch(
+    sync,
+    /\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7F]/u,
+    'macOS Bash 3.2 can absorb the first UTF-8 byte into an unbraced variable name under set -u',
+  );
+});
+
 function baseFixture(t, label) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `gts-${label}-`));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -48,6 +57,41 @@ function baseFixture(t, label) {
     sync: path.join(app, 'scripts', 'sync.sh'),
   };
 }
+
+test('API enumeration uses curl native timeout rather than a shell timeout wrapper', { skip: !POSIX }, (t) => {
+  const fx = baseFixture(t, 'api-native-timeout');
+  const curlCalls = path.join(fx.dir, 'curl.calls');
+  writeExecutable(path.join(fx.fakeBin, 'timeout'), '#!/bin/sh\necho invoked >> "$API_TIMEOUT_CALLS"\nexit 127\n');
+  writeExecutable(path.join(fx.fakeBin, 'curl'), `#!/bin/sh
+url=
+header=0
+max_time=0
+for arg in "$@"; do
+  case "$arg" in
+    http://*|https://*) url=$arg ;;
+    --max-time) max_time=1 ;;
+    @-) header=1 ;;
+  esac
+done
+[ "$max_time" = 1 ] && [ "$header" = 1 ] || exit 2
+printf '%s\\n' "$url" >> "$API_CURL_CALLS"
+case "$url" in
+  *users/fixture/repos*) printf '[{"name":"demo","has_wiki":true}]\\n'; exit 0 ;;
+  *) exit 22 ;;
+esac
+`);
+  const timeoutCalls = path.join(fx.dir, 'timeout.calls');
+  const result = spawnSync('/bin/bash', [fx.sync, '--list-only'], {
+    cwd: fx.dir,
+    env: { ...fx.env, GITQ_ENUM: 'api', GITEA_TOKEN: 'TEST_ONLY',
+      API_TIMEOUT_CALLS: timeoutCalls, API_CURL_CALLS: curlCalls },
+    encoding: 'utf8', timeout: 15_000,
+  });
+  assert.equal(result.status, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  assert.equal(result.stdout.trim(), ['demo', 'demo.wiki'].join('\n'));
+  assert.equal(fs.existsSync(timeoutCalls), false, 'API curl must not use external or shell timeout');
+  assert.ok(fs.readFileSync(curlCalls, 'utf8').includes('users/fixture/repos'));
+});
 
 test('D1 sync fails closed when the executor runs zero repository jobs', { skip: !POSIX }, (t) => {
   const fx = baseFixture(t, 'd1-zero-jobs');

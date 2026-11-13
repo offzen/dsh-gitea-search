@@ -19,6 +19,7 @@
 | `ls-tree` 失败不能表示“仓库现在没有可索引文件”，blob 读取失败也不能静默跳过；否则旧行会被删、head gate 会前移，甚至在第 201 个文件失败时留下前 200 行的部分提交。 | `lib/indexer.py:index_repo` 用单仓 savepoint 包住批次写入、删除、stale-ref 清理和 head gate；`test/owner-qualified-repos.test.py:C3FailClosedReadTests` 的产品改动前红态证明 tree failure 清空行且 late-blob failure 留下已提交批次，修复后完整 snapshot 保持且移除注入可重试。 | v1.2.3 C3 的增量索引；显式 `--full` 仍先删除旧 DB，需未来使用临时 DB 原子替换后才能把“保留旧索引”扩展到 full rebuild。 |
 | Git 路径是字节序列，不能用 `text=True` + `splitlines()`/空白 `split()` 解析 `ls-tree`；U+2028/U+0085 或前导/纯空白路径会被拆行或改名。 | C3 第二次 Claude High 审查给出具体反例；产品改为 `git ls-tree -r -z`、按 NUL/TAB 解析，真实 ` lead.md`、U+3000、U+2028、U+0085 fixture 全绿，缺 TAB 的假记录仍失败关闭。 | 当前 Git CLI `ls-tree -z` 字节合同；若 Git backend 或路径身份存储改为原始 bytes，需重审 UTF-8 replacement 的碰撞债务。 |
 | “本轮没看到仓库”只有在范围与枚举都可信时才是删除证据；局部同步、cache/disk 降级、任一仓 fetch/HEAD 失败或 C3 读取失败都不能授权全局 prune。 | `lib/indexer.py` 只在 unfiltered、所有 owner 可枚举且全仓索引成功后比较 `seen_repo_ids`；`scripts/sync.sh` 对 `-r`、`DEGRADED!=0`、`fail>0` 显式传 `--no-global-prune`；`R2StaleRepositoryPruneTests` 与 `test/sync-index-failure.test.mjs` 固定 trusted/partial/degraded 对照。 | v1.2.3 R2 的磁盘镜像→SQLite 派生索引；若未来同步器能原子提供权威远端 manifest、删除本地 mirror 或引入多 owner 编排，需重新定义 trust token 与 owner scope。 |
+| macOS 自带 Bash 3.2 在 `set -u` 下会把未加花括号、紧邻 UTF-8 文字的变量引用误解析为更长变量名，报出形如 `JOBS�: unbound variable`；这不是变量未赋值。 | `scripts/sync.sh` 对这类引用统一使用 `${name}`；`test/sync-stage6-contract.test.mjs` 用静态回归门拒绝 `\$name` 直接邻接非 ASCII 字节，并与真实 sync fixtures 一起通过。 | 当前由 Bash 3.2 解释的 UTF-8 shell 脚本；若最低 macOS shell 升级且实测解析合同改变，静态门可重审，但花括号写法仍兼容。 |
 
 ## 反直觉事实
 
@@ -37,6 +38,7 @@
 13. **捕获子进程 stderr 不等于把它接到 `PIPE` 就结束。** 若父进程只逐行读 stdout 而不并发 drain stderr，大量错误输出可能填满 pipe 并死锁；C2 用临时文件收 stderr，等 child 结束后再有界读取。证据：`bin/gts:_stream` 与 `test/git-error-not-zero-hit.test.mjs` 的 Git failure 路径。适用于当前同步 stdout 流式消费；若改成 `communicate()` 或异步双流读取，需重审。
 14. **成功 fetch 不会自动修正 bare mirror 的 `HEAD`。** 上游从 `main` 改到 `trunk` 后，`remote update --prune` 可以 rc=0，但本地 `HEAD` 仍指向旧分支甚至悬空；C4 必须另做远端 symref/OID 与本地 ref/OID 的闭环验证。证据：`test/sync-default-head.test.mjs` 在产品改动前精确复现，修复后多分支 fixture 通过。适用于当前 Git bare mirror；若 Git 原生同步命令未来显式承诺更新 symbolic `HEAD`，需重新实测。
 15. **本地 owner 目录为空不等于枚举失败。** 对直接索引而言，已存在且成功列举为空的 owner 是“最后一个 mirror 已移走”的必要证据；把空集合一律当 degraded 会让 canonical stale-repo 缺陷永远无法收敛。相反，缺失 owner、`listdir` 异常或 sync 的 cache/disk fallback 才必须禁用全局 prune。证据：`test_r2_trusted_empty_owner_prunes_last_vanished_repo` 与 missing-owner/listdir/sync-degraded 对照测试。适用于 v1.2.3 本地目录枚举；若 owner 是可能静默卸载的 mountpoint，空目录与未挂载仍有歧义，需未来引入显式 mount/manifest 信号。
+16. **跨平台测试里的 fake CLI 也必须遵守被测平台的 launcher 合同。** 在 Windows 上生成无扩展名 `#!/bin/sh` stub 会被 `lib/server.mjs` 正确拒绝，不能据此放宽产品的 fail-closed；`test/fts-pagination-metadata.test.mjs` 改为 POSIX `gts`、Windows `gts.cmd`，两端都从独立 `payload.json` 原样输出，避免 JSON 进入 shell/cmd 解析层。适用于当前 `.exe/.com` direct、`.cmd/.bat` shell 合同；若 Windows launcher 类型改变，需同步重审测试夹具。
 
 ## 固定动作序列
 

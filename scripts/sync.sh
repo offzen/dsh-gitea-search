@@ -131,13 +131,13 @@ _fetch_gitea_endpoint_repos() {
   while :; do
     if [ -n "$API_TOKEN" ]; then
       out=$(printf 'Authorization: token %s\n' "$API_TOKEN" | \
-          timeout 30 curl -fsS --connect-timeout 8 -H @- \
+          curl -fsS --connect-timeout 8 --max-time 30 -H @- \
           "$API_BASE/api/v1/$ep?limit=50&page=$page" 2>/dev/null) || {
         rm -f "$tmp"
         return 1
       }
     else
-      out=$(timeout 30 curl -fsS --connect-timeout 8 \
+      out=$(curl -fsS --connect-timeout 8 --max-time 30 \
           "$API_BASE/api/v1/$ep?limit=50&page=$page" 2>/dev/null) || {
         rm -f "$tmp"
         return 1
@@ -468,7 +468,7 @@ case "$JOBS" in
     ;;
 esac
 
-say "== 同步 $REMOTE:$OWNER —— ${#repos[@]} 个仓，并发 $JOBS，目标 $ROOT/$OWNER =="
+say "== 同步 $REMOTE:$OWNER —— ${#repos[@]} 个仓，并发 ${JOBS}，目标 $ROOT/$OWNER =="
 start=$(date +%s)
 fail=0
 sync_status=ok
@@ -534,7 +534,7 @@ if [ -f "$INDEXER" ]; then
     log "$index_error"
   fi
 else
-  log "WARN 未找到索引核心 $INDEXER，本轮跳过增量索引"
+  log "WARN 未找到索引核心 ${INDEXER}，本轮跳过增量索引"
 fi
 
 dur=$(( $(date +%s) - start ))
@@ -555,13 +555,13 @@ printf 'time=%s host=%s ok=%d fail=%d total=%d dur=%ds degraded=%d enum_source=%
     "$(date '+%F %T')" "$HOST" "$ok" "$fail" "${#repos[@]}" "$dur" "$DEGRADED" \
     "${ENUM_SOURCE:-none}" "$CACHE_STALE" "$TRANSPORT" "$sync_scope" "$sync_status" "$last_ok_age_h" "$index_status" "$index_rc" > "$ROOT/state/last_status"
 [ "$sync_scope" = full ] && [ "$fail" -eq 0 ] && [ "$sync_status" = ok ] && [ "$index_status" != failed ] && date '+%F %T' > "$ROOT/state/last_ok"
-summary="完成：成功 $ok，失败 $fail，用时 ${dur}s（${#repos[@]} 个仓，枚举源=${ENUM_SOURCE:-none}）"
+summary="完成：成功 ${ok}，失败 ${fail}，用时 ${dur}s（${#repos[@]} 个仓，枚举源=${ENUM_SOURCE:-none}）"
 if [ "$DEGRADED" = 1 ]; then
   case "${ENUM_SOURCE:-}" in
-    cache) [ "$CACHE_STALE" = 1 ] && summary="$summary【枚举降级：用过期缓存，新仓可能未被发现】" \
-                                || summary="$summary【枚举降级：用缓存，新仓可能未被发现】" ;;
-    disk)  summary="$summary【枚举降级：按本地目录同步，新仓不会被发现】" ;;
-    *)     summary="$summary【枚举降级】" ;;
+    cache) [ "$CACHE_STALE" = 1 ] && summary="${summary}【枚举降级：用过期缓存，新仓可能未被发现】" \
+                                || summary="${summary}【枚举降级：用缓存，新仓可能未被发现】" ;;
+    disk)  summary="${summary}【枚举降级：按本地目录同步，新仓不会被发现】" ;;
+    *)     summary="${summary}【枚举降级】" ;;
   esac
 fi
 say "$summary"
