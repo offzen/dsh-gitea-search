@@ -1,17 +1,36 @@
 # Release Notes - DeepSeek Harness (DSH) Gitea Search
 
-## v1.2.2 candidate (Unreleased) — cross-platform search and fail-closed release evidence
+## v1.2.3 candidate (Unreleased) — correctness and release-state documentation
+
+The current development tree is not a tagged release. R4 aligns version metadata
+and distinguishes the published v1.2.2 release from this candidate; earlier hosted
+macOS/Ubuntu evidence belongs to a different exact P and cannot validate R4 edits.
+Hosted Windows status for that earlier candidate is not established here. A new D/P
+freeze, fresh exact-P platform evidence and a separate release decision remain
+required before v1.2.3 can be called release-ready or published.
+
+- Sync/index failures are reported rather than silently accepted; incomplete
+  Git/index reads fail closed and stale repository rows are pruned only on trusted
+  complete builds.
+- Git/ERE failures are distinct from no hits, validated mirror HEAD follows the
+  upstream default branch, and document pagination reports returned/has-more truth.
+- The sample config contains only effective keys; ordinary ASCII ignored keys
+  receive key-path-only warnings without value disclosure. Arbitrary Unicode
+  warning-text parity and MCP warning display are not claimed.
+
+## v1.2.2 stable (2026-11-11) — cross-platform search and fail-closed release evidence
 
 > **Documentation and tag-provenance clarification.** The turn-count, token-volume,
 > and 85% saving figures retained in the v1.2.1 historical notes below were early,
 > unbenchmarked observations without a standardized methodology. They are preserved
 > only as historical record and are not a current performance promise. The private
-> canonical and prerelease forges also retain an immutable legacy annotated
-> `v1.2.2` tag at commit `9db7010…` (tree `e3964dd…`). A later public candidate with
-> the same version name is different content. Cross-forge builds, SBOMs, mirrors and
-> incident reports must therefore identify the full commit or tree, not assume that
-> the tag name alone denotes identical bytes. This disclosure records the unresolved
-> naming risk; it is not a release announcement or a risk-acceptance decision.
+> canonical and prerelease forges retain an immutable legacy annotated `v1.2.2`
+> tag at commit `9db7010…` (tree `e3964dd…`). The public stable `v1.2.2` tag and
+> Release were published on 2026-11-11 at commit
+> `fa1ebfa8d68643a101ab26ab05f60eb4bdcf1f58`; these are different content.
+> Cross-forge builds, SBOMs, mirrors and incident reports must identify the full
+> commit or tree rather than assume that the tag name denotes identical bytes.
+> This disclosure does not authorize moving or recreating either tag.
 
 - `verified` now requires four schema-3 receipts, deep forge evidence, exact
   workflow/ref/run identity, fresh complete job listings, GitHub-hosted runner

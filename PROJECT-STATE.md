@@ -1,4 +1,13 @@
-# Project state — v1.2.2 stable candidate review
+# Project state — v1.2.3 candidate; v1.2.2 released
+
+The public stable v1.2.2 was released on 2026-11-11 at commit
+`fa1ebfa8d68643a101ab26ab05f60eb4bdcf1f58`. v1.2.3 candidate metadata
+is under development; this tracked tree is not a release announcement or proof
+of fresh exact-SHA hosted gates. The review below is a **Historical snapshot**
+from 2026-11-09: its deferred-promotion statements describe that earlier
+v1.2.2 candidate, not the current state of the published v1.2.2 release.
+
+## Historical v1.2.2 candidate snapshot (2026-11-09)
 
 Snapshot date: 2026-11-09. This file is a publication-safe review surface for the local `release-integration/1.2.2` line derived from immutable baseline `52d05b6…`. Private forge coordinates, host-local evidence, detailed handoffs and operational ledgers remain outside the public release tree.
 

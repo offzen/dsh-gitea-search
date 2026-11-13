@@ -3,10 +3,12 @@
 [![License](https://img.shields.io/badge/License-Apache--2.0-C21325)](LICENSE)
 [![CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions/workflows/ci.yml)
 [![Windows CI](https://github.com/offzen/dsh-gitea-search/actions/workflows/windows-ci.yml/badge.svg)](https://github.com/offzen/dsh-gitea-search/actions)
-[![Version](https://img.shields.io/badge/Version-v1.2.2%20candidate-yellow)](RELEASE-NOTES.md)
+[![Version](https://img.shields.io/badge/Version-v1.2.3%20candidate-yellow)](RELEASE-NOTES.md)
 [![Archive](https://img.shields.io/badge/Archive-v0.1.1%20(Pure%20Node)-orange)](https://github.com/offzen/dsh-gitea-search/tree/legacy-0.1.x)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows%20(Native)-brightgreen)](MANUAL.md#3-多场景部署流程)
 [![Node](https://img.shields.io/badge/Node-%3E%3D20.11-success)](package.json)
+
+> 最新公开稳定版 `v1.2.2` 已于 2026-11-11 正式发布；本分支的 `v1.2.3` 仍为未发布候选。此处的版本号不表示本树已通过 exact-SHA 发布门禁。
 
 给 DeepSeek Harness (DSH) 及任意支持 Model Context Protocol (MCP) 的 Agent 装上**跨仓极速检索能力**：一条命令将 Gitea 上全部仓库镜像到本地，Agent 用一次工具调用即可毫秒级搜遍所有代码、文档、配置文件与历史排障记录——不用逐个 clone、不把大文件塞进上下文、彻底消除大模型在海量信息翻找中的高额开销。
 
@@ -127,6 +129,12 @@ MCP server 声明的 4 个裸工具名如下；宿主侧实际注册名需在安
 >
 > **安装完成不等于已经能搜到内容。** 连接真实 Gitea 后还要完成首次同步、索引检查、独立 MCP 探针、宿主 profile 重载，并在实际会话中调用一次工具。统一清单见 **[docs/POST-INSTALL.md](docs/POST-INSTALL.md)**。
 
+### 第一次使用：先选一条路径
+
+- **只想试用、不连接 Gitea**：运行上面的 Zero-Gitea 演示；它只生成合成仓库，还会在源码目录写入演示用 `config.json`，不会导入真实仓库。准备接入真实仓库前，先检查这个文件是否仍指向演示镜像，避免后续调用误用演示配置。
+- **要搜索自己的 Gitea 仓库**：准备真实 owner、镜像存放路径及可用的只读 token **或** SSH 通道，选择下面对应平台的安装方式；安装器不自动下载远端仓库。然后按 [安装后闭环](docs/POST-INSTALL.md) 显式同步、核对索引与 MCP，并在宿主中执行一次 `list_gitea_repos` → 搜索 → 小窗口读取。同步会写本地镜像并访问 Gitea，不是只读自检。
+- **原生 Windows**：不要在 PowerShell 中直接执行 `scripts/sync.sh` 或照搬 POSIX 行内环境变量写法；首次镜像同步需 Git Bash 或已有的 Git 镜像流程。平台命令及限制见 [MANUAL §3.3](MANUAL.md#33-场景-c原生-windows-环境部署) 和 [安装后闭环](docs/POST-INSTALL.md#平台说明)。
+
 ### 三平台上手命令
 
 ```bash
@@ -148,18 +156,18 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-or
 
 > 📦 **发行渠道说明**：npm 上的 `dsh-gitea-search@0.1.1`（MIT、纯 Node、另一维护者 `rayuai`）是本项目**早期遗留原型**，与当前 Apache-2.0 代码库无关；PyPI 亦无官方包。请只从本仓库源码或经哈希核验的制品安装 —— `pip install '.[fts]'` 走本地源码，不会从注册表拉取本项目。
 
-> ⚠️ **v1.2.2 早期候选用户请注意**：该版本在 Linux / macOS 上存在路径归一化回归
-> （读取文件名含反斜杠的文件时会静默返回另一个文件的内容）。请直接使用 **v1.2.2-rc2+**，
-> 详见 [CHANGELOG](CHANGELOG.md#122-rc2)。
+> ⚠️ **v1.2.2 早期候选用户请注意**：早期 rc 在 Linux / macOS 上存在路径归一化回归
+> （读取文件名含反斜杠的文件时会静默返回另一个文件的内容）。请升级到已发布的
+> **v1.2.2 稳定版**（或至少 v1.2.2-rc2）；详见 [CHANGELOG](CHANGELOG.md#122-rc2)。
 
 ---
 
 ## Windows 原生跨平台支持
 
-`dsh-gitea-search` 的 `v1.2.2` 稳定版候选提供原生 Windows 适配；它仍是目标版本而非已发布稳定版，正式发布依赖同一 exact P 的 canonical hosted evidence 与无放宽 strict joint preflight：
+`dsh-gitea-search` 的稳定版 `v1.2.2` 已提供原生 Windows 适配；`v1.2.2` 已于 2026-11-11 正式发布。当前 `v1.2.3` 是未发布候选，以下能力介绍不代表此新树已有跨平台 exact-SHA 发布收据：
 - **原生 PE 执行入口**：通过标准 `pip install .` 生成原生 `Scripts\gts.exe` PE 二进制启动器，免管理员权限直接运行；
 - **防注入命令安全与环境自适配**：`.exe` / `.com` 直执行；批处理降级模式先拒绝 shell 元字符与换行，再执行参数定界；自动穿透系统 `PATH`、venv 与 Scoop；
-- **跨平台证据边界**：早期 Windows hosted 矩阵已取得历史绿灯；`v1.2.2` 候选的准确发布判据仍须先在显式批准的私有 GitHub staging 上，为最终 exact P 重新获取 fresh GitHub-hosted Linux/macOS/Windows 收据与 forge evidence，并通过 strict joint preflight；只有随后独立批准，才可将逐字节相同的候选晋级到公开仓，历史结果不可移用。
+- **跨平台证据边界**：`v1.2.2` 的发布是已完成的历史事实；`v1.2.3` 的历史候选曾有 macOS/Ubuntu 成功记录，但任何 R4 文档或版本变更都会形成新树，旧记录（以及尚未确认的 Windows 最终状态）均不能替代在私有 GitHub staging 获取新 exact P 的 Linux/macOS/Windows 收据与 strict joint preflight。公开晋级另需独立发布决定。
 
 > 📖 **深入了解 Windows 平台支持**：
 > - 完整技术架构、跨平台安全护栏与技术细节详见 **[WINDOWS-PORT.md](WINDOWS-PORT.md)**；
@@ -169,7 +177,7 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1 -Owners my-or
 
 ## 文档导航
 
-- **[PROJECT-STATE.md](PROJECT-STATE.md)** —— 当前候选、仓库角色、tracked-tree 处置与 tag 判定
+- **[PROJECT-STATE.md](PROJECT-STATE.md)** —— 当前版本边界与历史 2026-11-09 候选快照、仓库角色及 tag 判定
 - **[docs/POST-INSTALL.md](docs/POST-INSTALL.md)** —— 安装后的完整闭环：只读预检、首次同步、索引、独立 MCP、宿主工具表、实际搜索、回滚与可选 Agent skill
 - **[docs/BOUNDARIES.md](docs/BOUNDARIES.md)** —— 能力覆盖范围与明确不支持事项
 - **[docs/USAGE.md](docs/USAGE.md)** —— 四个工具参数速查、真实检索场景示范与防爆窗调用范例（**推荐首读**）

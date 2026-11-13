@@ -5,14 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.2] - Unreleased
+## [1.2.3] - Unreleased
 
-> **Candidate scope note (not a release announcement).** This line contains the
-> owner-qualified repository identity work and the Windows legacy-index SQLite handle
-> release. It supersedes the earlier private-only freeze published as `v1.2.2` on the
-> private forges (exact P `9db7010…`); that private tag is immutable and is **not**
-> moved, deleted or recreated by this entry. No public stable `v1.2.2` tag or Release
-> exists, and the date stays `Unreleased` until formal exact-P evidence is closed.
+This is the current development candidate, not a published tag or Release. The
+v1.2.2 stable release below is historical; its hosted evidence does not validate
+this newer tree. Changes to the tracked tree require a new exact D/P candidate and
+fresh platform evidence before a separate release decision.
+
+### Fixed
+- Separate published v1.2.2 status from the v1.2.3 candidate in release docs and
+  documentation contracts; align npm, Python, lockfile and MCP version metadata.
+- Propagate sync/index failures and preserve last-success state; fail closed on
+  incomplete Git tree/blob reads and prune vanished repositories only after a
+  complete trusted build.
+- Distinguish Git/regex search failures from no hits, converge validated mirror
+  default-branch HEAD, and make FTS pagination report returned/has-more truth.
+- Harden query/control separation, file-reading windows, repository filters,
+  selected-branch commit search and effective config-key warnings. R5 warning
+  parity is limited to ordinary ASCII ignored keys; arbitrary Unicode key-text
+  parity and MCP warning visibility are not claimed.
+
+## [1.2.2] - 2026-11-11
+
+> **Published stable release.** The public tag and Release were confirmed at
+> commit `fa1ebfa8d68643a101ab26ab05f60eb4bdcf1f58`. Earlier private forges
+> retain a different, immutable legacy `v1.2.2` tag (exact P `9db7010…`), which is
+> not moved, deleted or recreated here. Cross-forge consumers must compare full
+> commit/tree identities rather than assuming equal bytes from the tag name.
 
 Closes the remaining rc6 audit findings. The default verifier is fail-closed and
 can only report `verified` when all four schema-3 receipts, deep forge evidence,

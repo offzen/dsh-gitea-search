@@ -71,19 +71,26 @@ class DocumentationContractTest(unittest.TestCase):
         self.assertIn("--upgrade build jieba PyYAML", gate2)
         self.assertIn("Gitea does not provide that GitHub-only variable", self.read("docs/DEVELOPMENT-AND-RELEASE.md"))
 
-    def test_candidate_status_and_release_ref_stay_truthful(self) -> None:
+    def test_released_122_and_unreleased_123_stay_truthful(self) -> None:
         readme = self.read("README.md")
         changelog = self.read("CHANGELOG.md")
         notes = self.read("RELEASE-NOTES.md")
         guide = self.read("docs/DEVELOPMENT-AND-RELEASE.md")
         state = self.read("PROJECT-STATE.md")
-        self.assertIn("[1.2.2] - Unreleased", changelog)
-        self.assertIn("v1.2.2%20candidate", readme)
-        self.assertIn("v1.2.2` 稳定版候选", readme)
-        self.assertNotIn("`dsh-gitea-search` 的稳定版 `v1.2.2`", readme)
-        self.assertIn("v1.2.2 candidate (Unreleased)", notes)
+        self.assertIn("[1.2.3] - Unreleased", changelog)
+        self.assertIn("[1.2.2] - 2026-11-11", changelog)
+        self.assertNotIn("[1.2.2] - Unreleased", changelog)
+        self.assertNotIn("No public stable `v1.2.2` tag or Release exists", changelog)
+        self.assertIn("Version-v1.2.3%20candidate-yellow", readme)
+        self.assertIn("v1.2.2` 已于 2026-11-11 正式发布", readme)
+        self.assertNotIn("它仍是目标版本而非已发布稳定版", readme)
+        self.assertIn("v1.2.3 candidate (Unreleased)", notes)
+        self.assertIn("v1.2.2 stable (2026-11-11)", notes)
         self.assertIn("--expected-ref refs/heads/release/<exact-p-candidate>", guide)
         self.assertNotIn("--expected-ref refs/tags/v1.2.2", guide)
+        self.assertIn("Historical snapshot", state)
+        self.assertIn("v1.2.2 was released on 2026-11-11", state)
+        self.assertIn("v1.2.3 candidate", state)
         self.assertIn("snapshot taken when the candidate is frozen, not a live status page", state)
 
     def test_documented_python_suite_count_matches_default_chain(self) -> None:
