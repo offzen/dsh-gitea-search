@@ -1,13 +1,13 @@
 # Release Notes - DeepSeek Harness (DSH) Gitea Search
 
-## v1.2.3 candidate (Unreleased) — correctness and release-state documentation
+## v1.2.3 — correctness and release-state documentation
 
-The current development tree is not a tagged release. R4 aligns version metadata
-and distinguishes the published v1.2.2 release from this candidate; earlier hosted
-macOS/Ubuntu evidence belongs to a different exact P and cannot validate R4 edits.
-Hosted Windows status for that earlier candidate is not established here. A new D/P
-freeze, fresh exact-P platform evidence and a separate release decision remain
-required before v1.2.3 can be called release-ready or published.
+This version aligns metadata and separates the published v1.2.2 release from the
+v1.2.3 changes. Evidence for an earlier candidate belongs to its exact commit;
+it does not validate later tracked edits, even when those edits affect only
+release documentation. Each final content commit requires a new provenance-only
+commit, fresh exact-commit platform evidence, and a separate release decision.
+The release record, not this tracked snapshot, establishes publication status.
 
 - Sync/index failures are reported rather than silently accepted; incomplete
   Git/index reads fail closed and stale repository rows are pruned only on trusted

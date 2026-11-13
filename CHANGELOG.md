@@ -5,12 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.3] - Unreleased
+## [1.2.3]
 
-This is the current development candidate, not a published tag or Release. The
-v1.2.2 stable release below is historical; its hosted evidence does not validate
-this newer tree. Changes to the tracked tree require a new exact D/P candidate and
-fresh platform evidence before a separate release decision.
+This entry describes the v1.2.3 changes, not their live publication status.
+Evidence for v1.2.2 or any earlier v1.2.3 candidate does not validate a later
+tracked tree. Each final content commit requires its own provenance-only commit,
+exact-commit platform evidence, and a separate release decision. Consult the
+corresponding exact-commit evidence and release record for the final status.
 
 ### Fixed
 - Separate published v1.2.2 status from the v1.2.3 candidate in release docs and
