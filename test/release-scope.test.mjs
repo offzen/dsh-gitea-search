@@ -26,7 +26,12 @@ test('package, lockfile, pyproject, and MCP server identity stay aligned without
   assert.match(pyproject, new RegExp(`version = "${pkg.version.replace(/\./g, '\\.')}"`));
   assert.match(server, /const SERVER_NAME = 'gitea-search-mcp'/);
   assert.match(server, /PKG_META\.version/);
-  assert.doesNotMatch(server, /node-fallback|GITEA_FORCE_NODE_FALLBACK|needsFallback/);
+  const forbiddenFallback = new RegExp([
+    ['node', 'fallback'].join('-'),
+    ['GITEA', 'FORCE', 'NODE', 'FALLBACK'].join('_'),
+    ['needs', 'Fallback'].join(''),
+  ].join('|'));
+  assert.doesNotMatch(server, forbiddenFallback);
   assert.match(readme, /正式发布状态以对应 Release 记录为准/);
   assert.match(readme, /版本号本身不证明工作树已通过发布门禁/);
 });

@@ -1,15 +1,18 @@
-# Project state — v1.2.3 (tracked snapshot)
+# Project state — v2.0.0 (tracked snapshot)
 
-This tracked snapshot describes v1.2.3 version content, not live publication status.
-The npm, MCP and Python version identities are `1.2.3`. Publication status is
-established by the release record; qualification is established by matching
-exact-SHA provenance, receipts and strict joint preflight. Historical evidence
-does not validate later tracked edits.
+This tracked snapshot describes `v2.0.0` (`gitea-search-mcp`) convergence content, not
+live publication status. Package and distribution identities are unified as
+`gitea-search-mcp`, with `package.json`, `package-lock.json`, `pyproject.toml`, and
+dynamic MCP server version kept synchronized until final candidate freeze. Publication
+status is established by the release record; qualification is established by matching
+exact-SHA provenance, receipts and strict joint preflight. Historical evidence does
+not validate later tracked edits.
 
 The public stable v1.2.2 was released on 2026-11-11 at commit
-`fa1ebfa8d68643a101ab26ab05f60eb4bdcf1f58`. The review below is a
+`fa1ebfa8d68643a101ab26ab05f60eb4bdcf1f58`, and `v1.2.3` was published at commit
+`c65f71c28e873a0932923d5fdfb931aa24b99e0a`. The review below is a
 **Historical snapshot** of the earlier v1.2.2 integration work, not a live
-v1.2.3 status page or the final v1.2.2 release result.
+v2.0.0 status page or the final v1.2.2 / v1.2.3 release result.
 
 ## Historical v1.2.2 candidate snapshot (2026-11-09)
 
@@ -91,4 +94,4 @@ The private prerelease and hosted-staging path records the repository where each
 ## Review links
 
 - Private source and prerelease coordinates: intentionally supplied at runtime and omitted from this public tree.
-- Public project: `https://github.com/offzen/dsh-gitea-search`.
+- Public project: `https://github.com/offzen/gitea-search-mcp` (renamed from `offzen/dsh-gitea-search`).

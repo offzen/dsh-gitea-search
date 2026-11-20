@@ -1,7 +1,7 @@
 # Windows 平台原生支持技术规范与移植架构
 
-> **适用版本**：`dsh-gitea-search` v1.2.3（含 v1.2.2 原生适配历史）
-> **项目主页**：https://github.com/offzen/dsh-gitea-search  
+> **适用版本**：`gitea-search-mcp` v2.0.0（继承自 v1.2.2/v1.2.3 原生适配历史）
+> **项目主页**：https://github.com/offzen/gitea-search-mcp  
 > **开源协议**：Apache-2.0
 
 ---
@@ -89,8 +89,8 @@ Windows 开发者的环境拓扑极其多样（全局 Python、venv、Conda、Sc
 
 ### 6. 免提权用户目录安装与资源动态定位 (User-Base Fallback)
 针对受限开发机或未提权的普通用户，`pip install --user .` 会将数据文件装入 `%APPDATA%\Python\PythonXX\share\...`。  
-- `pyproject.toml` 将数据文件独立分配至 `share/dsh-gitea-search/` 目录，彻底杜绝数据文件覆盖 `Scripts\gts.exe` 入口引发的 `RecursionError` 无限递归；
-- `gts_cli.py` 在加载时动态包含 `site.USER_BASE` 候选路径，保证普通用户权限下安装即用。
+- `pyproject.toml` 将数据文件独立分配至 `share/gitea-search-mcp/` 目录，彻底杜绝数据文件覆盖 `Scripts\gts.exe` 入口引发的 `RecursionError` 无限递归；
+- `gts_cli.py` 在加载时优先探测 `share/gitea-search-mcp/` 并保留 `share/dsh-gitea-search/` 兼容回退，同时动态包含 `site.USER_BASE` 候选路径，保证普通用户权限下安装即用。
 
 ### 7. 部署脚本安全字符串注入 (Configuration Escaping Guard)
 在执行 `setup-windows.ps1` 将 MCP 配置注入 DSH 配置文件（`cordis.patch.yml`）时：
@@ -106,7 +106,7 @@ Windows 中文控制台默认代码页为 CP936 (GBK)，英文控制台常为 CP
 
 ## 四、Windows CI 验证矩阵
 
-下表前六行是 **v1.2.2 移植阶段的历史平台记录**，后三行是发布门禁要求，不是 v1.2.3 的实时验收结果。历史 rc3/rc4、vtWSL、self-hosted 或其他提交的结果均不能替代最终 v1.2.3 exact-P 的 GitHub-hosted schema-3 receipt；缺少该 exact-P 证据时不能声称 `verified`，具体状态须读取严格预检结果：
+下表前六行是 **v1.2.2 移植阶段的历史平台记录**，后三行是发布门禁要求，不是 v2.0.0（或历史 v1.2.3）的实时验收结果。历史 rc3/rc4、vtWSL、self-hosted 或其他提交的结果均不能替代最终 exact-P 的 GitHub-hosted schema-3 receipt；缺少该 exact-P 证据时不能声称 `verified`，具体状态须读取严格预检结果：
 
 | 判据任务 | 验证目标 | 运行环境 | 历史结果 / exact-P 要求 |
 |---|---|---|---|

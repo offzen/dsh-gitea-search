@@ -1,16 +1,16 @@
 # 安装后的闭环验收
 
-适用于 Linux、macOS 与 Windows 的 `dsh-gitea-search` 安装完成后核验。这里把“依赖安装完成”推进到“实际宿主里可以搜索”；检查脚本本身不会自动同步 Gitea、修改 profile、重建索引或重启 DSH。
+适用于 Linux、macOS 与 Windows 的 `gitea-search-mcp` 安装完成后核验。这里把“依赖安装完成”推进到“实际宿主里可以搜索”；检查脚本本身不会自动同步 Gitea、修改 profile、重建索引或重启 DSH。从 `v1.2.x` 升级的用户另见 [`UPGRADING.md`](../UPGRADING.md)。
 
 ## 完成标准
 
 只有下面各项都完成，才算首次接入结束：
 
 - effective config 指向真实 owner 与预期镜像根；
-- 镜像至少包含一个仓库，FTS 索引存在且与镜像对齐；
-- 独立 MCP stdio 探针通过并列出四个裸工具名；
-- 选定的宿主 profile 已重载，实际工具表中能找到对应注册名；
-- 在宿主会话里调用 `list_gitea_repos` 和一次搜索得到预期结果。
+- 镜像至少包含一个仓库，FTS 索引存在、`PRAGMA user_version = 2` 且与镜像对齐；
+- 独立 MCP stdio 探针通过并列出四个中性裸工具名；
+- 选定的宿主配置/profile 已重载，实际工具表中能找到对应注册名；
+- 在宿主会话里调用 `list_repositories` 和一次搜索得到预期结果。
 
 ## 1. 确认配置与镜像
 
@@ -70,13 +70,13 @@ Windows PowerShell:
 powershell -ExecutionPolicy Bypass -File scripts\doctor-mcp.ps1 -Verify
 ```
 
-探针会对**独立启动的 server 进程**执行 MCP initialize、tools/list 与一次 `search_gitea` 调用。它不能证明 DSH 已加载 profile 或宿主侧注册名是什么。
+探针会对**独立启动的 server 进程**执行 MCP initialize、tools/list、一次 `search_code` 调用及一次旧别名转发验证，并只读核验本地 SQLite 索引的 `PRAGMA user_version`（若为旧版 `0/1` 会提示执行 `gts --reindex --full`）。它不能证明宿主已加载配置或宿主侧注册名是什么。
 
-MCP 裸工具名为 `search_gitea`、`search_gitea_docs`、`read_gitea_file`、`list_gitea_repos`。宿主可能添加前缀或改名；profile 重载后请在实际工具表核对。示例 `mcp__gitea-search__search_gitea` 仅为命名示意，不保证每个宿主都使用该格式。
+MCP 裸工具名为 `search_code`、`search_docs`、`read_file`、`list_repositories`（`tools/call` 同时兼容 `search_gitea*` 与 `search_gitorca*` 旧别名）。宿主可能添加前缀或改名；配置重载后请在实际工具表核对。示例 `mcp__gitea-search__search_code` 仅为命名示意，不保证每个宿主都使用该格式。
 
 ## 4. 让宿主配置生效
 
-安装器不会重启 DSH。profile 变更只有在宿主重新加载该 profile / MCP server 后才生效。由管理员或用户按宿主自己的方式 reload；不要把独立 stdio 探针通过误认为宿主已经加载成功。
+安装器不会重启 DSH。配置或 profile 变更只有在宿主重新加载该 profile / MCP server 后才生效。由管理员或用户按宿主自己的方式 reload；不要把独立 stdio 探针通过误认为宿主已经加载成功。
 
 重载后在实际宿主工具表中核对注册名。MCP 裸名固定，但宿主前缀和 GUI 名称不固定；不要只照抄示例前缀。排查顺序见 [`TOOL-NAMING.md`](TOOL-NAMING.md)。
 
@@ -84,9 +84,9 @@ MCP 裸工具名为 `search_gitea`、`search_gitea_docs`、`read_gitea_file`、`
 
 在新宿主会话中使用**实际注册名**完成以下 smoke：
 
-1. 调用 `list_gitea_repos`，确认返回至少一个预期仓库；
-2. 调用 `search_gitea` 搜一个已知代码符号，或调用 `search_gitea_docs` 搜一个默认分支中已知存在的词；
-3. 从命中结果中挑一个文件，用 `read_gitea_file` 小窗口读取。
+1. 调用 `list_repositories`，确认返回至少一个预期仓库；
+2. 调用 `search_code` 搜一个已知代码符号，或调用 `search_docs` 搜一个默认分支中已知存在的词；
+3. 从命中结果中挑一个文件，用 `read_file` 小窗口读取。
 
 若独立探针通过但宿主里没有工具，优先检查 profile 是否选对、是否重载以及实际 `serverName`，不要重复同步或重建索引。若仓库存在但新提交搜不到，先确认内容已 push，再看同步状态；`MIRROR_STALE` 只是提示，不会自动同步。
 

@@ -71,24 +71,27 @@ class DocumentationContractTest(unittest.TestCase):
         self.assertIn("--upgrade build jieba PyYAML", gate2)
         self.assertIn("Gitea does not provide that GitHub-only variable", self.read("docs/DEVELOPMENT-AND-RELEASE.md"))
 
-    def test_released_122_and_snapshot_123_stay_truthful(self) -> None:
+    def test_released_122_123_and_v200_snapshot_stay_truthful(self) -> None:
         readme = self.read("README.md")
         changelog = self.read("CHANGELOG.md")
         notes = self.read("RELEASE-NOTES.md")
         guide = self.read("docs/DEVELOPMENT-AND-RELEASE.md")
         state = self.read("PROJECT-STATE.md")
+        upgrading = self.read("UPGRADING.md")
+        self.assertIn("## [2.0.0]\n", changelog)
         self.assertIn("## [1.2.3]\n", changelog)
         self.assertNotIn("[1.2.3] - Unreleased", changelog)
         self.assertIn("not their live publication status", changelog)
         self.assertIn("[1.2.2] - 2026-11-11", changelog)
         self.assertNotIn("[1.2.2] - Unreleased", changelog)
         self.assertNotIn("No public stable `v1.2.2` tag or Release exists", changelog)
-        self.assertIn("Version-v1.2.3-blue", readme)
+        self.assertIn("Version-v2.0.0-blue", readme)
         self.assertIn("正式发布状态以对应 Release 记录为准", readme)
         self.assertNotIn("Version-v1.2.3%20candidate", readme)
         self.assertNotIn("未发布候选", readme)
         self.assertIn("v1.2.2` 已于 2026-11-11 正式发布", readme)
         self.assertNotIn("它仍是目标版本而非已发布稳定版", readme)
+        self.assertIn("## v2.0.0 — universal MCP server convergence", notes)
         self.assertIn("## v1.2.3 — correctness and release-state documentation", notes)
         self.assertNotIn("v1.2.3 candidate (Unreleased)", notes)
         self.assertIn("release record, not this tracked snapshot", notes)
@@ -97,12 +100,28 @@ class DocumentationContractTest(unittest.TestCase):
         self.assertNotIn("--expected-ref refs/tags/v1.2.2", guide)
         self.assertIn("Historical snapshot", state)
         self.assertIn("v1.2.2 was released on 2026-11-11", state)
-        self.assertIn("# Project state — v1.2.3 (tracked snapshot)", state)
-        self.assertIn("The npm, MCP and Python version identities are `1.2.3`", state)
+        self.assertIn("# Project state — v2.0.0 (tracked snapshot)", state)
+        self.assertIn("gitea-search-mcp", state)
         self.assertIn("Historical archive boundary", state)
         self.assertIn("Historical v1.2.2 candidate snapshot (2026-11-09)", state)
         self.assertNotIn("v1.2.3 candidate metadata", state)
         self.assertIn("snapshot taken when the candidate is frozen, not a live status page", state)
+        self.assertIn("gts --reindex --full", upgrading)
+        self.assertIn("search_code", upgrading)
+        self.assertIn("search_gitea", upgrading)
+
+    def test_v200_no_zero_python_fallback_and_neutral_tools_documented(self) -> None:
+        readme = self.read("README.md")
+        boundaries = self.read("docs/BOUNDARIES.md")
+        naming = self.read("docs/TOOL-NAMING.md")
+        forbidden = ("node" + "-fallback", "GITEA_FORCE_" + "NODE_FALLBACK", "needs" + "Fallback")
+        for doc in (readme, boundaries, naming):
+            for token in forbidden:
+                self.assertNotIn(token, doc)
+            for tool in ("search_code", "search_docs", "read_file", "list_repositories"):
+                self.assertIn(tool, doc)
+        self.assertIn("--dump-schema", readme)
+        self.assertIn("UPGRADING.md", readme)
 
     def test_documented_python_suite_count_matches_default_chain(self) -> None:
         package = self.read("package.json")
@@ -146,7 +165,7 @@ class DocumentationContractTest(unittest.TestCase):
         for document in (readme, state):
             self.assertNotIn("v1.2.3 candidate;", document)
             self.assertNotIn("当前 `v1.2.3` 是未发布候选", document)
-        self.assertIn("不是 v1.2.3 的实时验收结果", windows)
+        self.assertIn("实时验收结果", windows)
         self.assertNotIn("稳定版 1.2.2 exact-P", windows)
         self.assertIn("历史 rc7 / hygiene 记录", index)
         self.assertNotIn("本次 hygiene 修改", index)

@@ -43,11 +43,11 @@ def main():
     hashes = {path: sha256(root / path) for path in sorted(files)}
     manifest = {
         "schema": 2,
-        "package": "dsh-gitea-search",
+        "package": "gitea-search-mcp",
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "source_commit": args.source_commit,
         "source_commit_role": "exact-candidate-commit-or-pending-freeze",
-        "source": "https://github.com/offzen/dsh-gitea-search",
+        "source": "https://github.com/offzen/gitea-search-mcp",
         "note": "Tracked-file SHA-256 manifest. PROVENANCE.json is deliberately excluded to avoid self-reference.",
         "file_count": len(hashes),
         "files": hashes,

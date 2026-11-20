@@ -1,24 +1,25 @@
-# CODE-INDEX —— dsh-gitea-search 代码正册
+# CODE-INDEX —— gitea-search-mcp 代码正册
 
-> 规则：本仓所有可执行脚本、源码模块、自动化测试与 CI gate 均登记于此；生成缓存与构建输出不属于源码资产。本页记录 v1.2.3 树的资产与测试契约；历史运行结果另列，**不把旧提交的证据当作最终 exact-P 的收据**。
+> 规则：本仓所有可执行脚本、源码模块、自动化测试与 CI gate 均登记于此；生成缓存与构建输出不属于源码资产。本页记录 v2.0.0 树的资产与测试契约；历史运行结果另列，**不把旧提交的证据当作最终 exact-P 的收据**。
 
 ## 1. CLI 与 MCP 入口
 
 | 路径 | 用途 | 负载/写操作 |
 |---|---|---|
 | `bin/gts` | 跨仓 Git/FTS CLI，兼容 `gitq` / `dsh-search` | 查询只读；reindex/sync 会写索引或镜像 |
-| `bin/mcp-server` | MCP stdio server 包装入口；以 file URL 动态导入，兼容 Windows ESM | 启动临时 Node 子进程 |
-| `gts_cli.py` | setuptools console-script 入口，加载已安装的 `bin/gts` | 单次启动与模块加载 |
+| `bin/mcp-server` | 标准 MCP 入口：支持 `--dump-schema [--compact]` 纯静态导出或引导 `src/index.js` | `--dump-schema` 零副作用；默认启动 MCP stdio |
+| `src/index.js` | 标准 MCP stdio 引导骨架，调用 `lib/server.mjs` 的 `startStdioServer()` | 连接 stdio 传输 |
+| `gts_cli.py` | setuptools console-script 入口，优先探测 `share/gitea-search-mcp` 并兼容 `share/dsh-gitea-search` | 单次启动与模块加载 |
 
 ## 2. 核心实现
 
 | 路径 | 用途 | 负载/写操作 |
 |---|---|---|
-| `lib/config.py` / `lib/config.mjs` | Python/Node effective-config resolver；缺失或畸形显式配置 fail closed | 轻量文件读取 |
-| `lib/indexer.py` | SQLite FTS5/jieba 索引与查询；R2 仅在完整可信构建后按仓原子清理已消失 mirror 的四表记录 | build/reindex 写 SQLite |
+| `lib/config.py` / `lib/config.mjs` | Python/Node effective-config resolver；支持新旧用户配置与默认镜像目录回退，显式配置缺失/畸形 fail closed | 轻量文件读取 |
+| `lib/indexer.py` | SQLite FTS5/jieba 索引与查询；R2 仅在完整可信构建后按仓原子清理已消失 mirror 的四表记录；支持 `GITEA_VENV_PATH` / `GITEA_ALLOW_NO_JIEBA` | build/reindex 写 SQLite |
 | `lib/mirror_state.py` / `lib/mirror-state.mjs` | Python/Node 镜像同步状态解释，区分成功与失败尝试 | 读取 state 元数据 |
 | `lib/next-actions.mjs` | 将 MCP/CLI 失败归因并生成结构化下一步 | 只读解释 |
-| `lib/server.mjs` | 四工具 MCP stdio server、CLI 进程管理与输出护栏 | 长驻时启动 CLI；`sync:true` 可写镜像 |
+| `lib/server.mjs` | 四中性工具 MCP 引擎、三族别名转发、`createServer()` / `dumpSchema()` / direct-run 守卫、CLI 管理与输出护栏 | 被 import 零副作用；启动后调 CLI；`sync:true` 可写镜像 |
 
 ## 3. 安装、同步、诊断与发布脚本
 
@@ -52,7 +53,10 @@
 
 | 路径 | 覆盖目标 |
 |---|---|
-| `test/config-contract.test.mjs` | Node/Python 配置优先级、错误与 placeholder 拒绝 |
+| `test/config-contract.test.mjs` | Node/Python 配置优先级、双路径用户配置/镜像目录回退、错误与 placeholder 拒绝 |
+| `test/dump-schema.test.mjs` | `dumpSchema()` 与 `bin/mcp-server --dump-schema [--compact]` 纯静态契约及零副作用断言 |
+| `test/protocol-mock.test.mjs` | `createServer()` 协议单测及 `bin/mcp-server` / 直跑 `lib/server.mjs` 双入口 stdio 握手 |
+| `test/tool-aliases.test.mjs` | 三族工具名转发一致性、stderr 废弃告警、`GITEA_SEARCH_CLI` 失败关闭与 `doctor-mcp.sh` 只读索引版本预检 |
 | `test/launch-spec.test.mjs` | Node-aware launcher |
 | `test/linux-gate-receipt-path.test.mjs` | gate2 receipt 必须位于 tracked checkout 外 |
 | `test/linux-gate-static.test.mjs` | Linux gate 静态合同与 Windows hosted 边界 |
@@ -114,12 +118,13 @@
 | `extras/dsh-skill/gitea-search/SKILL.md` | 可选 Agent 检索指导；installer 不自动安装 |
 | `docs/DEVELOPMENT-AND-RELEASE.md` | D/P、schema-3 receipt、schema-2 evidence 与发布状态机正本 |
 | `docs/POST-INSTALL.md` | 安装后闭环验收：首次同步、索引、独立 MCP、宿主工具表、真实调用、可选 skill 与回滚 |
-| `PROJECT-STATE.md` | v1.2.3 版本/证据边界与历史 v1.2.2 集成快照 |
+| `UPGRADING.md` | 从 `v1.2.x`（`dsh-gitea-search`）平滑升级到 `v2.0.0`（`gitea-search-mcp`）的完整指南与回滚手册 |
+| `PROJECT-STATE.md` | v2.0.0 版本/证据边界与历史 v1.2.3 / v1.2.2 快照 |
 | `WIKI.md` | 有证据、带范围和失效条件的耐久陷阱 |
 
 ## 7. 测试契约与历史证据边界
 
-### v1.2.3 验证契约
+### v2.0.0 验证契约
 
 - 默认链为 Node 自动发现、12 套 Python 合约/回归文件与 31 项 E2E；具体 Python 清单以 `package.json` 和 `scripts/collect-test-counts.py` 为准。结构清单不是任何 SHA 的通过证明。
 - 所有 tracked 修订完成后，针对最终 D/P 独立验证本地、私有 gate2 和 hosted 平台并收集对应收据；不得跨 SHA 借用结果。

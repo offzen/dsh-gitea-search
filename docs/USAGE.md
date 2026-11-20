@@ -9,12 +9,12 @@
 
 ## 1. 核心实践三法则
 
-1. **先定位，再精读**：先使用 `search_*` 工具锁定目标所在的仓库、相对路径与大致行号，再使用 `read_gitea_file` 配合较小的 `limit` 读取目标代码片段。**严禁在未定位前直接尝试抓取全量文件**。
-2. **多词与中文优先走倒排索引**：查找中文短语、故障排查记录或多词组合时，首选 `search_gitea_docs`，利用 SQLite FTS5 + jieba 分词做相关度召回。SQLite warm query 可达到毫秒级；MCP 端到端延迟还包含 Python/jieba 冷启动。
-3. **分清检索范围**：`search_gitea` 覆盖镜像中的全部本地分支；FTS `search_gitea_docs` 只索引每仓默认分支。两者都只覆盖已经推送并完成镜像同步的内容。
+1. **先定位，再精读**：先使用 `search_code` / `search_docs` 锁定目标所在的仓库、相对路径与大致行号，再使用 `read_file` 配合较小的 `limit` 读取目标代码片段。**严禁在未定位前直接尝试抓取全量文件**。
+2. **多词与中文优先走倒排索引**：查找中文短语、故障排查记录或多词组合时，首选 `search_docs`，利用 SQLite FTS5 + jieba 分词做相关度召回。SQLite warm query 可达到毫秒级；MCP 端到端延迟还包含 Python/jieba 冷启动。
+3. **分清检索范围**：`search_code` 覆盖镜像中的全部本地分支；FTS `search_docs` 只索引每仓默认分支。两者都只覆盖已经推送并完成镜像同步的内容。
 
-> 💡 **能力公开边界说明**：  
-> 本项目标准开源发布的公共契约包含 4 个核心基础工具（`search_gitea`、`search_gitea_docs`、`read_gitea_file`、`list_gitea_repos`）。若您所在的特定部署环境通过上层网关封装了混合召回（如各类 `*_hybrid` 向量融合工具），请以宿主实际注册的扩展工具清单为准。
+> 💡 **能力公开边界与向后兼容说明**：  
+> 本项目 `v2.0.0` 标准开源发布的公共契约包含 4 个中性核心基础工具（`search_code`、`search_docs`、`read_file`、`list_repositories`）。为保障 `v1.2.x` 老用户平滑升级，`tools/call` 同时兼容 `search_gitea*` 与 `search_gitorca*` 两族旧名（保留至 `v3.0.0` 前，调用时仅在 stderr 输出废弃告警）。若您所在的特定部署环境通过上层网关封装了混合召回（如各类 `*_hybrid` 向量融合工具），请以宿主实际注册的扩展工具清单为准。
 
 ---
 
@@ -22,9 +22,9 @@
 
 以下小节使用 MCP server 的**裸工具名**。宿主可能加前缀、清洗或重命名；安装后必须查看当前宿主的实际工具注册表，不能只替换示例前缀来猜调用名。
 
-### 2.1 `search_gitea` —— 跨仓代码检索
+### 2.1 `search_code` —— 跨仓代码检索
 
-基于本地 bare 镜像执行极速 `git grep`，跨所有仓库检索代码内容、路径及提交信息，无需逐个 clone。
+基于本地 bare 镜像执行极速 `git grep`，跨所有仓库检索代码内容、路径及提交信息，无需逐个 clone。（兼容旧名：`search_gitea` / `search_gitorca`）
 
 | 参数 | 类型 | 说明 |
 |---|---|---|
@@ -42,9 +42,9 @@
 
 ---
 
-### 2.2 `search_gitea_docs` —— 文档与历史会话全文检索
+### 2.2 `search_docs` —— 文档与历史会话全文检索
 
-基于每仓**默认分支**的 SQLite FTS5 索引与 jieba 中文分词，支持 BM25 相关度排序与高亮摘要提取。若目标可能只存在于非默认分支，改用 `search_gitea` 搜全部 heads，再以 `read_gitea_file(ref=...)` 精读。
+基于每仓**默认分支**的 SQLite FTS5 索引与 jieba 中文分词，支持 BM25 相关度排序与高亮摘要提取。若目标可能只存在于非默认分支，改用 `search_code` 搜全部 heads，再以 `read_file(ref=...)` 精读。（兼容旧名：`search_gitea_docs` / `search_gitorca_docs`）
 
 | 参数 | 类型 | 说明 |
 |---|---|---|
@@ -61,23 +61,25 @@
 
 ---
 
-### 2.3 `read_gitea_file` —— 切片读取文件内容
+### 2.3 `read_file` —— 切片读取文件内容
 
-精准读取指定仓库与分支下的文件正文，内置分段机制与超大截断保护。
+精准读取指定仓库与分支下的文件正文，内置分段机制与超大截断保护。（兼容旧名：`read_gitea_file` / `read_gitorca_file`）
 
 | 参数 | 类型 | 说明 |
 |---|---|---|
-| `repo` | string | **必填**。目标仓库名称（如 `"dsh-toolkit"`） |
+| `repo` | string | **必填**。目标仓库名称，推荐 `owner/repo`（如 `"myorg/dsh-toolkit"`） |
 | `path` | string | **必填**。仓内相对路径（如 `"deploy/docker-compose.yml"`） |
 | `ref` | string | 分支名、Tag 或 Commit SHA；省略时取该仓默认分支 |
 | `offset` | integer | 起始行号（基于 0 开始，默认为 `0`） |
 | `limit` | integer | 返回行数。**默认 400 行**；若需获取全文可显式传 `0`（受单次字节上限约束） |
 
-> **内置安全护栏**：单次读取受 `GITQ_MAX_READ_BYTES`（默认 60KB）强约束，超出部分自动截断并附带状态标注。文件路径严格区分大小写，遇路径疑义可先通过 `search_gitea(mode: "path")` 探路。
+> **内置安全护栏**：单次读取受 `GITEA_MAX_READ_BYTES`（默认 60KB，兼容旧 `GITQ_MAX_READ_BYTES`）强约束，超出部分自动截断并附带状态标注。文件路径严格区分大小写，遇路径疑义可先通过 `search_code(mode: "path")` 探路。
 
 ---
 
-### 2.4 `list_gitea_repos` —— 镜像仓库资产盘点
+### 2.4 `list_repositories` —— 镜像仓库资产盘点
+
+（兼容旧名：`list_gitea_repos` / `list_gitorca_repos`）
 
 | 参数 | 类型 | 说明 |
 |---|---|---|
@@ -96,20 +98,20 @@
 ```jsonc
 // 步骤 1：探路。设置 files_only: true 仅返回文件名，消耗极低 Token
 {
-  "name": "search_gitea",
+  "name": "search_code",
   "arguments": {
     "query": "cpm-panel",
     "files_only": true
   }
 }
 
-// 返回示例：命中 repo="cpm-deploy", path="docker/compose.yml"
+// 返回示例：命中 repo="myorg/cpm-deploy", path="docker/compose.yml"
 
 // 步骤 2：精读。针对性读取该文件前 50 行，避免全量输出
 {
-  "name": "read_gitea_file",
+  "name": "read_file",
   "arguments": {
-    "repo": "cpm-deploy",
+    "repo": "myorg/cpm-deploy",
     "path": "docker/compose.yml",
     "offset": 0,
     "limit": 50
@@ -126,7 +128,7 @@
 ```jsonc
 // 检索历史会话导出，快速召回当时的决策和临时绕过命令
 {
-  "name": "search_gitea_docs",
+  "name": "search_docs",
   "arguments": {
     "query": "Caddy 证书 429 续期",
     "kind": "session",
@@ -146,7 +148,7 @@
 ```jsonc
 // 使用扩展正则并开启 files_only 进行全局影响面探测
 {
-  "name": "search_gitea",
+  "name": "search_code",
   "arguments": {
     "query": "validateCustomForm\\(",
     "regex": true,
@@ -164,9 +166,9 @@
 当检索没有返回预期结果时，请按如下顺序递进排查：
 
 1. **确认代码是否已推送**：裸镜像仅抓取 Git 远端已 push 的分支，本地未提交或未推送的工作区不在索引中。
-2. **按内容与分支分流**：中文/多词且目标在默认分支时，使用 `search_gitea_docs`；若可能位于非默认分支，使用 `search_gitea` 搜全部 heads，再按 `ref` 读取。
+2. **按内容与分支分流**：中文/多词且目标在默认分支时，使用 `search_docs`；若可能位于非默认分支，使用 `search_code` 搜全部 heads，再按 `ref` 读取。
 3. **缩小关键词长度**：长句可能因标点或连字差异导致无法匹配，建议精简至 2~3 个核心技术名词。
-4. **验证仓库范围**：调用 `list_gitea_repos` 确认目标仓库是否已被纳入同步清单。
+4. **验证仓库范围**：调用 `list_repositories` 确认目标仓库是否已被纳入同步清单。
 5. **按需触发镜像同步**：若目标是刚刚推送的提交，可在一次明确的调用中设置 `sync: true`。这会写入镜像并更新索引；不要在循环、并发 Agent 或每次查询中默认开启。
 
 ---
@@ -226,5 +228,5 @@ bin/gts --reindex
 
 - [ ] **严禁滥用 `max_results`**：保持默认值 `5`，先审阅 Top 5 结果；仅在明确需要遍历时才逐步放宽。
 - [ ] **探路阶段必开 `files_only`**：摸底资产范围时只取路径名，不取正文。
-- [ ] **切片读取按需索取**：调用 `read_gitea_file` 时显式指定 `limit: 30~50`，确认核心段落后再递增 `offset`。
-- [ ] **中文检索首选 FTS5 引擎**：避免用 `search_gitea` 盲目轮询不同词形变体消耗会话轮次。
+- [ ] **切片读取按需索取**：调用 `read_file` 时显式指定 `limit: 30~50`，确认核心段落后再递增 `offset`。
+- [ ] **中文检索首选 FTS5 引擎**：避免用 `search_code` 盲目轮询不同词形变体消耗会话轮次。

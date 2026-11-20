@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0]
+
+This entry describes the v2.0.0 convergence changes, not their live publication status.
+Evidence for v1.2.3, v1.2.2, or any earlier candidate does not validate a later
+tracked tree. Each final content commit requires its own provenance-only commit,
+exact-commit platform evidence, and a separate release decision. Consult the
+corresponding exact-commit evidence and release record for the final status.
+
+### Added
+- Universal MCP Server packaging & entrypoint separation (`gitea-search-mcp`):
+  decoupled `lib/server.mjs` (`createServer()`, `dumpSchema()`, `startStdioServer()`
+  with a direct-run guard for backward-compatible `node lib/server.mjs` invocations)
+  and added `src/index.js` stdio bootstrap plus `bin/mcp-server --dump-schema [--compact]`
+  pure static Function Calling JSON Schema export.
+- Neutral MCP tool names exposed on `tools/list`: `search_code`, `search_docs`,
+  `read_file`, and `list_repositories`, with full backward-compatible `tools/call`
+  alias forwarding and stderr deprecation warnings for both `search_gitea*` and
+  `search_gitorca*` families (retained until `v3.0.0`).
+- Smooth `v1.2.x → v2.0.0` migration guide (`UPGRADING.md`), dual user-config path
+  fallback (`~/.config/gitea-search-mcp/config.json` → `~/.config/dsh-gitea-search/config.json`),
+  dual platform default mirror-root fallback, dual `share/gitea-search-mcp` /
+  `share/dsh-gitea-search` Python data lookup, and read-only SQLite `PRAGMA user_version`
+  precheck in `scripts/doctor-mcp.{sh,ps1}`.
+- New Node test suites (`test/dump-schema.test.mjs`, `test/protocol-mock.test.mjs`,
+  `test/tool-aliases.test.mjs`) alongside all 12 Python contract/regression files.
+
+### Changed
+- Unified package, Python distribution, MCP server identity, and repository metadata
+  to `gitea-search-mcp` (`offzen/gitea-search-mcp`), keeping Python 3.10+ and `jieba`
+  as explicit required runtime dependencies (no Zero-Python fallback).
+- Consolidated runtime environment variables under `GITEA_*` (`GITEA_SEARCH_CLI`,
+  `GITEA_VENV_PATH`, `GITEA_ALLOW_NO_JIEBA`, etc.) while keeping `GTS_BIN` and
+  legacy `GITQ_*` fallbacks with one-time stderr deprecation notices.
+- Refreshed `README.md` for universal MCP hosts (Claude Desktop, Cursor, Cline,
+  Windsurf, Codex, DSH) and documented local bare Git mirror onboarding.
+
 ## [1.2.3]
 
 This entry describes the v1.2.3 changes, not their live publication status.

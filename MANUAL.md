@@ -1,8 +1,8 @@
-# dsh-gitea-search 部署与运维手册（MANUAL）
+# gitea-search-mcp 部署与运维手册（MANUAL）
 
-> 适用范围：`dsh-gitea-search`（本地全量 bare 裸镜像 + **git grep 代码检索 + SQLite FTS5 全文检索** + DSH MCP 检索工具）。  
+> 适用范围：`gitea-search-mcp`（原 `dsh-gitea-search`；本地全量 bare 裸镜像 + **git grep 代码检索 + SQLite FTS5 全文检索** + 通用 MCP 检索服务）。  
 > 本文是**正式部署与运维手册**：详细记录系统架构、多环境部署、高可用降级、安全护栏及故障处置方案。  
-> 快速入门见 [`README.md`](README.md)；安装后闭环验收见 [`docs/POST-INSTALL.md`](docs/POST-INSTALL.md)；日常检索见 [`docs/USAGE.md`](docs/USAGE.md)；范围边界见 [`docs/BOUNDARIES.md`](docs/BOUNDARIES.md)。
+> 快速入门见 [`README.md`](README.md)；从 `v1.2.x` 升级见 [`UPGRADING.md`](UPGRADING.md)；安装后闭环验收见 [`docs/POST-INSTALL.md`](docs/POST-INSTALL.md)；日常检索见 [`docs/USAGE.md`](docs/USAGE.md)；范围边界见 [`docs/BOUNDARIES.md`](docs/BOUNDARIES.md)。
 
 ---
 
@@ -31,14 +31,14 @@
 | **同步器** | `scripts/sync.sh` | 增量刷新 / 新仓探测 / 双通道枚举 / 自动触发索引 |
 | **CLI 引擎** | `bin/gts`（或软链 `/usr/local/bin/gts`） | 命令行统一检索入口（兼具代码与 FTS5 文档检索） |
 | **索引核心** | `lib/indexer.py` | FTS5 倒排索引构建、jieba 分词、`BlobReader` 与 I/O 遥测 |
-| **MCP 服务** | `lib/server.mjs` | 标准 MCP stdio 服务端，集成四层有界护栏与配置寻径 |
-| **MCP 启动器** | `bin/mcp-server` | 标准入口（自动解析环境并拉起 Node MCP 服务） |
+| **MCP 服务核心** | `lib/server.mjs` | 标准 MCP 工具引擎、导出 `createServer()` / `dumpSchema()` 与四层有界护栏（直跑仍可连 stdio） |
+| **MCP 引导入口** | `src/index.js` & `bin/mcp-server` | 标准 stdio 入口与 `--dump-schema [--compact]` 静态契约导出 |
 | **本地演示启动器** | `scripts/quickstart-local.sh` | Zero-Gitea 合成 demo 仓 + 本地索引；不导入已有仓库 |
 | **macOS 安装器** | `scripts/setup-macos.sh` | macOS / BSD 平台一键环境配置与兼容支持 |
 | **会话维护工具** | `scripts/dsh-session-health.mjs` | DSH 会话代数健康诊断与 WAL 在线截断工具 |
 
 > **MCP 工具集的公开边界说明**：  
-> 本仓公开标准契约是 `lib/server.mjs` 中定义的 **4 个基础工具**（`search_gitea` / `read_gitea_file` / `list_gitea_repos` / `search_gitea_docs`）。该服务允许被下游进一步包装扩展（例如在外部集成向量语义召回与 RRF 融合），下游的自定扩展不属于本仓的基础范围。
+> 本仓 `v2.0.0` 公开标准契约是 `lib/server.mjs` 中定义的 **4 个中性基础工具**（`search_code` / `search_docs` / `read_file` / `list_repositories`），并在 `tools/call` 层透明兼容 `search_gitea*` 与 `search_gitorca*` 两族历史旧名。该服务允许被下游进一步包装扩展（例如在外部集成向量语义召回与 RRF 融合），下游的自定扩展不属于本仓的基础范围。
 
 ### 2.2 运行依赖要求
 
@@ -262,7 +262,7 @@ $env:GITEA_OWNERS = "my-org"
 
 ### 5.1 配置文件 `config.json` 规范
 
-`lib/server.mjs`、`bin/gts` 与 `lib/indexer.py` 共用同一份配置契约。候选顺序为：显式 `--config` / `GITEA_SEARCH_CONFIG`、用户级 `~/.config/dsh-gitea-search/config.json`、项目根目录 `config.json`。配置文件可采用如下嵌套结构：
+`lib/server.mjs`、`bin/gts` 与 `lib/indexer.py` 共用同一份配置契约。候选顺序为：显式 `--config` / `GITEA_SEARCH_CONFIG`、用户级 `~/.config/gitea-search-mcp/config.json`（新路径不存在时自动回退读旧 `~/.config/dsh-gitea-search/config.json` 并在 stderr 提示迁移）、项目根目录 `config.json`。配置文件可采用如下嵌套结构：
 
 ```json
 {
@@ -279,21 +279,25 @@ $env:GITEA_OWNERS = "my-org"
 
 ### 5.2 环境变量对照表
 
-镜像根与 owner 的加载优先级为：**CLI 参数 > 操作系统环境变量 > 显式配置 > 用户配置 > 项目配置 > 平台默认根目录**。owner 没有运行时默认值。
+镜像根与 owner 的加载优先级为：**CLI 参数 > 操作系统环境变量 > 显式配置 > 用户配置 > 项目配置 > 平台默认根目录（优先 `<data_dir>/gitea-search-mcp/mirror`，旧目录存在时自动回退）**。owner 没有运行时默认值。
 
 | 环境变量 (推荐规范) | 兼容历史变量 | 默认值 | 作用与生效范围 |
 |---|---|---|---|
 | `GITEA_SEARCH_CONFIG` | — | — | 显式指定共享 `config.json` 路径 |
 | `GITEA_MIRROR_ROOT` | `GITEA_MIRROR_PATH` / `GITQ_MIRROR_ROOT` | 平台用户数据目录 | 裸镜像与倒排索引存储根目录 |
 | `GITEA_OWNERS` | `GITEA_OWNER` / `GITQ_OWNER` | **无；缺失即报错** | 索引与同步的属主（逗号分隔多 owner） |
-| `GITEA_URL` / `GITEA_API_BASE` | `GITQ_API_BASE` | `https://git.example.com` | `sync.sh` 的 Gitea API 地址 |
+| `GITEA_SEARCH_CLI` | `GTS_BIN` / `GITQ_BIN` | 自动探测 | 显式指定 `gts` / `gts.exe` 可执行路径（优先级 `GITEA_SEARCH_CLI` > `GTS_BIN` > `GITQ_BIN`） |
+| `GITEA_VENV_PATH` | `GITQ_VENV_PATH` | — | 指定含 `jieba` 的 Python 虚拟环境路径 |
+| `GITEA_ALLOW_NO_JIEBA` | `GITQ_ALLOW_NO_JIEBA` | `0` | 显式允许无 `jieba` 时仅建英文索引（设为 `1`） |
+| `GITEA_URL` / `GITEA_API_BASE` | `GITQ_API_BASE` | `https://git.example.com` | `sync.sh` 的 Gitea / Forgejo API 地址 |
 | `GITEA_TOKEN` | `GITEA_API_TOKEN` / `GITQ_API_TOKEN` | — | `sync.sh` 使用的只读 API Token |
 | `GITQ_ENUM` | — | `auto` | 仓库枚举策略：`auto` / `api` / `ssh` |
 | `GITQ_TRANSPORT` | — | `auto` | 克隆通道策略：`auto` / `ssh` / `https` |
 | `GITEA_MAX_RESULTS` | `GITQ_MAX_RESULTS` | `200` (硬上限 1000) | **条数硬夹护栏** |
 | `GITEA_MAX_LINE_BYTES` | `GITQ_MAX_LINE_BYTES` | `2000` | **单行上限护栏** |
 | `GITEA_MAX_SEARCH_BYTES` | `GITQ_MAX_SEARCH_BYTES` | `131072` (128KB) | **总量预算护栏** |
-| `GITEA_MAX_READ_BYTES` | `GITQ_MAX_READ_BYTES` | `60000` (60KB) | `read_gitea_file` 单次文件读取字节上限 |
+| `GITEA_MAX_READ_BYTES` | `GITQ_MAX_READ_BYTES` | `60000` (60KB) | `read_file` 单次文件读取字节上限 |
+| `GITEA_READ_DEFAULT_LINES` | `GITQ_READ_DEFAULT_LINES` | `400` | `read_file` 默认返回行数 |
 
 ---
 

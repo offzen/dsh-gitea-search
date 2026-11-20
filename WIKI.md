@@ -1,4 +1,4 @@
-# dsh-gitea-search Wiki
+# gitea-search-mcp Wiki
 
 > 本页只保留跨版本仍有用的判别方法。一次性 run id、主机路径和开发现场记录属于私有审计 ledger，不进入发布树。每条证据以文件/测试合同为主；文件结构或合同改变时必须重审。
 

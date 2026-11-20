@@ -1,4 +1,35 @@
-# Release Notes - DeepSeek Harness (DSH) Gitea Search
+# Release Notes - gitea-search-mcp (formerly dsh-gitea-search)
+
+## v2.0.0 — universal MCP server convergence (`gitea-search-mcp`)
+
+This version converges the battle-tested `v1.2.3` cross-platform search core with a
+universal, host-agnostic MCP Server shell (`gitea-search-mcp`) for Claude Desktop,
+Cursor, Cline, Windsurf, Codex, and DeepSeek Harness (DSH). Evidence for earlier
+releases (`v1.2.3` / `v1.2.2`) belongs to their exact commits and does not validate
+this tracked tree. Each final content commit requires a new provenance-only commit,
+fresh exact-commit platform evidence, and a separate release decision. The release
+record, not this tracked snapshot, establishes publication status.
+
+- **Unified identity & decoupled shell**: package, Python distribution, and MCP
+  `initialize` identity align on `gitea-search-mcp` (version read dynamically from
+  `package.json`); `lib/server.mjs` exports `createServer()`, `dumpSchema()`, and
+  `startStdioServer()` with zero import-time side effects while retaining a direct-run
+  guard for legacy `node lib/server.mjs` configs; `bin/mcp-server --dump-schema [--compact]`
+  exports Function Calling JSON Schema purely statically.
+- **Neutral tool names with full legacy compatibility**: `tools/list` exposes only
+  `search_code`, `search_docs`, `read_file`, and `list_repositories`; `tools/call`
+  transparently forwards both `search_gitea*` and `search_gitorca*` aliases with
+  stderr deprecation warnings (kept until `v3.0.0`).
+- **Python 3.10+ & `jieba` remain required**: no Zero-Python fallback is shipped,
+  avoiding dual-backend drift and keeping FTS5 Chinese full-text search reliable and
+  fail-closed.
+- **Smooth `v1.2.x → v2.0.0` upgrade path**: dual user-config and default mirror
+  directory fallback, `GITEA_*` env consolidation (`GITEA_SEARCH_CLI`, `GITEA_VENV_PATH`,
+  `GITEA_ALLOW_NO_JIEBA`) with `GTS_BIN` / `GITQ_*` fallbacks, read-only SQLite
+  `PRAGMA user_version` precheck in `scripts/doctor-mcp.{sh,ps1}`, and `UPGRADING.md`.
+- **Verification chain**: preserves all 12 Python contract/regression files and the
+  31-assertion E2E suite while adding `dump-schema`, `protocol-mock`, `tool-aliases`,
+  and dual-path config fallback regressions to `npm test`.
 
 ## v1.2.3 — correctness and release-state documentation
 

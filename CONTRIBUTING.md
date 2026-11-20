@@ -1,13 +1,13 @@
-# Contributing to dsh-gitea-search
+# Contributing to gitea-search-mcp
 
-Thank you for your interest in contributing to `dsh-gitea-search`!
+Thank you for your interest in contributing to `gitea-search-mcp` (formerly `dsh-gitea-search`)!
 
 ## Open Source Governance & Pipeline
 
 This repository is maintained openly under the Apache-2.0 license.
 We actively welcome community contributions, bug reports, and pull requests!
 
-- **Public Repository & PR Mainline**: [https://github.com/offzen/dsh-gitea-search](https://github.com/offzen/dsh-gitea-search)
+- **Public Repository & PR Mainline**: [https://github.com/offzen/gitea-search-mcp](https://github.com/offzen/gitea-search-mcp)
 - **CI Automation**: Every Pull Request triggers automated GitHub Actions workflows running the 31-assertion E2E regression suite plus unit and packaging gates across supported Node.js and Python versions.
 - **Release Discipline**: Pull requests are verified by the workflows in this repository. Merging a PR does **not** imply automatic synchronization or release to another forge; maintainers handle any downstream candidate or release step separately, without force-moving existing tags.
 
