@@ -70,7 +70,7 @@ assert_ok() {
 }
 
 echo "=================================================================="
-echo " dsh-gitea-search 自建测试集与端到端全绿验收"
+echo " gitea-search-mcp 自建测试集与端到端全绿验收"
 echo " 插件目录: $ROOT_DIR"
 echo " 镜像目录: $MIRROR_ROOT (owner=$PRIMARY_OWNER)"
 echo " DSH 版本: $(dsh --version 2>/dev/null || echo '未安装')"
@@ -280,7 +280,7 @@ echo ""
 echo "[Phase 4] 测试 MCP Server stdio 协议 (probe-stdio.mjs + 4 工具全覆盖) ..."
 assert_ok "probe-stdio.mjs 冒烟探针 (6 项协议与 UTF-8/护栏断言)" "node \"$PROBE_STDIO\" \"$MCP_BIN\" gitea"
 
-# 进一步直接测试 search_gitea_docs / read_gitea_file / list_gitea_repos
+# 进一步直接测试 search_docs / read_file / list_repositories
 MCP_FULL_TEST=$(node - "$MCP_BIN" << 'EOF'
 import { spawn } from 'node:child_process';
 import path from 'node:path';
@@ -311,9 +311,9 @@ const call = (id, method, params) => new Promise((res) => {
 });
 
 await call(1, 'initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'e2e', version: '1.0' } });
-const rDocs = await call(2, 'tools/call', { name: 'search_gitea_docs', arguments: { query: 'docker-compose', repo: 'test-owner/cpm*' } });
-const rRead = await call(3, 'tools/call', { name: 'read_gitea_file', arguments: { repo: 'test-owner/cpm-deploy-guide', path: 'deploy/docker-compose.yml' } });
-const rList = await call(4, 'tools/call', { name: 'list_gitea_repos', arguments: { filter: 'test-owner/cpm*' } });
+const rDocs = await call(2, 'tools/call', { name: 'search_docs', arguments: { query: 'docker-compose', repo: 'test-owner/cpm*' } });
+const rRead = await call(3, 'tools/call', { name: 'read_file', arguments: { repo: 'test-owner/cpm-deploy-guide', path: 'deploy/docker-compose.yml' } });
+const rList = await call(4, 'tools/call', { name: 'list_repositories', arguments: { filter: 'test-owner/cpm*' } });
 p.kill('SIGTERM');
 
 const docsText = rDocs.result?.content?.[0]?.text || '';
@@ -324,7 +324,7 @@ console.log(ok ? 'MCP_4TOOLS_OK' : 'MCP_4TOOLS_FAIL: ' + JSON.stringify({ docsTe
 process.exit(ok ? 0 : 1);
 EOF
 )
-assert_ok "MCP 4 工具联合调用 (search_gitea_docs + read_gitea_file + list_gitea_repos)" "[ \"\$MCP_FULL_TEST\" = 'MCP_4TOOLS_OK' ]"
+assert_ok "MCP 4 工具联合调用 (search_docs + read_file + list_repositories)" "[ \"\$MCP_FULL_TEST\" = 'MCP_4TOOLS_OK' ]"
 
 # ------------------------------------------------------------------------------
 # Phase 5: 耗时与磁盘 I/O 监测机制、阈值判定与 DSH 会话健康修复模块测试

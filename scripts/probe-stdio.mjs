@@ -127,7 +127,7 @@ const ok = (condition, message) => {
 try {
   await started;
   console.log(`探针目标：${CMD}`);
-  console.log(`cwd=${process.cwd()}  mirror=${process.env.GITQ_MIRROR_ROOT || '(未设)'}\n`);
+  console.log(`cwd=${process.cwd()}  mirror=${process.env.GITEA_MIRROR_ROOT || process.env.GITEA_MIRROR_PATH || process.env.GITQ_MIRROR_ROOT || '(未设)'}\n`);
 
   const init = await call(1, 'initialize', {
     protocolVersion: '2024-11-05',
@@ -139,18 +139,26 @@ try {
 
   const list = await call(2, 'tools/list');
   const names = (list.result?.tools ?? []).map((tool) => tool.name).sort();
-  ok(names.includes('search_gitea') && names.includes('read_gitea_file'), `tools/list 工具齐全：${names.join(', ') || '(空)'}`);
+  const expectedNames = ['list_repositories', 'read_file', 'search_code', 'search_docs'];
+  ok(
+    JSON.stringify(names) === JSON.stringify(expectedNames),
+    `tools/list 仅暴露 4 个中性工具名：${names.join(', ') || '(空)'}`,
+  );
 
-  const result = await call(3, 'tools/call', { name: 'search_gitea', arguments: { query: QUERY } });
+  const result = await call(3, 'tools/call', { name: 'search_code', arguments: { query: QUERY } });
   const text = result.result?.content?.[0]?.text ?? '';
   const bytes = Buffer.byteLength(text, 'utf8');
   const replacements = (text.match(/\uFFFD/g) ?? []).length;
   const firstLine = text.split('\n')[0] ?? '';
   console.log(`      查询 "${QUERY}" ⇒ ${bytes}B / ${text.split('\n').length} 行；首行：${firstLine.slice(0, 120)}`);
-  ok(text.length > 0, 'search_gitea 返回了内容');
+  ok(text.length > 0 && !result.result?.isError, 'search_code 返回了有效内容');
   ok(/命中\s*\d+\s*条/.test(firstLine), '首行是「命中 N 条」统计（走的是真实检索路径，不是空壳）');
   ok(replacements === 0, `输出无 U+FFFD（本次 ${replacements} 个）`);
   ok(bytes <= MAX_OUT_BYTES, `输出 ${bytes}B 在上限 ${MAX_OUT_BYTES}B 内（护栏生效）`);
+
+  const aliasResult = await call(4, 'tools/call', { name: 'search_gitea', arguments: { query: QUERY } });
+  const aliasText = aliasResult.result?.content?.[0]?.text ?? '';
+  ok(!aliasResult.result?.isError && /命中\s*\d+\s*条/.test(aliasText.split('\n')[0] ?? ''), '旧别名 search_gitea 仍可透明转发并返回成功');
 } catch (error) {
   fail += 1;
   if (spawnError) activeMethod = '启动';

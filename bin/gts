@@ -417,7 +417,7 @@ def fmt_text(recs, a, stats):
     if stats.get("errors"):
         foot.append(f"（GIT_SEARCH_FAILED: {stats['repos_failed']} 个仓搜索失败；上述结果可能不完整）")
     elif total == 0 and a.mode == "content":
-        foot.append("（提示：若需跨行多词组合或中文分词检索文档/历史会话，请用 `gts -D \"<关键词>\"` 或 MCP `search_gitea_docs`）")
+        foot.append("（提示：若需跨行多词组合或中文分词检索文档/历史会话，请用 `gts -D \"<关键词>\"` 或 MCP `search_docs`）")
     out.append("")
     out.extend(foot)
     return "\n".join(out)

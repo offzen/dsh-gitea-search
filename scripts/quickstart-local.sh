@@ -84,7 +84,7 @@ PY
 config_publish check
 
 echo "=================================================="
-echo " dsh-gitea-search Local Mode (Zero-Gitea Quickstart)"
+echo " gitea-search-mcp Local Mode (Zero-Gitea Quickstart)"
 echo " Target: ${TARGET_DIR}"
 echo "=================================================="
 
@@ -133,7 +133,7 @@ import sys
 project, config, mirror, owner = sys.argv[1:5]
 print(json.dumps({"mcpServers": {"gitea-search": {
     "command": "node",
-    "args": [os.path.join(project, "lib", "server.mjs")],
+    "args": [os.path.join(project, "bin", "mcp-server")],
     "cwd": project,
     "env": {
         "GITEA_SEARCH_CONFIG": os.path.abspath(config),
