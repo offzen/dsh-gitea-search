@@ -110,6 +110,7 @@ class OwnerQualifiedReposTest(unittest.TestCase):
         conn.close()
         result = indexer.search_fts(str(legacy_root), "legacy")
         self.assertIn("INDEX_REBUILD_REQUIRED", result.get("error", ""))
+        self.assertIn("gts --reindex --full", result.get("error", ""))
         with mock.patch.object(indexer, "_get_jieba", return_value=None), \
              mock.patch.dict(os.environ, {**self.env, "GITQ_ALLOW_NO_JIEBA": "1"}, clear=True):
             with self.assertRaisesRegex(RuntimeError, "INDEX_REBUILD_REQUIRED"):

@@ -65,7 +65,17 @@ test('D4 Linux setup profile uses the shared XDG mirror default', { skip: !POSIX
   const result = runSetup(fx);
   assert.equal(result.status, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
   const profile = fs.readFileSync(path.join(fx.profiles, 'headless', 'cordis.patch.yml'), 'utf8');
-  const expected = path.join(fx.xdg, 'dsh-gitea-search', 'mirror');
+  const expected = path.join(fx.xdg, 'gitea-search-mcp', 'mirror');
   assert.ok(profile.includes(expected), `expected mirror ${expected}\n${profile}`);
-  assert.ok(!profile.includes(path.join(fx.home, '.local', 'share', 'dsh-gitea-search', 'mirror')));
+  assert.ok(!profile.includes(path.join(fx.home, '.local', 'share', 'gitea-search-mcp', 'mirror')));
+});
+
+test('D4 Linux setup preserves existing legacy XDG mirror directory when new one does not exist', { skip: !POSIX }, (t) => {
+  const fx = fixture(t);
+  const legacy = path.join(fx.xdg, 'dsh-gitea-search', 'mirror');
+  fs.mkdirSync(legacy, { recursive: true });
+  const result = runSetup(fx);
+  assert.equal(result.status, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  const profile = fs.readFileSync(path.join(fx.profiles, 'headless', 'cordis.patch.yml'), 'utf8');
+  assert.ok(profile.includes(legacy), `expected legacy mirror ${legacy}\n${profile}`);
 });

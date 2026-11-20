@@ -16,16 +16,19 @@ const windowsCi = fs.readFileSync(new URL('../.github/workflows/windows-ci.yml',
 const packageGate = fs.readFileSync(new URL('../scripts/test-python-package.py', import.meta.url), 'utf8');
 const provenance = JSON.parse(fs.readFileSync(new URL('../PROVENANCE.json', import.meta.url), 'utf8'));
 
-test('1.2.3 metadata and snapshot wording do not assert live release state', () => {
-  assert.equal(pkg.version, '1.2.3');
-  assert.equal(lock.version, '1.2.3');
-  assert.equal(lock.packages[''].version, '1.2.3');
-  assert.match(pyproject, /version = "1.2.3"/);
-  assert.match(server, /version: '1.2.3'/);
-  assert.match(readme, /Version-v1.2.3-blue/);
+test('package, lockfile, pyproject, and MCP server identity stay aligned without asserting live release state', () => {
+  assert.equal(pkg.name, 'gitea-search-mcp');
+  assert.equal(lock.name, 'gitea-search-mcp');
+  assert.equal(lock.packages[''].name, 'gitea-search-mcp');
+  assert.match(pyproject, /name = "gitea-search-mcp"/);
+  assert.equal(pkg.version, lock.version);
+  assert.equal(pkg.version, lock.packages[''].version);
+  assert.match(pyproject, new RegExp(`version = "${pkg.version.replace(/\./g, '\\.')}"`));
+  assert.match(server, /const SERVER_NAME = 'gitea-search-mcp'/);
+  assert.match(server, /PKG_META\.version/);
+  assert.doesNotMatch(server, /node-fallback|GITEA_FORCE_NODE_FALLBACK|needsFallback/);
   assert.match(readme, /正式发布状态以对应 Release 记录为准/);
   assert.match(readme, /版本号本身不证明工作树已通过发布门禁/);
-  assert.doesNotMatch(readme, /Version-v1\.2\.3%20candidate|当前 `v1\.2\.3` 是未发布候选|仍为未发布候选/);
 });
 
 test('candidate provenance is frozen to an exact content commit', () => {
@@ -36,7 +39,7 @@ test('candidate provenance is frozen to an exact content commit', () => {
 test('document search declares default-branch scope and cold-start boundary', () => {
   assert.match(server, /scope: default-branches/);
   assert.match(server, /Python\/jieba.*cold|Python\/jieba.*冷启动/);
-  assert.match(server, /search_gitea.*全部 heads/);
+  assert.match(server, /search_code.*全部 heads/);
 });
 
 test('tool naming uses the three-layer host-portable model', () => {
@@ -57,8 +60,8 @@ test('optional skill exists and is not auto-installed', () => {
 });
 
 test('Python artifacts include every module used by installed gts', () => {
-  assert.match(pyproject, /"share\/dsh-gitea-search\/bin"\s*=\s*\["bin\/gts"\]/);
-  assert.match(pyproject, /"share\/dsh-gitea-search\/lib"\s*=\s*\[[^\]]*"lib\/indexer\.py"[^\]]*"lib\/config\.py"[^\]]*\]/s);
+  assert.match(pyproject, /"share\/gitea-search-mcp\/bin"\s*=\s*\["bin\/gts"\]/);
+  assert.match(pyproject, /"share\/gitea-search-mcp\/lib"\s*=\s*\[[^\]]*"lib\/indexer\.py"[^\]]*"lib\/config\.py"[^\]]*\]/s);
   assert.equal(fs.existsSync(new URL('../scripts/test-python-package.py', import.meta.url)), true);
 });
 

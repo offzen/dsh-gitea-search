@@ -106,11 +106,11 @@ test('R5 Node and Python report ignored key paths without leaking values', () =>
   const py = resolveWith(env, { config_path: configPath });
   assert.equal(py.valid, true);
   assert.deepEqual(py.warnings, [
-    'config: key "extra" is not supported in v1.2.3 and is ignored',
-    'config: key "gitea.token" is not supported in v1.2.3 and is ignored',
-    'config: key "gitea.url" is not supported in v1.2.3 and is ignored',
-    'config: key "search" is not supported in v1.2.3 and is ignored',
-    'config: key "storage.db_path" is not supported in v1.2.3 and is ignored',
+    'config: key "extra" is not supported and is ignored',
+    'config: key "gitea.token" is not supported and is ignored',
+    'config: key "gitea.url" is not supported and is ignored',
+    'config: key "search" is not supported and is ignored',
+    'config: key "storage.db_path" is not supported and is ignored',
   ]);
   assert.doesNotMatch(py.warnings.join('\n'), new RegExp(canary));
 
@@ -350,7 +350,116 @@ test('B2 MCP server reports an explicit-but-missing GITEA_SEARCH_CONFIG instead 
   const { dir, home } = fixtureDir();
   writeConfig(path.join(home, '.config', 'dsh-gitea-search'), { owners: ['home-owner'] });
   const env = isolatedEnv(home, { GITEA_SEARCH_CONFIG: path.join(dir, 'missing.json') });
-  const res = await withClient(env, (client) => client.callTool({ name: 'list_gitea_repos', arguments: {} }));
+  const res = await withClient(env, (client) => client.callTool({ name: 'list_repositories', arguments: {} }));
   assert.equal(res.isError, true);
   assert.match(res.content[0].text, /CONFIG_ERROR: GITEA_SEARCH_CONFIG points to a config file that does not exist/);
+});
+
+test('v2.0 user config fallback: legacy ~/.config/dsh-gitea-search loads with migration hint; preferred ~/.config/gitea-search-mcp wins', (t) => {
+  if (!HAVE_PY) return t.skip('python3 不可用');
+  const { home } = fixtureDir();
+  const legacyDir = path.join(home, '.config', 'dsh-gitea-search');
+  const preferredDir = path.join(home, '.config', 'gitea-search-mcp');
+  const legacyFile = writeConfig(legacyDir, { owners: ['legacy-owner'] });
+  const env = isolatedEnv(home);
+
+  // 1) Legacy-only: both Node and Python load it consistently and emit migration warning
+  const legacyRes = bothSides(t, {}, env);
+  assert.equal(legacyRes.valid, true);
+  assert.deepEqual(legacyRes.owners, ['legacy-owner']);
+  assert.equal(legacyRes.config_path, legacyFile);
+  assert.equal(legacyRes.sources.owners, 'user-config');
+  assert.ok(legacyRes.warnings.some((w) => w.includes('using legacy user config path') && w.includes('gitea-search-mcp')));
+
+  // Verify stderr migration notice on both Node and Python
+  const jsProc = spawnSync(process.execPath, [
+    '--input-type=module', '-e',
+    `import { resolveConfig } from ${JSON.stringify(NODE_CONFIG.href)}; resolveConfig({});`,
+  ], { encoding: 'utf8', env });
+  assert.match(jsProc.stderr, /using legacy user config path/);
+  const pyProc = spawnSync(PY, [
+    '-c', `import sys; sys.path.insert(0, ${JSON.stringify(path.join(ROOT, 'lib'))}); from config import resolve_config; resolve_config()`,
+  ], { encoding: 'utf8', env });
+  assert.match(pyProc.stderr, /using legacy user config path/);
+
+  // 2) Both exist: preferred ~/.config/gitea-search-mcp/config.json wins with no legacy user-config warning
+  mkdirSync(preferredDir, { recursive: true });
+  const preferredFile = writeConfig(preferredDir, { owners: ['new-owner'] });
+  const preferredRes = bothSides(t, {}, env);
+  assert.equal(preferredRes.valid, true);
+  assert.deepEqual(preferredRes.owners, ['new-owner']);
+  assert.equal(preferredRes.config_path, preferredFile);
+  assert.equal(preferredRes.sources.owners, 'user-config');
+  assert.ok(!preferredRes.warnings.some((w) => w.includes('using legacy user config path')));
+});
+
+test('v2.0 default mirror directory fallback: prefers gitea-search-mcp, falls back to existing dsh-gitea-search', (t) => {
+  if (!HAVE_PY) return t.skip('python3 不可用');
+  const { dir, home } = fixtureDir();
+  const xdg = path.join(dir, 'xdg-data');
+  const localAppData = path.join(dir, 'local-app-data');
+  mkdirSync(xdg, { recursive: true });
+  mkdirSync(localAppData, { recursive: true });
+
+  const env = isolatedEnv(home, {
+    GITEA_OWNERS: 'team',
+    XDG_DATA_HOME: xdg,
+    LOCALAPPDATA: localAppData,
+  });
+
+  // 1) Neither exists -> defaults to gitea-search-mcp/mirror
+  const fresh = bothSides(t, {}, env);
+  assert.equal(fresh.sources.mirror_root, 'platform-default');
+  assert.ok(fresh.mirror_root.endsWith(path.join('gitea-search-mcp', 'mirror')), fresh.mirror_root);
+  assert.deepEqual(fresh.warnings, []);
+
+  // 2) Legacy exists and preferred does not -> falls back to legacy with migration warning
+  const legacyMirror = fresh.mirror_root.replace(path.join('gitea-search-mcp', 'mirror'), path.join('dsh-gitea-search', 'mirror'));
+  mkdirSync(legacyMirror, { recursive: true });
+  const fallback = bothSides(t, {}, env);
+  assert.equal(fallback.mirror_root, legacyMirror);
+  assert.equal(fallback.sources.mirror_root, 'platform-default');
+  assert.ok(fallback.warnings.some((w) => w.includes('using legacy default mirror directory')));
+
+  // 3) Preferred also exists -> preferred wins without warning
+  mkdirSync(fresh.mirror_root, { recursive: true });
+  const both = bothSides(t, {}, env);
+  assert.equal(both.mirror_root, fresh.mirror_root);
+  assert.deepEqual(both.warnings, []);
+});
+
+test('v2.0 legacy GITQ_* env vars work as fallback with one-time stderr warning; GITEA_* takes precedence', (t) => {
+  if (!HAVE_PY) return t.skip('python3 不可用');
+  const { dir, home } = fixtureDir();
+  const legacyMirror = path.join(dir, 'legacy-m');
+  const newMirror = path.join(dir, 'new-m');
+
+  const legacyEnv = isolatedEnv(home, { GITQ_MIRROR_ROOT: legacyMirror, GITQ_OWNER: 'legacy-org' });
+  const r = bothSides(t, {}, legacyEnv);
+  assert.equal(r.mirror_root, legacyMirror);
+  assert.deepEqual(r.owners, ['legacy-org']);
+
+  const jsLegacy = spawnSync(process.execPath, [
+    '--input-type=module', '-e',
+    `import { resolveConfig } from ${JSON.stringify(NODE_CONFIG.href)}; resolveConfig({}); resolveConfig({});`,
+  ], { encoding: 'utf8', env: legacyEnv });
+  assert.equal((jsLegacy.stderr.match(/GITQ_MIRROR_ROOT 已废弃/g) || []).length, 1);
+  assert.equal((jsLegacy.stderr.match(/GITQ_OWNER 已废弃/g) || []).length, 1);
+
+  const pyLegacy = spawnSync(PY, [
+    '-c', `import sys; sys.path.insert(0, ${JSON.stringify(path.join(ROOT, 'lib'))}); from config import resolve_config; resolve_config(); resolve_config()`,
+  ], { encoding: 'utf8', env: legacyEnv });
+  assert.equal((pyLegacy.stderr.match(/GITQ_MIRROR_ROOT 已废弃/g) || []).length, 1);
+  assert.equal((pyLegacy.stderr.match(/GITQ_OWNER 已废弃/g) || []).length, 1);
+
+  // GITEA_* overrides GITQ_* with no legacy warning
+  const overrideEnv = isolatedEnv(home, {
+    GITEA_MIRROR_ROOT: newMirror,
+    GITEA_OWNERS: 'new-org',
+    GITQ_MIRROR_ROOT: legacyMirror,
+    GITQ_OWNER: 'legacy-org',
+  });
+  const o = bothSides(t, {}, overrideEnv);
+  assert.equal(o.mirror_root, newMirror);
+  assert.deepEqual(o.owners, ['new-org']);
 });

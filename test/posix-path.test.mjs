@@ -129,14 +129,14 @@ test('server.mjs: 路径归一化必须按平台分流', () => {
     'normalizeGitPath 必须依据 IS_WIN 分流，POSIX 侧不得转换反斜杠',
   );
 
-  // readGiteaFile 必须走归一化入口，而不是就地裸替换
-  const readFn = src.match(/async function readGiteaFile\([\s\S]*?\n}/);
-  assert.ok(readFn, '应能定位到 readGiteaFile');
-  assert.match(readFn[0], /normalizeGitPath/, 'readGiteaFile 应使用 normalizeGitPath');
+  // readFile 必须走归一化入口，而不是就地裸替换
+  const readFn = src.match(/async function readFile\([\s\S]*?\n}/);
+  assert.ok(readFn, '应能定位到 readFile');
+  assert.match(readFn[0], /normalizeGitPath/, 'readFile 应使用 normalizeGitPath');
   assert.doesNotMatch(
     readFn[0],
     /\.replace\(\/\\\\\/g, '\/'\)/,
-    'readGiteaFile 内不得再有裸的反斜杠替换',
+    'readFile 内不得再有裸的反斜杠替换',
   );
 });
 
@@ -229,16 +229,19 @@ test('B7 GTS_BIN 指向不可执行文件/目录 ⇒ 硬报错并说明原因', 
   assert.match(asDir.error, /不是普通文件/);
 });
 
-test('B7 GITQ_BIN（别名）同样硬报错；GTS_BIN 优先于 GITQ_BIN；空串视为未设置', { skip: SKIP_WIN }, () => {
+test('B7 GITEA_SEARCH_CLI > GTS_BIN > GITQ_BIN 优先级与硬报错；空串视为未设置', { skip: SKIP_WIN }, () => {
   const { dir, home, moduleDir, projBin } = resolverFixture();
   writeExe(projBin);
   const good = writeExe(path.join(dir, 'good', 'gts'));
+  const good2 = writeExe(path.join(dir, 'good2', 'gts'));
   const missing = path.join(dir, 'missing');
   const resolve = (env) => loadResolver({ env: { PATH: '', ...env }, moduleDir, home }).resolveSearchCli();
   assert.match(resolve({ GITQ_BIN: missing }).error, /GITQ_BIN=/);
+  assert.equal(resolve({ GITEA_SEARCH_CLI: good2, GTS_BIN: good, GITQ_BIN: missing }).bin, good2);
+  assert.match(resolve({ GITEA_SEARCH_CLI: missing, GTS_BIN: good }).error, /GITEA_SEARCH_CLI=/, 'GITEA_SEARCH_CLI 坏了不得回落到 GTS_BIN');
   assert.equal(resolve({ GTS_BIN: good, GITQ_BIN: missing }).bin, good);
   assert.match(resolve({ GTS_BIN: missing, GITQ_BIN: good }).error, /GTS_BIN=/, 'GTS_BIN 坏了不得转而使用 GITQ_BIN');
-  assert.equal(resolve({ GTS_BIN: '' }).bin, projBin, '空串 = 未设置，走自动查找');
+  assert.equal(resolve({ GITEA_SEARCH_CLI: '', GTS_BIN: '' }).bin, projBin, '空串 = 未设置，走自动查找');
 });
 
 test('B7 GTS_BIN 可用时被采用；相对路径解析为绝对路径（探测与 spawn 同一文件）', { skip: SKIP_WIN }, () => {
@@ -345,7 +348,7 @@ test('B7 端到端：MCP server 在 GTS_BIN 不可用时返回结构化错误，
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gts-b7-e2e-'));
   const missing = path.join(dir, 'no-such-gts');
   const env = { ...process.env, GITEA_MIRROR_ROOT: dir, GITEA_OWNERS: 'test-owner', GTS_BIN: missing };
-  for (const [tool, args] of [['search_gitea', { query: 'x' }], ['list_gitea_repos', {}], ['search_gitea_docs', { query: 'x' }]]) {
+  for (const [tool, args] of [['search_code', { query: 'x' }], ['list_repositories', {}], ['search_docs', { query: 'x' }]]) {
     const res = await callServerTool(env, tool, args);
     assert.equal(res.isError, true, tool);
     assert.match(res.content[0].text, /GTS_BIN=/, tool);

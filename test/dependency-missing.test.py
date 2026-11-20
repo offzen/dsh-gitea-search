@@ -67,7 +67,7 @@ class DependencyMissingTest(unittest.TestCase):
             owner_dir.mkdir(parents=True)
             db_path = Path(raw) / 'state' / 'gitea-fts.sqlite'
 
-            env_no_allow = {k: v for k, v in os.environ.items() if k != 'GITQ_ALLOW_NO_JIEBA'}
+            env_no_allow = {k: v for k, v in os.environ.items() if k not in ('GITEA_ALLOW_NO_JIEBA', 'GITQ_ALLOW_NO_JIEBA')}
             with mock.patch.dict(os.environ, env_no_allow, clear=True), \
                  mock.patch.object(indexer, '_JIEBA_TRIED', False), \
                  mock.patch.object(indexer, '_JIEBA', None), \
@@ -75,8 +75,28 @@ class DependencyMissingTest(unittest.TestCase):
                 with self.assertRaises(Exception) as ctx:
                     indexer.build_index(raw, owners=['team'], verbose=False)
                 self.assertTrue(str(ctx.exception).startswith('DEPENDENCY_MISSING:'))
+                self.assertIn('GITEA_ALLOW_NO_JIEBA=1', str(ctx.exception))
                 self.assertFalse(db_path.exists())
 
+            # Explicit GITEA_ALLOW_NO_JIEBA=0 must override legacy GITQ_ALLOW_NO_JIEBA=1
+            with mock.patch.dict(os.environ, {**env_no_allow, 'GITEA_ALLOW_NO_JIEBA': '0', 'GITQ_ALLOW_NO_JIEBA': '1'}, clear=True), \
+                 mock.patch.object(indexer, '_JIEBA_TRIED', False), \
+                 mock.patch.object(indexer, '_JIEBA', None), \
+                 mock.patch.object(indexer, '_get_jieba', return_value=None):
+                with self.assertRaises(Exception) as ctx:
+                    indexer.build_index(raw, owners=['team'], verbose=False)
+                self.assertTrue(str(ctx.exception).startswith('DEPENDENCY_MISSING:'))
+
+            # Primary GITEA_ALLOW_NO_JIEBA=1 succeeds
+            with mock.patch.dict(os.environ, {**env_no_allow, 'GITEA_ALLOW_NO_JIEBA': '1'}, clear=True), \
+                 mock.patch.object(indexer, '_JIEBA_TRIED', False), \
+                 mock.patch.object(indexer, '_JIEBA', None), \
+                 mock.patch.object(indexer, '_get_jieba', return_value=None):
+                mod, dele, same = indexer.build_index(raw, owners=['team'], verbose=False)
+                self.assertEqual((mod, dele, same), (0, 0, 0))
+                self.assertTrue(db_path.exists())
+
+            # Legacy GITQ_ALLOW_NO_JIEBA=1 remains accepted as fallback
             with mock.patch.dict(os.environ, {**env_no_allow, 'GITQ_ALLOW_NO_JIEBA': '1'}, clear=True), \
                  mock.patch.object(indexer, '_JIEBA_TRIED', False), \
                  mock.patch.object(indexer, '_JIEBA', None), \
