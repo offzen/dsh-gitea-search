@@ -48,7 +48,7 @@ def render_entry(node, server, gts, mirror, owners, venv=None):
         f"          GITEA_OWNERS: {yaml_scalar(owners)}",
     ]
     if venv:
-        lines.append(f"          GITQ_VENV_PATH: {yaml_path(venv)}")
+        lines.append(f"          GITEA_VENV_PATH: {yaml_path(venv)}")
     return "\n".join(lines) + "\n"
 
 

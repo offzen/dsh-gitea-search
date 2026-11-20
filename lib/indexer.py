@@ -97,6 +97,20 @@ TOKENIZER_SPEC = "'" + "unicode" + "61" + " remove_diacritics 2'"
 # ── jieba 预分词（解耦环境，优先系统库/全局安装）─────────────────────
 _JIEBA = None
 _JIEBA_TRIED = False
+_WARNED_LEGACY_ENV = set()
+
+
+def _env_with_legacy(primary, legacy):
+    val = os.environ.get(primary)
+    if val is not None and val != "":
+        return val
+    leg = os.environ.get(legacy)
+    if leg is not None and leg != "":
+        if legacy not in _WARNED_LEGACY_ENV:
+            _WARNED_LEGACY_ENV.add(legacy)
+            sys.stderr.write(f"[gitea-search-mcp] ⚠️ 环境变量 {legacy} 已废弃，请改用 {primary}。\n")
+        return leg
+    return None
 
 
 def _get_jieba():
@@ -105,7 +119,7 @@ def _get_jieba():
         return _JIEBA
     _JIEBA_TRIED = True
     # 如果指定了虚拟环境路径，优先将其 site-packages 加入 sys.path
-    venv_cand = os.environ.get("GITQ_VENV_PATH")
+    venv_cand = _env_with_legacy("GITEA_VENV_PATH", "GITQ_VENV_PATH")
     if venv_cand and os.path.isdir(venv_cand):
         import glob as _glob
         for sp in _glob.glob(os.path.join(venv_cand, 'lib/python*/site-packages')):
@@ -541,7 +555,7 @@ def _require_current_index(conn):
     if version != INDEX_IDENTITY_VERSION and _index_has_documents(conn):
         raise RuntimeError(
             f"INDEX_REBUILD_REQUIRED: 索引身份版本 {version or 1} 不含 owner；"
-            "请执行全量重建后再搜索或增量更新"
+            "请执行全量重建后再搜索或增量更新：gts --reindex --full"
         )
 
 
@@ -1070,11 +1084,11 @@ def build_index(mirror_root, owners=None, repo_filter=None, exts=DEFAULT_EXTS, f
                 verbose=True, allow_global_prune=True):
     # 缺 jieba 时默认 fail-closed：若无分词直接建库，中文会被当作整段连续字符写入 FTS5，
     # 且 repo_heads 仍会记录最新 commit sha，后续即使补装 jieba 增量索引也会因 sha 未变而跳过，
-    # 造成持久化“伪空索引”。仅当显式设 GITQ_ALLOW_NO_JIEBA=1 时才允许降级建英文索引。
-    if _get_jieba() is None and os.environ.get("GITQ_ALLOW_NO_JIEBA") != "1":
+    # 造成持久化“伪空索引”。仅当显式设 GITEA_ALLOW_NO_JIEBA=1（兼容旧变量 GITQ_ALLOW_NO_JIEBA=1）时才允许降级建英文索引。
+    if _get_jieba() is None and _env_with_legacy("GITEA_ALLOW_NO_JIEBA", "GITQ_ALLOW_NO_JIEBA") != "1":
         raise RuntimeError(
             "DEPENDENCY_MISSING: 构建文档索引需要 jieba 中文分词库，当前 Python 环境未安装"
-            "（pip install jieba 或 apt install python3-jieba；若确认只需英文索引，设 GITQ_ALLOW_NO_JIEBA=1 降级）"
+            "（pip install jieba 或 apt install python3-jieba；若确认只需英文索引，设 GITEA_ALLOW_NO_JIEBA=1 降级）"
         )
 
     db_path = get_db_path(mirror_root)
@@ -1686,7 +1700,7 @@ def run_doctor(mirror_root, dsh_home=None, as_json=False):
         return json.dumps(report, ensure_ascii=False, indent=2)
 
     lines = [
-        f"=== dsh-gitea-search 健康与 I/O 诊断报告 (Overall: {overall}) ===",
+        f"=== gitea-search-mcp 健康与 I/O 诊断报告 (Overall: {overall}) ===",
         f"[1] FTS5 索引库 ({fts_health['status']}): {db_path}",
         f"[2] 镜像同步状态: {sync_summary(sync_health) if sync_summary else '同步状态未知'}",
     ]

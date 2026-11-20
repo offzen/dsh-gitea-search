@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-  Installs dsh-gitea-search on native Windows and optionally registers one or more DSH profiles.
+  Installs gitea-search-mcp on native Windows and optionally registers one or more DSH profiles.
 .NOTES
   SPDX-License-Identifier: Apache-2.0
 #>
@@ -46,13 +46,15 @@ candidates = [
     pathlib.Path(sysconfig.get_path('scripts')) / 'gts.exe',
     pathlib.Path(sysconfig.get_path('scripts', scheme='nt_user')) / 'gts.exe',
 ]
-try:
-    dist = importlib.metadata.distribution('dsh-gitea-search')
-    for entry in dist.entry_points:
-        if entry.group == 'console_scripts' and entry.name == 'gts':
-            candidates.append(pathlib.Path(sys.executable).resolve().parent / 'gts.exe')
-except importlib.metadata.PackageNotFoundError:
-    pass
+for dist_name in ('gitea-search-mcp', 'dsh-gitea-search'):
+    try:
+        dist = importlib.metadata.distribution(dist_name)
+        for entry in dist.entry_points:
+            if entry.group == 'console_scripts' and entry.name == 'gts':
+                candidates.append(pathlib.Path(sys.executable).resolve().parent / 'gts.exe')
+        break
+    except importlib.metadata.PackageNotFoundError:
+        pass
 for candidate in candidates:
     if candidate.is_file():
         print(candidate.resolve())
@@ -127,7 +129,7 @@ if ($RegisterDsh) {
 
 Write-Step 'Installing the Python launcher'
 $package = if ($SkipIndex) { '.' } else { '.[fts]' }
-if ($PSCmdlet.ShouldProcess($RootDir, 'pip install dsh-gitea-search')) {
+if ($PSCmdlet.ShouldProcess($RootDir, 'pip install gitea-search-mcp')) {
   Push-Location $RootDir
   try {
     & $PythonExe @PythonArgs -m pip install $package

@@ -38,23 +38,23 @@ def _script_candidates():
     cands = [
         # ① 源码目录 / sdist：gts_cli.py 与 bin/ 同级
         os.path.join(_HERE, "bin", "gts"),
-        # ② wheel 安装布局：data-files 落在 <prefix>/share/dsh-gitea-search/bin/gts
+        # ② wheel 安装布局：优先 share/gitea-search-mcp，同时保留 share/dsh-gitea-search 兼容探测
         #    （刻意避开 <prefix>/bin，那里是 console_scripts 的启动器，撞名会让
         #      gts 自我递归 —— 见 pyproject.toml 的说明）
+        os.path.join(data, "share", "gitea-search-mcp", "bin", "gts"),
         os.path.join(data, "share", "dsh-gitea-search", "bin", "gts"),
-        os.path.join(data, "share", "dsh-gitea-search", "scripts", "sync.sh"),
         # ③ sys.prefix 布局（venv / conda 虚拟环境）
+        os.path.join(sys.prefix, "share", "gitea-search-mcp", "bin", "gts"),
         os.path.join(sys.prefix, "share", "dsh-gitea-search", "bin", "gts"),
-        os.path.join(sys.prefix, "share", "dsh-gitea-search", "scripts", "sync.sh"),
     ]
     # ④ pip install --user 布局：数据文件落在 site.USER_BASE 下
     try:
         import site
         user_base = getattr(site, "USER_BASE", None)
         if user_base:
-            data_root = os.path.join(user_base, "share", "dsh-gitea-search")
-            cands.append(os.path.join(data_root, "bin", "gts"))
-            cands.append(os.path.join(data_root, "scripts", "sync.sh"))
+            for share_name in ("gitea-search-mcp", "dsh-gitea-search"):
+                data_root = os.path.join(user_base, "share", share_name)
+                cands.append(os.path.join(data_root, "bin", "gts"))
     except Exception:
         pass
     seen, out = set(), []

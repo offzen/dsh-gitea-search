@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# setup-macos.sh —— dsh-gitea-search 在 macOS 上的一键安装 + DSH 接入
+# setup-macos.sh —— gitea-search-mcp 在 macOS 上的一键安装 + DSH 接入
 #
 # 与 Linux 版 setup.sh 的差异（macOS 特有）：
 #   1. jieba 走独立 venv：系统 python3 是 Homebrew 装的，带 PEP-668 EXTERNALLY-MANAGED 标记，
-#      `pip install --user` 会被拒。改用 venv + 项目自带的 GITQ_VENV_PATH 机制
+#      `pip install --user` 会被拒。改用 venv + 项目自带的 GITEA_VENV_PATH 机制（兼容旧 GITQ_VENV_PATH）
 #      （indexer.py 会把该 venv 的 site-packages 追加到 sys.path）。
 #   2. 不装 /usr/local/bin 全局软链：macOS 的 /usr/local/bin 需要 sudo。
 #      改为在 ~/bin 下建软链（若 PATH 里有），并提示用户。
@@ -21,7 +21,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 MIRROR_ROOT="${GITEA_MIRROR_ROOT:-$ROOT_DIR/mirror}"
 OWNERS="${GITEA_OWNERS:-}"
-VENV_DIR="${GITQ_VENV_DIR:-$ROOT_DIR/.venv}"
+VENV_DIR="${GITEA_VENV_PATH:-${GITQ_VENV_DIR:-$ROOT_DIR/.venv}}"
 PROFILE="Auto"
 INSTALL_DSH=0
 while [ "$#" -gt 0 ]; do
@@ -37,7 +37,7 @@ if [ -z "$OWNERS" ] || [ "$OWNERS" = "myorg" ]; then
   exit 2
 fi
 
-echo "=== dsh-gitea-search macOS 安装 ($ROOT_DIR) ==="
+echo "=== gitea-search-mcp macOS 安装 ($ROOT_DIR) ==="
 
 # ── 1. 依赖检查 ─────────────────────────────────────────────────────────────
 echo -n "[1/6] 检查运行时依赖 ... "
@@ -112,7 +112,7 @@ esac
 echo -n "[6/6] 构建 FTS5 索引 ... "
 export GITEA_MIRROR_ROOT="$MIRROR_ROOT"
 export GITEA_OWNERS="$OWNERS"
-export GITQ_VENV_PATH="$VENV_DIR"
+export GITEA_VENV_PATH="$VENV_DIR"
 if [ -d "$MIRROR_ROOT/$OWNERS" ] && [ -n "$(ls -A "$MIRROR_ROOT/$OWNERS" 2>/dev/null)" ]; then
   python3 "$ROOT_DIR/lib/indexer.py" --build 2>&1 | tail -2
   echo "✅ 索引完成"
@@ -127,7 +127,7 @@ cat <<EOF
 环境变量（写进 ~/.zshrc）：
   export GITEA_MIRROR_ROOT="$MIRROR_ROOT"
   export GITEA_OWNERS="$OWNERS"
-  export GITQ_VENV_PATH="$VENV_DIR"
+  export GITEA_VENV_PATH="$VENV_DIR"
 
 试一下：
   $ROOT_DIR/bin/gts --repos

@@ -4,11 +4,21 @@
 
 import json
 import os
+import sys
 from pathlib import Path
 
 PLACEHOLDER_OWNERS = {"myorg", "example-org", "your-org", "your-owner"}
 _SUPPORTED_TOP_LEVEL_KEYS = {"gitea", "storage", "mirror_root", "owners"}
 _SUPPORTED_SECTION_KEYS = {"gitea": {"owners"}, "storage": {"mirror_root"}}
+_WARNED_LEGACY_ENV = set()
+_WARNED_MIGRATIONS = set()
+
+
+def _warn_once(store, key, message):
+    if key in store:
+        return
+    store.add(key)
+    sys.stderr.write(f"[gitea-search-mcp] ⚠️ {message}\n")
 
 
 def _safe_config_key(path):
@@ -29,36 +39,45 @@ def _config_warnings(data):
                 if child not in _SUPPORTED_SECTION_KEYS[key]:
                     paths.append(f"{key}.{child}")
     return [
-        f'config: key "{_safe_config_key(path)}" is not supported in v1.2.3 and is ignored'
+        f'config: key "{_safe_config_key(path)}" is not supported and is ignored'
         for path in sorted(paths)
     ]
 
 
-def _platform_default_root():
+def _platform_data_base():
     if os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-        return str(Path(base) / "dsh-gitea-search" / "mirror")
+        return os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
     if sys_platform() == "darwin":
-        return str(Path.home() / "Library" / "Application Support" / "dsh-gitea-search" / "mirror")
-    base = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
-    return str(Path(base) / "dsh-gitea-search" / "mirror")
+        return str(Path.home() / "Library" / "Application Support")
+    return os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+
+
+def _platform_default_root():
+    base = Path(_platform_data_base())
+    preferred = str(base / "gitea-search-mcp" / "mirror")
+    legacy = str(base / "dsh-gitea-search" / "mirror")
+    if not os.path.exists(preferred) and os.path.exists(legacy):
+        notice = f"config: using legacy default mirror directory {legacy}; migrate to {preferred}"
+        _warn_once(_WARNED_MIGRATIONS, f"mirror:{legacy}", notice)
+        return legacy, notice
+    return preferred, None
 
 
 def sys_platform():
-    import sys
     return sys.platform
 
 
 def _config_candidates(explicit_config=None, project_dir=None):
     out = []
     if explicit_config:
-        out.append((Path(explicit_config).expanduser(), "explicit-config"))
+        out.append((Path(explicit_config).expanduser(), "explicit-config", False))
     env_path = os.environ.get("GITEA_SEARCH_CONFIG")
     if env_path and not explicit_config:
-        out.append((Path(env_path).expanduser(), "env-config"))
-    out.append((Path.home() / ".config" / "dsh-gitea-search" / "config.json", "user-config"))
+        out.append((Path(env_path).expanduser(), "env-config", False))
+    out.append((Path.home() / ".config" / "gitea-search-mcp" / "config.json", "user-config", False))
+    out.append((Path.home() / ".config" / "dsh-gitea-search" / "config.json", "user-config", True))
     if project_dir:
-        out.append((Path(project_dir) / "config.json", "project-config"))
+        out.append((Path(project_dir) / "config.json", "project-config", False))
     return out
 
 
@@ -78,7 +97,7 @@ def _json_type(value):
 
 
 def _read_config(explicit_config=None, project_dir=None):
-    """Return (data, path, source, errors); never raises for a bad/missing config file.
+    """Return (data, path, source, errors, migration_warning); never raises for a bad/missing config file.
 
     Contract (single source of truth, mirrored in lib/config.mjs):
       * an explicitly requested file (--config / GITEA_SEARCH_CONFIG) that is missing or not a
@@ -86,7 +105,8 @@ def _read_config(explicit_config=None, project_dir=None):
       * fallback to user/project config only happens when nothing was requested explicitly;
       * unreadable / non-JSON / wrongly-typed content is reported in ``errors``.
     """
-    for path, source in _config_candidates(explicit_config, project_dir):
+    preferred_user_config = os.path.abspath(str(Path.home() / ".config" / "gitea-search-mcp" / "config.json"))
+    for path, source, is_legacy_user in _config_candidates(explicit_config, project_dir):
         full = os.path.abspath(str(path))
         explicit = source in ("explicit-config", "env-config")
         if not os.path.isfile(full):
@@ -96,17 +116,21 @@ def _read_config(explicit_config=None, project_dir=None):
                 return {}, None, source, [
                     f"{origin} points to a config file that {kind}: {full} "
                     "(an explicitly specified config never falls back to user/project config)"
-                ]
+                ], None
             continue
         try:
             data = json.loads(Path(full).read_text(encoding="utf-8-sig"))
         except (OSError, ValueError) as exc:  # JSONDecodeError and UnicodeDecodeError are ValueErrors
-            return {}, full, source, [f"invalid config file {full}: {exc}"]
+            return {}, full, source, [f"invalid config file {full}: {exc}"], None
         errors = _validate_config(data, full)
         if errors:
-            return {}, full, source, errors
-        return data, full, source, []
-    return {}, None, None, []
+            return {}, full, source, errors, None
+        migration_warning = None
+        if is_legacy_user:
+            migration_warning = f"config: using legacy user config path {full}; migrate to {preferred_user_config}"
+            _warn_once(_WARNED_MIGRATIONS, f"user-config:{full}", migration_warning)
+        return data, full, source, [], migration_warning
+    return {}, None, None, [], None
 
 
 def _validate_config(data, full):
@@ -159,21 +183,26 @@ def _pick_owners(layers):
 
 
 def resolve_config(cli_root=None, cli_owners=None, config_path=None, project_dir=None):
-    cfg, loaded_path, file_source, file_errors = _read_config(config_path, project_dir)
+    cfg, loaded_path, file_source, file_errors, migration_warning = _read_config(config_path, project_dir)
     storage = cfg.get("storage") or {}
     gitea = cfg.get("gitea") or {}
     file_root = storage.get("mirror_root") or cfg.get("mirror_root")
 
-    env_root = (
-        os.environ.get("GITEA_MIRROR_ROOT")
-        or os.environ.get("GITEA_MIRROR_PATH")
-        or os.environ.get("GITQ_MIRROR_ROOT")
-    )
-    env_owners = (
-        os.environ.get("GITEA_OWNERS")
-        or os.environ.get("GITEA_OWNER")
-        or os.environ.get("GITQ_OWNER")
-    )
+    primary_env_root = os.environ.get("GITEA_MIRROR_ROOT") or os.environ.get("GITEA_MIRROR_PATH")
+    legacy_env_root = None if primary_env_root else os.environ.get("GITQ_MIRROR_ROOT")
+    if legacy_env_root:
+        _warn_once(_WARNED_LEGACY_ENV, "GITQ_MIRROR_ROOT", "环境变量 GITQ_MIRROR_ROOT 已废弃，请改用 GITEA_MIRROR_ROOT。")
+    env_root = primary_env_root or legacy_env_root
+
+    primary_env_owners = os.environ.get("GITEA_OWNERS") or os.environ.get("GITEA_OWNER")
+    legacy_env_owners = None if primary_env_owners else os.environ.get("GITQ_OWNER")
+    if legacy_env_owners:
+        _warn_once(_WARNED_LEGACY_ENV, "GITQ_OWNER", "环境变量 GITQ_OWNER 已废弃，请改用 GITEA_OWNERS。")
+    env_owners = primary_env_owners or legacy_env_owners
+
+    warnings = _config_warnings(cfg)
+    if migration_warning:
+        warnings.append(migration_warning)
 
     if cli_root:
         root, root_source = cli_root, "cli"
@@ -182,7 +211,10 @@ def resolve_config(cli_root=None, cli_owners=None, config_path=None, project_dir
     elif file_root:
         root, root_source = file_root, file_source
     else:
-        root, root_source = _platform_default_root(), "platform-default"
+        root, mirror_warning = _platform_default_root()
+        root_source = "platform-default"
+        if mirror_warning:
+            warnings.append(mirror_warning)
 
     owners, owners_source = _pick_owners([
         (cli_owners, "cli"),
@@ -205,7 +237,7 @@ def resolve_config(cli_root=None, cli_owners=None, config_path=None, project_dir
         "config_path": loaded_path,
         "valid": not errors,
         "errors": errors,
-        "warnings": _config_warnings(cfg),
+        "warnings": warnings,
     }
 
 

@@ -3,15 +3,15 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dsh-gitea-search"
+name = "gitea-search-mcp"
 version = "1.2.3"
-description = "Windows-capable gts launcher for dsh-gitea-search (Gitea/Git mirror hybrid search CLI)"
+description = "Windows-capable gts launcher for gitea-search-mcp (Gitea/Forgejo/Git mirror hybrid search CLI)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 classifiers = [
-  # 本包只经源码/Release 分发；PyPI 上的同名名字不由本项目持有。
-  # 该 classifier 让上传路径 fail-closed，避免误发布到未持有的名字。
+  # 本包只经源码/Release 分发；PyPI 上尚未发布官方包。
+  # 该 classifier 让上传路径 fail-closed，避免误发布。
   "Private :: Do Not Upload",
   "Programming Language :: Python :: 3",
   "Operating System :: Microsoft :: Windows",
@@ -20,7 +20,7 @@ classifiers = [
 ]
 
 # jieba 仅在 FTS5 文档检索路径用；设为硬依赖会让纯 git-grep 用户也要装它。
-# 需要文档检索时：pip install "dsh-gitea-search[fts]"
+# 需要文档检索时：pip install ".[fts]"
 [project.optional-dependencies]
 fts = ["jieba>=0.42"]
 
@@ -47,6 +47,6 @@ py-modules = ["gts_cli"]
 # 现在改放到 gts_cli 专属的数据子目录，避免与 console_scripts 撞名；定位逻辑见
 # gts_cli._script_candidates()。
 [tool.setuptools.data-files]
-"share/dsh-gitea-search/bin" = ["bin/gts"]
-"share/dsh-gitea-search/lib" = ["lib/indexer.py", "lib/config.py", "lib/mirror_state.py"]
-"share/dsh-gitea-search/scripts" = ["scripts/sync.sh"]
+"share/gitea-search-mcp/bin" = ["bin/gts"]
+"share/gitea-search-mcp/lib" = ["lib/indexer.py", "lib/config.py", "lib/mirror_state.py"]
+"share/gitea-search-mcp/scripts" = ["scripts/sync.sh"]

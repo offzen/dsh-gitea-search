@@ -22,7 +22,7 @@ if [ -z "$OWNERS" ] || [[ "$OWNERS" =~ ^(myorg|example-org|your-org|your-owner)$
   exit 2
 fi
 
-echo "=== dsh-gitea-search 环境预检与初始化 ($ROOT_DIR) ==="
+echo "=== gitea-search-mcp 环境预检与初始化 ($ROOT_DIR) ==="
 
 # 1. 检查 Python 3 与 Jieba
 echo -n "[1/7] 检查 Python 3 与 jieba ... "
@@ -138,11 +138,18 @@ if [ "$INSTALL_DSH" = "1" ]; then
         *) echo "CONFIG_ERROR: --profile supports Auto/desktop/web/headless/all" >&2; exit 2 ;;
     esac
     NODE_BIN="$(command -v node)"
+    DEFAULT_MIRROR_NEW="${XDG_DATA_HOME:-$HOME/.local/share}/gitea-search-mcp/mirror"
+    DEFAULT_MIRROR_LEGACY="${XDG_DATA_HOME:-$HOME/.local/share}/dsh-gitea-search/mirror"
+    if [ ! -e "$DEFAULT_MIRROR_NEW" ] && [ -e "$DEFAULT_MIRROR_LEGACY" ]; then
+        DEFAULT_MIRROR="$DEFAULT_MIRROR_LEGACY"
+    else
+        DEFAULT_MIRROR="$DEFAULT_MIRROR_NEW"
+    fi
     for target in "${TARGETS[@]}"; do
         python3 "$ROOT_DIR/scripts/profile-patch.py" \
             --file "$PROFILES_ROOT/$target/cordis.patch.yml" \
             --node "$NODE_BIN" --server "$ROOT_DIR/lib/server.mjs" --gts "$ROOT_DIR/bin/gts" \
-            --mirror "${GITEA_MIRROR_ROOT:-${GITEA_MIRROR_PATH:-${GITQ_MIRROR_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/dsh-gitea-search/mirror}}}" \
+            --mirror "${GITEA_MIRROR_ROOT:-${GITEA_MIRROR_PATH:-${GITQ_MIRROR_ROOT:-$DEFAULT_MIRROR}}}" \
             --owners "$OWNERS"
     done
     echo "✅ DSH profile 已更新；本脚本不会重启 DSH。"
