@@ -1,2 +1,25 @@
 #!/usr/bin/env node
-await import(new URL('../lib/server.mjs', import.meta.url).href);
+// SPDX-License-Identifier: Apache-2.0
+/**
+ * bin/mcp-server —— gitea-search-mcp 标准入口（stdio 引导 + 静态 Schema 导出）。
+ *
+ * 用法：
+ *   mcp-server                    启动 MCP stdio 服务（供 Claude / Cursor / Cline / DSH 等挂载）。
+ *   mcp-server --dump-schema      静态导出 Function Calling JSON Schema 到 stdout 后退出。
+ *   mcp-server --dump-schema --compact
+ *                                 仅输出 { functions: [...] }（不含 service/version/transport）。
+ *
+ * 约定：
+ *   · --dump-schema 纯静态导出：不读镜像、不读配置、不 spawn 子进程、不连接传输层。
+ *   · 使用 file URL 动态导入，兼容 Windows ESM 路径规范。
+ */
+const args = process.argv.slice(2);
+
+if (args.includes('--dump-schema')) {
+  const { dumpSchema } = await import(new URL('../lib/server.mjs', import.meta.url).href);
+  const compact = args.includes('--compact');
+  process.stdout.write(JSON.stringify(dumpSchema({ compact }), null, 2) + '\n');
+  process.exit(0);
+}
+
+await import(new URL('../src/index.js', import.meta.url).href);

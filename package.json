@@ -1,24 +1,50 @@
 {
-  "name": "dsh-gitea-search",
+  "name": "gitea-search-mcp",
   "type": "module",
   "version": "1.2.3",
-  "description": "DeepSeek Harness (DSH) 高性能 Gitea/Git 镜像混合检索引擎（git grep + SQLite FTS5 + Jieba + MCP Server）",
+  "description": "通用 Gitea / Forgejo / 本地 Git 裸镜像混合检索 MCP Server（git grep + SQLite FTS5 + Jieba）",
   "license": "Apache-2.0",
+  "main": "lib/server.mjs",
+  "exports": {
+    ".": "./lib/server.mjs"
+  },
+  "bin": {
+    "gitea-search-mcp": "bin/mcp-server",
+    "mcp-server": "bin/mcp-server"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "src/",
+    "scripts/",
+    "gts_cli.py",
+    "pyproject.toml",
+    "config.example.json",
+    "docs/",
+    "extras/",
+    "README.md",
+    "UPGRADING.md",
+    "MANUAL.md",
+    "WINDOWS-PORT.md",
+    "CHANGELOG.md",
+    "RELEASE-NOTES.md",
+    "LICENSE"
+  ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/offzen/dsh-gitea-search.git"
+    "url": "https://github.com/offzen/gitea-search-mcp.git"
   },
   "keywords": [
-    "deepseek-harness",
-    "dsh",
-    "dsh-plugin",
     "mcp",
     "model-context-protocol",
     "mcp-server",
     "gitea",
+    "forgejo",
     "git-grep",
     "fts5",
-    "jieba"
+    "jieba",
+    "deepseek-harness",
+    "dsh"
   ],
   "scripts": {
     "test": "node --test",
