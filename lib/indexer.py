@@ -100,6 +100,21 @@ _JIEBA_TRIED = False
 _WARNED_LEGACY_ENV = set()
 
 
+def _write_stderr_utf8(text):
+    stream = sys.stderr
+    if stream is None:
+        return
+    enc = (getattr(stream, "encoding", None) or "").lower().replace("-", "").replace("_", "")
+    if enc not in ("utf8", "utf8mb4"):
+        rc = getattr(stream, "reconfigure", None)
+        if rc is not None:
+            try:
+                rc(encoding="utf-8", errors="backslashreplace")
+            except (ValueError, OSError):
+                pass
+    stream.write(text)
+
+
 def _env_with_legacy(primary, legacy):
     val = os.environ.get(primary)
     if val is not None and val != "":
@@ -108,7 +123,7 @@ def _env_with_legacy(primary, legacy):
     if leg is not None and leg != "":
         if legacy not in _WARNED_LEGACY_ENV:
             _WARNED_LEGACY_ENV.add(legacy)
-            sys.stderr.write(f"[gitea-search-mcp] ⚠️ 环境变量 {legacy} 已废弃，请改用 {primary}。\n")
+            _write_stderr_utf8(f"[gitea-search-mcp] ⚠️ 环境变量 {legacy} 已废弃，请改用 {primary}。\n")
         return leg
     return None
 
@@ -142,7 +157,7 @@ def _get_jieba():
         _JIEBA = jieba
     except ImportError:
         _JIEBA = None
-        sys.stderr.write("[indexer] 提示: 未安装 jieba 中文分词库 (可运行: apt install python3-jieba 或 pip install jieba)。当前将以标准模式处理中文。\n")
+        _write_stderr_utf8("[indexer] 提示: 未安装 jieba 中文分词库 (可运行: apt install python3-jieba 或 pip install jieba)。当前将以标准模式处理中文。\n")
     except Exception:
         _JIEBA = None
     return _JIEBA

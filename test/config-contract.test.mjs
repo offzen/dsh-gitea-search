@@ -449,8 +449,17 @@ test('v2.0 legacy GITQ_* env vars work as fallback with one-time stderr warning;
   const pyLegacy = spawnSync(PY, [
     '-c', `import sys; sys.path.insert(0, ${JSON.stringify(path.join(ROOT, 'lib'))}); from config import resolve_config; resolve_config(); resolve_config()`,
   ], { encoding: 'utf8', env: legacyEnv });
+  assert.equal(pyLegacy.status, 0, pyLegacy.stderr);
   assert.equal((pyLegacy.stderr.match(/GITQ_MIRROR_ROOT 已废弃/g) || []).length, 1);
   assert.equal((pyLegacy.stderr.match(/GITQ_OWNER 已废弃/g) || []).length, 1);
+
+  // Guard Windows non-UTF-8 default stderr codepage (cp1252 + backslashreplace) when config.py is imported directly
+  const pyCp1252 = spawnSync(PY, [
+    '-c', `import sys; sys.path.insert(0, ${JSON.stringify(path.join(ROOT, 'lib'))}); from config import resolve_config; resolve_config(); resolve_config()`,
+  ], { encoding: 'utf8', env: { ...legacyEnv, PYTHONIOENCODING: 'cp1252:backslashreplace' } });
+  assert.equal(pyCp1252.status, 0, pyCp1252.stderr);
+  assert.equal((pyCp1252.stderr.match(/GITQ_MIRROR_ROOT 已废弃/g) || []).length, 1);
+  assert.equal((pyCp1252.stderr.match(/GITQ_OWNER 已废弃/g) || []).length, 1);
 
   // GITEA_* overrides GITQ_* with no legacy warning
   const overrideEnv = isolatedEnv(home, {

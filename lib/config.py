@@ -14,11 +14,26 @@ _WARNED_LEGACY_ENV = set()
 _WARNED_MIGRATIONS = set()
 
 
+def _write_stderr_utf8(text):
+    stream = sys.stderr
+    if stream is None:
+        return
+    enc = (getattr(stream, "encoding", None) or "").lower().replace("-", "").replace("_", "")
+    if enc not in ("utf8", "utf8mb4"):
+        rc = getattr(stream, "reconfigure", None)
+        if rc is not None:
+            try:
+                rc(encoding="utf-8", errors="backslashreplace")
+            except (ValueError, OSError):
+                pass
+    stream.write(text)
+
+
 def _warn_once(store, key, message):
     if key in store:
         return
     store.add(key)
-    sys.stderr.write(f"[gitea-search-mcp] ⚠️ {message}\n")
+    _write_stderr_utf8(f"[gitea-search-mcp] ⚠️ {message}\n")
 
 
 def _safe_config_key(path):
